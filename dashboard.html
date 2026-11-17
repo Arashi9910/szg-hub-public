@@ -302,9 +302,10 @@
         <span>每</span><input type="number" id="mkScanH" min="1" max="24" style="width:56px"><span>小時自動掃描一次</span>
         <button class="btn" id="mkScanNow">立即掃描</button>
         <label><input type="checkbox" id="mkAutoClaim"> 自動領取攤位收益</label>
+        <span title="很多人把消耗品、雜物掛天價（例如紅藥水一個 100 萬），這種價格沒有參考價值">掛價超過商店收購價</span><input type="number" id="mkSanity" min="10" max="1000000" style="width:80px"><span>倍視為異常</span>
         <span class="dim" id="mkScanInfo"></span>
       </div>
-      <div class="dim">掃描範圍：所有帳號背包裡有的道具，加上符合「自動上架」裝備規則的裝備。價格都是<b>單件價</b>，而且<b>排除你自己帳號的掛單</b>。遊戲沒有全服成交紀錄，漲跌與 7 日數據是中控自己定時記錄的，從開始使用那天起累積。需要至少一個遊戲分頁開著才會掃描。</div>
+      <div class="dim">掃描範圍：所有帳號背包裡有的道具，加上符合「自動上架」裝備規則的裝備。價格都是<b>單件價</b>，而且<b>排除你自己帳號的掛單</b>。這裡顯示的是<b>掛單價</b>，不是成交價：掛價遠高於商店收購價的會標 ⚠ 疑似亂掛，持有估值改用商店收購價計算，自動上架也不會拿它當參考。「我方成交」是你自己帳號實際賣出的單價。遊戲沒有全服成交紀錄，漲跌與 7 日數據是中控自己定時記錄的，從開始使用那天起累積。需要至少一個遊戲分頁開著才會掃描。</div>
       <div class="bar" style="margin-top:8px">
         <input id="mkSearch" placeholder="搜尋名稱" style="width:160px">
         <label><input type="checkbox" id="mkOnlyPriced" checked> 只看有行情的</label>
@@ -1437,7 +1438,7 @@ let MK = null;
 ui.mkOpen = new Set();
 ui.mkSort = { key: 'value', dir: -1 };
 async function loadMarket() { try { MK = await (await fetch('/api/market')).json(); } catch (_) {} }
-const mkCfg = () => ({ scanHours: 3, autoClaim: true, mode: 'off', chars: {}, rules: [], ...(S.market || {}) });
+const mkCfg = () => ({ scanHours: 3, sanityMult: 1000, autoClaim: true, mode: 'off', chars: {}, rules: [], ...(S.market || {}) });
 function saveMk(patch) { return saveSettings({ market: { ...mkCfg(), ...patch } }); }
 const pct = v => v == null ? '—' : `<span class="${v > 0 ? 'bad' : v < 0 ? 'good' : 'dim'}">${v > 0 ? '▲' : v < 0 ? '▼' : ''}${(Math.abs(v) * 100).toFixed(1)}%</span>`;
 function spark(daily) {
@@ -1458,32 +1459,41 @@ function renderMarket() {
   if (!MK) { loadMarket().then(() => MK && renderMarket()); return; }
   const c = mkCfg(), own = ownedTotals();
   if (document.activeElement !== $('#mkScanH')) $('#mkScanH').value = c.scanHours;
+  if (document.activeElement !== $('#mkSanity')) $('#mkSanity').value = c.sanityMult;
   $('#mkAutoClaim').checked = c.autoClaim !== false;
   const sc = MK.scan || {};
   $('#mkScanInfo').textContent = `${sc.lastFull ? '上次完整掃描 ' + clock(sc.lastFull) : '尚未掃描'}　待掃 ${sc.queue}${sc.lease ? `　${sc.lease.name} 掃描中（${sc.lease.n} 項）` : ''}`;
   // 行情表
   const q = $('#mkSearch').value.trim(), onlyPriced = $('#mkOnlyPriced').checked, withGear = $('#mkShowGear').checked;
+  const lastSale = {};
+  for (const x of MK.sales || []) if (x.qty > 0 && (!lastSale[x.name] || x.time > lastSale[x.name].time)) lastSale[x.name] = { unit: Math.round(x.total / x.qty), time: x.time };
   let rows = (MK.rows || []).filter(r => (withGear || !r.gear) && (!q || r.name.includes(q)) && (!onlyPriced || r.min != null)).map(r => {
     const o = own[r.id] || { qty: 0, npc: 0, kind: r.gear ? '裝備' : '' };
-    return { ...r, own: o.qty, npc: o.npc, kind: o.kind, value: r.min != null ? r.min * o.qty : 0 };
+    const odd = r.min != null && o.npc > 0 && r.min > o.npc * c.sanityMult;
+    const sold = lastSale[r.name];
+    // 估值：有自己的成交價用成交價；掛價異常就用商店收購價；否則用市場最低掛單價
+    const unit = sold ? sold.unit : odd ? o.npc : r.min;
+    return { ...r, own: o.qty, npc: o.npc, kind: o.kind, odd, sold: sold ? sold.unit : null, soldAt: sold ? sold.time : 0,
+      value: unit != null ? unit * o.qty : 0, valueBy: sold ? '我方成交價' : odd ? '商店收購價（市場掛價異常）' : '市場最低掛單價' };
   });
   const k = ui.mkSort.key, d = ui.mkSort.dir;
   rows.sort((a, b) => cmp(a[k], b[k]) * d || cmp(a.name, b.name));
   const th = (key, label, cls = '') => `<th data-mksort="${key}" class="${cls}">${label}${k === key ? (d > 0 ? ' ▲' : ' ▼') : ''}</th>`;
-  let h = `<table class="sticky"><thead><tr>${th('name', '物品')}${th('kind', '類別')}${th('own', '持有', 'num')}${th('min', '市場最低', 'num')}${th('med', '中位數', 'num')}${th('n', '掛單', 'num')}${th('min7', '7日最低', 'num')}${th('avg7', '7日均', 'num')}${th('max7', '7日最高', 'num')}${th('change', '漲跌', 'num')}<th class="nosort">走勢</th>${th('npc', '商店價', 'num')}${th('value', '持有估值', 'num')}${th('at', '更新')}</tr></thead><tbody>`;
+  let h = `<table class="sticky"><thead><tr>${th('name', '物品')}${th('kind', '類別')}${th('own', '持有', 'num')}${th('min', '市場最低', 'num')}${th('med', '中位數', 'num')}${th('n', '掛單', 'num')}${th('min7', '7日最低', 'num')}${th('avg7', '7日均', 'num')}${th('max7', '7日最高', 'num')}${th('change', '漲跌', 'num')}<th class="nosort">走勢</th>${th('sold', '我方成交', 'num')}${th('npc', '商店價', 'num')}${th('value', '持有估值', 'num')}${th('at', '更新')}</tr></thead><tbody>`;
   for (const r of rows.slice(0, 400)) {
     const open = ui.mkOpen.has(r.id);
     h += `<tr data-mkrow="${esc(r.id)}" style="cursor:pointer"><td>${open ? '▾' : '▸'} ${iname(r.itemId, r.name)}</td><td class="dim">${esc(r.kind)}</td><td class="num">${r.own ? fmt(r.own) : '<span class="dim">0</span>'}</td>
-      <td class="num">${r.min != null ? fmt(r.min) : '<span class="dim">無人賣</span>'}</td><td class="num">${fmt(r.med)}</td><td class="num">${r.n ? `${r.n}<span class="dim">／${short(r.q)}</span>` : '<span class="dim">0</span>'}</td>
+      <td class="num">${r.min != null ? (r.odd ? `<span class="dim" title="市場最低掛價是商店收購價的 ${fmt(Math.round(r.min / r.npc))} 倍，大概是有人亂掛，不太可能有人買">⚠ ${fmt(r.min)}</span>` : fmt(r.min)) : '<span class="dim">無人賣</span>'}</td><td class="num">${fmt(r.med)}</td><td class="num">${r.n ? `${r.n}<span class="dim">／${short(r.q)}</span>` : '<span class="dim">0</span>'}</td>
       <td class="num">${fmt(r.min7)}</td><td class="num">${fmt(r.avg7)}</td><td class="num">${fmt(r.max7)}</td><td class="num">${pct(r.change)}</td><td>${spark(r.daily)}</td>
-      <td class="num dim">${r.npc ? fmt(r.npc) : '—'}</td><td class="num">${r.value ? short(r.value) : '<span class="dim">—</span>'}</td><td class="dim">${r.at ? ago(Date.now() - r.at) : '未掃描'}</td></tr>`;
+      <td class="num" title="${r.soldAt ? '最近一次 ' + clock(r.soldAt) : ''}">${r.sold != null ? fmt(r.sold) : '<span class="dim">—</span>'}</td>
+      <td class="num dim">${r.npc ? fmt(r.npc) : '—'}</td><td class="num" title="${esc(r.valueBy)}">${r.value ? short(r.value) + (r.odd && r.sold == null ? '<span class="dim">（商店）</span>' : '') : '<span class="dim">—</span>'}</td><td class="dim">${r.at ? ago(Date.now() - r.at) : '未掃描'}</td></tr>`;
     if (open) {
       const lr = (r.latest && r.latest.rows) || [];
-      h += `<tr><td colspan="14" style="background:var(--panel2)">${lr.length ? lr.map(x => `<span class="tag" style="${x.mine ? 'opacity:.55' : ''}">${fmt(x.price)} × ${fmt(x.qty)}　${esc(x.seller)}${x.mine ? '（自己）' : ''}${x.stats ? '　' + esc(statLine(x.stats, STAT_ORDER)) + (x.plus ? ` +${x.plus}` : '') : ''}</span>`).join(' ') : '<span class="dim">上次掃描沒有掛單</span>'}
+      h += `<tr><td colspan="15" style="background:var(--panel2)">${lr.length ? lr.map(x => `<span class="tag" style="${x.mine ? 'opacity:.55' : ''}">${fmt(x.price)} × ${fmt(x.qty)}　${esc(x.seller)}${x.mine ? '（自己）' : ''}${x.stats ? '　' + esc(statLine(x.stats, STAT_ORDER)) + (x.plus ? ` +${x.plus}` : '') : ''}</span>`).join(' ') : '<span class="dim">上次掃描沒有掛單</span>'}
         ${r.since ? `<div class="dim">紀錄從 ${clock(r.since)} 開始</div>` : ''}</td></tr>`;
     }
   }
-  if (!rows.length) h += `<tr><td colspan="14" class="empty">${(MK.rows || []).length ? '沒有符合的物品' : '還沒有資料：開著遊戲分頁，按「立即掃描」'}</td></tr>`;
+  if (!rows.length) h += `<tr><td colspan="15" class="empty">${(MK.rows || []).length ? '沒有符合的物品' : '還沒有資料：開著遊戲分頁，按「立即掃描」'}</td></tr>`;
   $('#mkTable').innerHTML = h + '</tbody></table>' + (rows.length > 400 ? '<div class="dim">只顯示前 400 項，請用搜尋縮小範圍</div>' : '');
   // 攤位
   const st = (MK.stalls || []).slice().sort((a, b) => cmp(a.name, b.name));
@@ -1587,6 +1597,7 @@ document.addEventListener('click', async e => {
 document.addEventListener('change', async e => {
   const t = e.target;
   if (['mkSearch', 'mkOnlyPriced', 'mkShowGear'].includes(t.id)) { renderMarket(); return; }
+  if (t.id === 'mkSanity') { await saveMk({ sanityMult: Math.min(1e6, Math.max(10, Number(t.value) || 1000)) }); return; }
   if (t.id === 'mkScanH') { await saveMk({ scanHours: Math.min(24, Math.max(1, Number(t.value) || 3)) }); return; }
   if (t.id === 'mkAutoClaim') { await saveMk({ autoClaim: t.checked }); return; }
   if (!t.closest || !t.closest('#mkAuto')) return;

@@ -27,6 +27,7 @@ module.exports = function (getDb, save, charName) {
     const s = getDb().settings.market || {};
     return {
       scanHours: Number(s.scanHours) || 3,
+      sanityMult: Number(s.sanityMult) || 1000, // 市場最低價超過商店收購價幾倍算「疑似亂掛」
       autoClaim: s.autoClaim !== false,
       mode: s.mode || 'off',               // off | preview | auto
       chars: s.chars || {},
@@ -174,6 +175,9 @@ module.exports = function (getDb, save, charName) {
       base = base * (1 + (Number(p.adjPct) || 0) / 100) + (Number(p.adjAbs) || 0);
       if (st.at && Date.now() - st.at > 12 * HOUR) return { skip: '行情超過 12 小時沒更新' };
     }
+    // 很多人把消耗品／雜物掛天價（例如紅藥水一個 100 萬），拿來當參考會定出賣不掉的價格
+    const mult = cfg().sanityMult;
+    if (p.base !== 'fixed' && npcPrice > 0 && base > npcPrice * mult) return { skip: `市場掛價 ${Math.round(base).toLocaleString()} 是商店收購價的 ${Math.round(base / npcPrice).toLocaleString()} 倍，疑似亂掛，不自動上架（真的要賣請改用固定價）` };
     let price = Math.floor(base);
     const floor = Number(p.floor) || 0;
     if (floor > 0 && price < floor) { price = floor; why += '（低於底價，改用底價）'; }
