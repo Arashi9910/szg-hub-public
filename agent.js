@@ -924,6 +924,30 @@ function agentMain(ctx) {
         await hub('POST', '/api/dps', { charId: id, at: Date.now(), since: d.since, map: d.map, w5: pack(w5), w60: pack(w60), skills, mobs, series }).catch(() => {});
       }
     }
+    // ---------- 掉落紀錄：從同步回應的冒險紀錄抓「撿取」「自動販售」，給工廠圖做掉落動畫（不額外發請求） ----------
+    const lootSeen = new Set(), lootQueue = [];
+    let lootStart = Date.now();
+    function lootIngest(json) {
+      const c = json && json.character; if (!c || !Array.isArray(c.log)) return;
+      const st = readState(); const mine = new Set((st && st.characters || []).map(x => x.id)); if (st && st.character) mine.add(st.character.id);
+      if (!mine.has(c.id)) return;
+      const sold = new Set();
+      const rows = [];
+      for (const e of c.log) {
+        if (!e || !e.t || !e.time || e.time < lootStart - 5000) continue;
+        const key = c.id + '|' + e.time + '|' + e.t;
+        if (lootSeen.has(key)) continue;
+        let m = /^自動販售：(.+?) × (\d+)，獲得 ([\d,]+) 楓幣/.exec(e.t);
+        if (m) { lootSeen.add(key); sold.add(e.time + '|' + m[1]); rows.push({ at: e.time, name: m[1], qty: Number(m[2]), sold: true, money: Number(m[3].replace(/,/g, '')) }); continue; }
+        m = /^撿取：(.+?) × (\d+)/.exec(e.t);
+        if (m) { lootSeen.add(key); rows.push({ at: e.time, name: m[1], qty: Number(m[2]), sold: false }); }
+      }
+      // 同一時間撿到又馬上自動賣掉的，只算賣掉
+      for (const r of rows) if (r.sold || !sold.has(r.at + '|' + r.name)) lootQueue.push({ charId: c.id, map: c.map, ...r });
+      if (lootSeen.size > 4000) { const keep = [...lootSeen].slice(-2000); lootSeen.clear(); keep.forEach(k => lootSeen.add(k)); }
+      if (lootQueue.length > 300) lootQueue.splice(0, lootQueue.length - 300);
+    }
+    setInterval(() => { if (!lootQueue.length) return; const batch = lootQueue.splice(0, lootQueue.length); hub('POST', '/api/loot', { events: batch }).catch(() => {}); }, 3000);
     (function hookDps() {
       try {
         if (!W || W.__szgDpsHook) return;
@@ -933,7 +957,7 @@ function agentMain(ctx) {
           const p = orig.apply(this, arguments);
           try {
             const url = typeof input === 'string' ? input : (input && input.url) || '';
-            if (url.indexOf('/api/game') >= 0) p.then(r => r.clone().json()).then(dpsIngest).catch(() => {});
+            if (url.indexOf('/api/game') >= 0) p.then(r => r.clone().json()).then(j => { dpsIngest(j); try { lootIngest(j); } catch (_) {} }).catch(() => {});
           } catch (_) {}
           return p;
         };

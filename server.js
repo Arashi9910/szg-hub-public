@@ -85,6 +85,7 @@ function quizBank() {
 function quizLog(msg) { const q = quizStore(); q.log.push({ at: Date.now(), msg: String(msg).slice(0, 200) }); if (q.log.length > 200) q.log.splice(0, q.log.length - 200); }
 
 let saveTimer = null;
+const lootBuf = []; let lootSeq = 0;
 let market = null; // 自由市場模組（db 載入後建立）
 let saveFailed = false;
 function save() {
@@ -317,6 +318,17 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, fs.readFileSync(DASHBOARD, 'utf8'), 'text/html; charset=utf-8');
     }
 
+    // 掉落紀錄（只放記憶體，給工廠圖動畫用）
+    if (req.method === 'POST' && url.pathname === '/api/loot') {
+      const e = JSON.parse(await readBody(req));
+      for (const x of (e && e.events) || []) { if (!x || !x.charId || !x.name) continue; lootSeq++; lootBuf.push({ seq: lootSeq, charId: String(x.charId), map: String(x.map || ''), name: String(x.name).slice(0, 40), qty: Number(x.qty) || 1, sold: !!x.sold, money: Number(x.money) || 0, at: Number(x.at) || Date.now() }); }
+      if (lootBuf.length > 800) lootBuf.splice(0, lootBuf.length - 800);
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/loot') {
+      const since = Number(url.searchParams.get('since')) || 0;
+      return send(res, 200, { seq: lootSeq, events: since ? lootBuf.filter(x => x.seq > since).slice(-200) : [] });
+    }
     if (req.method === 'POST' && url.pathname === '/api/dps') {
       const e = JSON.parse(await readBody(req));
       if (!e || !e.charId) return send(res, 400, { error: 'bad dps' });

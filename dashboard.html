@@ -111,7 +111,7 @@
   .grid.named .tile .q { bottom: auto; top: 30px; }
   .tile .tn { font-size: 11px; line-height: 1.15; text-align: center; padding: 3px 3px 0; color: var(--text); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   @media (max-width: 1100px) { .lanes { grid-template-columns: 1fr; } }
-  .fac { position: relative; height: calc(100vh - var(--hdr, 52px) - 150px); min-height: 520px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px; cursor: grab; touch-action: none;
+  .fac { position: relative; height: calc(100vh - var(--hdr, 52px) - 130px); min-height: 560px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px; cursor: grab; touch-action: none;
     background-color: #0c121c; background-image: radial-gradient(circle, #24324a 1px, transparent 1.2px); background-size: 22px 22px; }
   .fac.panning { cursor: grabbing; }
   .fac-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
@@ -125,6 +125,24 @@
   .fac-wires .w.tmp { stroke-dasharray: 6 5; stroke-width: 2.5; }
   .fac-wires .w-lbl { fill: var(--text); font-size: 12px; paint-order: stroke; stroke: #0c121c; stroke-width: 4px; }
   @keyframes wflow { to { stroke-dashoffset: -24; } }
+  .fnode { display: flex; flex-direction: column; }
+  .fnode .fn-bd { flex: 1; overflow: auto; min-height: 0; }
+  .fnode .rs { position: absolute; right: 2px; bottom: 2px; width: 12px; height: 12px; cursor: nwse-resize; border-right: 2px solid var(--dim); border-bottom: 2px solid var(--dim); opacity: .5; border-radius: 0 0 4px 0; }
+  .fnode:hover .rs { opacity: 1; }
+  .fnode.pulse { animation: npulse .6s ease-out; }
+  @keyframes npulse { 0% { box-shadow: 0 0 0 0 rgba(224,179,65,.8); } 100% { box-shadow: 0 0 0 14px rgba(224,179,65,0); } }
+  .fac-wires .w.none { display: none; }
+  .loot { position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 7px; background: rgba(15,21,32,.9); border: 1px solid var(--accent); display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 5; will-change: transform; }
+  .loot img { width: 22px; height: 22px; object-fit: contain; image-rendering: pixelated; }
+  .loot span { font-size: 10px; } .loot b { position: absolute; right: -6px; bottom: -6px; font-size: 10px; background: var(--accent); border-radius: 6px; padding: 0 3px; }
+  .loot.sold { border-color: #e0b341; } .loot.goal { border: 2px solid #ffd54a; box-shadow: 0 0 12px 3px rgba(255,213,74,.55); }
+  .loot i { position: absolute; left: -8px; top: -9px; font-style: normal; font-size: 12px; }
+  .recent .rc { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+  .recent .rc span { position: relative; width: 24px; height: 24px; border: 1px solid var(--line); border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; }
+  .recent .rc span.goal { border-color: #ffd54a; } .recent .rc img { width: 20px; height: 20px; object-fit: contain; image-rendering: pixelated; }
+  .recent .rc b { position: absolute; right: -4px; bottom: -5px; font-size: 9px; background: var(--panel2); border-radius: 4px; padding: 0 2px; }
+  #board.fac-max > .card:first-child { display: none; }
+  #board.fac-max .fac { height: calc(100vh - var(--hdr, 52px) - 24px); }
   .fnode { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 6px 18px rgba(0,0,0,.45); cursor: default; user-select: none; }
   .fnode .fn-hd { padding: 6px 9px; border-bottom: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 9px 9px 0 0; display: flex; gap: 6px; align-items: center; cursor: move; background: var(--panel2); }
   .fnode .fn-bd { padding: 6px 9px 8px; line-height: 1.5; }
@@ -2533,7 +2551,7 @@ function renderFactory() {
     if (cfg.sell[id] && cfg.sell[id].enabled && here.length) totals.sellMaps++;
   }
   const rate = r => r >= 10 ? fmt(Math.round(r)) + '/時' : r >= 0.1 ? r.toFixed(1) + '/時' : r > 0 ? `每 ${fmt(Math.round(1 / r))} 時 1` : '—';
-  const node = (key, cls, w, inner, title = '') => { const [x, y] = pos[key]; return `<div class="fnode ${cls}" data-fn="${esc(key)}" style="left:${x}px;top:${y}px;width:${w}px" ${title ? `title="${esc(title)}"` : ''}>${inner}</div>`; };
+  const node = (key, cls, w, inner, title = '') => { const [x, y, sw, sh] = pos[key]; return `<div class="fnode ${cls}" data-fn="${esc(key)}" style="left:${x}px;top:${y}px;width:${sw || w}px;${sh ? `height:${sh}px;` : ''}" ${title ? `title="${esc(title)}"` : ''}>${inner}<span class="rs" title="拖曳調整大小"></span></div>`; };
   let html = '';
   for (const c of chars) {
     const to = where(c), pend = cfg.assign[c.id] && cfg.assign[c.id] !== '__pool' && cfg.assign[c.id] !== c.map, d = dpsOf(c.id);
@@ -2553,22 +2571,24 @@ function renderFactory() {
       <span class="port in" data-fin="${esc(id)}"></span><span class="port out2"></span>`);
   }
   html += node('exp', 'fsink', FN_W.s, `<div class="fn-hd" data-fdrag><b>📈 經驗</b></div><div class="fn-bd sm">練功地圖合計<div class="big">${short(totals.exp)}<span class="dim sm"> /時</span></div></div><span class="port in"></span>`);
-  html += node('shop', 'fsink', FN_W.s, `<div class="fn-hd" data-fdrag><b>💰 商店（自動販售）</b></div><div class="fn-bd sm">${totals.sellMaps} 張圖有角色、開著自動販售<div class="dim">撿到就賣，遊戲伺服器處理</div></div><span class="port in"></span>`);
+  html += node('shop', 'fsink', FN_W.s, `<div class="fn-hd" data-fdrag><b>💰 商店（自動販售）</b></div><div class="fn-bd sm">${totals.sellMaps} 張圖有角色、開著自動販售<div class="dim">撿到就賣，遊戲伺服器處理</div><div class="recent" data-recent="shop"></div></div><span class="port in"></span>`);
   const gl = Object.entries(totals.goals).filter(([, r]) => r > 0).sort((a, b) => b[1] - a[1]);
-  html += node('bag', 'fsink', FN_W.s, `<div class="fn-hd" data-fdrag><b>🎒 背包／倉庫</b></div><div class="fn-bd sm">${gl.length ? gl.slice(0, 6).map(([id, r]) => `<div class="fgoal">${iname(id, wName(id))} <b>${rate(r)}</b></div>`).join('') : '<div class="dim">在打卷軸／打裝備的圖設定 🎯 目標後，這裡會顯示每小時的預估收穫</div>'}</div><span class="port in"></span><span class="port out2"></span>`);
+  html += node('bag', 'fsink', FN_W.s, `<div class="fn-hd" data-fdrag><b>🎒 背包／倉庫</b></div><div class="fn-bd sm">${gl.length ? gl.slice(0, 6).map(([id, r]) => `<div class="fgoal">${iname(id, wName(id))} <b>${rate(r)}</b></div>`).join('') : '<div class="dim">在打卷軸／打裝備的圖設定 🎯 目標後，這裡會顯示每小時的預估收穫</div>'}<div class="recent" data-recent="bag"></div></div><span class="port in"></span><span class="port out2"></span>`);
   html += node('forge', 'fsink soon', FN_W.s, `<div class="fn-hd" data-fdrag><b>🔨 強化工坊</b></div><div class="fn-bd sm dim">規劃中：依衝裝規則批次衝卷</div><span class="port in"></span><span class="port out2"></span>`);
   html += node('out', 'fsink soon', FN_W.s, `<div class="fn-hd" data-fdrag><b>🔀 分流</b></div><div class="fn-bd sm dim">規劃中：及格→鎖定／穿上<br>不及格→商店／市場</div><span class="port in"></span>`);
-  const W = 3000, H = Math.max(1600, 200 + Math.max(...Object.values(pos).map(p => p[1])) + 400);
+  const W = 6000, H = Math.max(4000, 600 + Math.max(...Object.values(pos).map(p => p[1])));
   if (!ui.fac.pan) ui.fac.pan = { x: 10, y: 10 };
   ui.fac.est = est; ui.fac.where = where; ui.fac.chars = chars;
   // 內容沒變就不重畫（避免連線動畫每 10 秒重來一次）
   const sig = W + 'x' + H + html;
-  if (ui.fac.sig === sig && $('#facWorld')) { requestAnimationFrame(() => drawWires()); return; }
+  if (ui.fac.sig === sig && $('#facWorld')) { requestAnimationFrame(() => { drawWires(); renderRecent(); }); return; }
   ui.fac.sig = sig;
   box.innerHTML = `<div class="fac-world" id="facWorld" style="width:${W}px;height:${H}px;transform:translate(${ui.fac.pan.x}px,${ui.fac.pan.y}px) scale(${ui.fac.zoom})"><svg class="fac-wires" id="facWires" width="${W}" height="${H}"></svg>${html}</div>
-    <div class="fac-hud"><button class="btn sm" data-fzoom="1.15">＋</button><button class="btn sm" data-fzoom="0.87">－</button><button class="btn sm" data-fzoom="reset">重設視角</button><button class="btn sm" data-fzoom="layout" title="把所有節點排回預設位置">重新排列</button>
+    <div class="fac-hud"><button class="btn sm" data-fzoom="1.15">＋</button><button class="btn sm" data-fzoom="0.87">－</button><button class="btn sm" data-fzoom="fit" title="縮放到看得到所有節點">全部顯示</button><button class="btn sm" data-fzoom="reset">100%</button><button class="btn sm" data-fzoom="layout" title="把所有節點排回預設位置和大小">重新排列</button>
+      <button class="btn sm" data-fzoom="max" title="畫布佔滿整個視窗">${document.getElementById('board').classList.contains('fac-max') ? '還原' : '⛶ 放大畫布'}</button><button class="btn sm primary" data-fzoom="apply">▶ 套用派工</button>
+      <label class="sm" title="打到東西時，圖示沿著線飛到背包或商店"><input type="checkbox" id="facFx" ${ui.fac.fx !== 'off' ? 'checked' : ''}> 掉落動畫</label><label class="sm"><input type="checkbox" id="facFxGoal" ${ui.fac.fx === 'goal' ? 'checked' : ''}> 只顯示目標</label>
       <span class="dim sm">拖曳角色右邊的 ● 連到地圖＝派工・拖標題移動節點・拖空白處平移・滾輪縮放</span></div>`;
-  requestAnimationFrame(() => drawWires());
+  requestAnimationFrame(() => { drawWires(); renderRecent(); });
 }
 // 依節點實際位置畫線
 function drawWires(tmp) {
@@ -2578,7 +2598,7 @@ function drawWires(tmp) {
   const pt = (k, side) => { const n = el(k); if (!n) return null; const x = n.offsetLeft, y = n.offsetTop; return side === 'r' ? [x + n.offsetWidth, y + 22] : [x, y + 22]; };
   const curve = (a, b) => { const dx = Math.max(60, (b[0] - a[0]) / 2); return `M${a[0]},${a[1]} C${a[0] + dx},${a[1]} ${b[0] - dx},${b[1]} ${b[0]},${b[1]}`; };
   let s = '';
-  const wire = (a, b, cls, color, label, dur) => { if (!a || !b) return; const d = curve(a, b); s += `<path d="${d}" class="w-base" stroke="${color}"/><path d="${d}" class="w ${cls}" stroke="${color}" style="--dur:${dur || 1.2}s"/>`; if (label) { const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2; s += `<text x="${mx}" y="${my - 6}" class="w-lbl" text-anchor="middle">${esc(label)}</text>`; } };
+  const wire = (a, b, cls, color, label, dur, key) => { if (!a || !b) return; const d = curve(a, b); s += `<path d="${d}" class="w-base" stroke="${color}"${key ? ` data-w="${esc(key)}"` : ''}/><path d="${d}" class="w ${cls}" stroke="${color}" style="--dur:${dur || 1.2}s"/>`; if (label) { const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2; s += `<text x="${mx}" y="${my - 6}" class="w-lbl" text-anchor="middle">${esc(label)}</text>`; } };
   for (const c of chars) {
     const to = ui.fac.where(c); if (!to) continue;
     const pend = cfg.assign[c.id] && cfg.assign[c.id] !== c.map, lane = (est[to] || {}).lane || 'train';
@@ -2589,8 +2609,10 @@ function drawWires(tmp) {
     const from = pt('m:' + id, 'r');
     if (x.lane === 'train' && x.e) wire(from, pt('exp', 'l'), 'flow', LANE_COLOR.train, '+' + short(x.e.total) + '/時', 0.9);
     const sell = cfg.sell[id];
-    if (sell && sell.enabled) wire(from, pt('shop', 'l'), 'flow', '#e0b341', '賣 ' + sell.itemIds.length + ' 項', 1.6);
-    if (x.lane !== 'train') { const g = x.goals.filter(q => q.r > 0); wire(from, pt('bag', 'l'), g.length ? 'flow' : 'idle', LANE_COLOR[x.lane], g.length ? g.length + ' 種目標' : '', g.length ? 1.1 : 0); }
+    if (sell && sell.enabled) wire(from, pt('shop', 'l'), 'flow', '#e0b341', '賣 ' + sell.itemIds.length + ' 項', 1.6, 'm:' + id + '>shop');
+    else wire(from, pt('shop', 'l'), 'none', '#e0b341', '', 0, 'm:' + id + '>shop');
+    if (x.lane !== 'train') { const g = x.goals.filter(q => q.r > 0); wire(from, pt('bag', 'l'), g.length ? 'flow' : 'idle', LANE_COLOR[x.lane], g.length ? g.length + ' 種目標' : '', g.length ? 1.1 : 0, 'm:' + id + '>bag'); }
+    else wire(from, pt('bag', 'l'), 'none', LANE_COLOR[x.lane], '', 0, 'm:' + id + '>bag');
   }
   wire(pt('bag', 'r'), pt('forge', 'l'), 'soon', 'var(--dim)', '');
   wire(pt('forge', 'r'), pt('out', 'l'), 'soon', 'var(--dim)', '');
@@ -2603,6 +2625,8 @@ function facApplyTransform() { const w = $('#facWorld'); if (w) w.style.transfor
 document.addEventListener('pointerdown', e => {
   const box = e.target.closest && e.target.closest('#bdFactory'); if (!box || e.button !== 0) return;
   if (e.target.closest('button, select, a, input')) return;
+  const rs = e.target.closest('.rs');
+  if (rs) { const n = rs.closest('.fnode'); const [wx, wy] = facWorldPt(e); ui.fac.drag = { type: 'resize', key: n.dataset.fn, el: n, sx: wx, sy: wy, w: n.offsetWidth, h: n.offsetHeight }; e.preventDefault(); box.setPointerCapture(e.pointerId); return; }
   const port = e.target.closest('[data-fport]');
   if (port) { // 拉線派工
     const n = port.closest('.fnode'); ui.fac.drag = { type: 'wire', char: port.dataset.fport, a: [n.offsetLeft + n.offsetWidth, n.offsetTop + 22] };
@@ -2617,6 +2641,7 @@ document.addEventListener('pointermove', e => {
   const d = ui.fac.drag; if (!d) return;
   if (d.type === 'pan') { ui.fac.pan = { x: d.px + e.clientX - d.sx, y: d.py + e.clientY - d.sy }; facApplyTransform(); return; }
   const [wx, wy] = facWorldPt(e);
+  if (d.type === 'resize') { d.el.style.width = Math.max(150, d.w + wx - d.sx) + 'px'; d.el.style.height = Math.max(70, d.h + wy - d.sy) + 'px'; d.moved = true; drawWires(); return; }
   if (d.type === 'node') { d.moved = true; d.el.style.left = Math.max(0, wx - d.dx) + 'px'; d.el.style.top = Math.max(0, wy - d.dy) + 'px'; drawWires(); return; }
   if (d.type === 'wire') {
     d.b = [wx, wy]; drawWires(d);
@@ -2628,7 +2653,7 @@ document.addEventListener('pointerup', e => {
   const d = ui.fac.drag; if (!d) return;
   ui.fac.drag = null; $('#bdFactory') && $('#bdFactory').classList.remove('panning');
   if (d.type === 'pan') { facSaveView(); return; }
-  if (d.type === 'node') { if (d.moved) { const cfg = boardCfg(); cfg.pos = { ...(cfg.pos || {}), [d.key]: [d.el.offsetLeft, d.el.offsetTop] }; saveBoard(cfg); ui.fac.sig = null; } return; }
+  if (d.type === 'node' || d.type === 'resize') { if (d.moved) { const cfg = boardCfg(), old = (cfg.pos || {})[d.key] || []; cfg.pos = { ...(cfg.pos || {}), [d.key]: d.type === 'resize' ? [d.el.offsetLeft, d.el.offsetTop, d.el.offsetWidth, d.el.offsetHeight] : [d.el.offsetLeft, d.el.offsetTop, old[2], old[3]] }; saveBoard(cfg); ui.fac.sig = null; } return; }
   if (d.type === 'wire') {
     document.querySelectorAll('.fmap.hot').forEach(x => x.classList.remove('hot'));
     const over = document.elementFromPoint(e.clientX, e.clientY); const m = over && over.closest && over.closest('.fmap');
@@ -2651,6 +2676,9 @@ document.addEventListener('click', e => {
   if (t.dataset.funassign) { const cfg = boardCfg(); delete cfg.assign[t.dataset.funassign]; saveBoard(cfg); renderBoard(); return; }
   const z = t.dataset.fzoom;
   if (z === 'reset') { ui.fac.zoom = 1; ui.fac.pan = { x: 10, y: 10 }; facApplyTransform(); facSaveView(); return; }
+  if (z === 'fit') { facFit(); return; }
+  if (z === 'apply') { $('#bdApply').click(); return; }
+  if (z === 'max') { const b = $('#board'); b.classList.toggle('fac-max'); try { localStorage.setItem('facMax', b.classList.contains('fac-max') ? '1' : '0'); } catch (_) {} t.textContent = b.classList.contains('fac-max') ? '還原' : '⛶ 放大畫布'; requestAnimationFrame(facFit); return; }
   if (z === 'layout') { const cfg = boardCfg(); cfg.pos = {}; saveBoard(cfg); renderBoard(); return; }
   ui.fac.zoom = Math.min(1.6, Math.max(0.35, ui.fac.zoom * Number(z))); facApplyTransform(); facSaveView();
 });
@@ -2658,6 +2686,77 @@ document.addEventListener('change', e => {
   const t = e.target; if (!t.dataset || !t.dataset.flane) return;
   const cfg = boardCfg(), id = t.dataset.flane; for (const l of Object.keys(cfg.lanes)) cfg.lanes[l] = cfg.lanes[l].filter(x => x !== id); cfg.lanes[t.value].push(id); saveBoard(cfg); renderBoard();
 });
+function facFit() {
+  const ns = [...document.querySelectorAll('#facWorld .fnode')], box = $('#bdFactory'); if (!ns.length || !box) return;
+  const x0 = Math.min(...ns.map(n => n.offsetLeft)), y0 = Math.min(...ns.map(n => n.offsetTop)), x1 = Math.max(...ns.map(n => n.offsetLeft + n.offsetWidth)), y1 = Math.max(...ns.map(n => n.offsetTop + n.offsetHeight));
+  const z = Math.min(1.3, Math.max(0.35, Math.min((box.clientWidth - 60) / (x1 - x0), (box.clientHeight - 90) / (y1 - y0))));
+  ui.fac.zoom = z; ui.fac.pan = { x: (box.clientWidth - (x1 - x0) * z) / 2 - x0 * z, y: 20 - y0 * z }; facApplyTransform(); facSaveView();
+}
+// ---- 掉落動畫：撿到／自動賣掉的東西，圖示沿著線飛到背包或商店 ----
+ui.fac.fx = (() => { try { return localStorage.getItem('facFx') || 'all'; } catch (_) { return 'all'; } })();
+ui.fac.lootSeq = 0; ui.fac.flying = 0; ui.fac.recent = { bag: [], shop: [] };
+let nameIdx = null;
+function idOfName(n) {
+  if (EXT_BYNAME[n]) return EXT_BYNAME[n];
+  if (!nameIdx && WORLD) { nameIdx = {}; for (const [id, v] of Object.entries(WORLD.names || {})) if (!(v[0] in nameIdx)) nameIdx[v[0]] = id; }
+  return nameIdx ? nameIdx[n] : null;
+}
+async function pollLoot() {
+  const on = document.querySelector('nav button.on') && document.querySelector('nav button.on').dataset.tab === 'board' && ui.board.view === 'factory' && !document.hidden;
+  try {
+    const r = await (await fetch('/api/loot?since=' + (ui.fac.lootSeq || 0))).json();
+    if (!ui.fac.lootSeq) { ui.fac.lootSeq = r.seq || 0; return; } // 第一次只取目前位置，不重播舊的
+    ui.fac.lootSeq = r.seq || ui.fac.lootSeq;
+    if (!on || ui.fac.fx === 'off') return;
+    const cfg = boardCfg();
+    r.events.forEach((ev, i) => setTimeout(() => flyLoot(ev, cfg), i * 220));
+  } catch (_) {}
+}
+setInterval(pollLoot, 2500);
+function flyLoot(ev, cfg) {
+  const id = idOfName(ev.name), goal = !!id && (cfg.goals[ev.map] || []).map(String).includes(String(id));
+  if (ui.fac.fx === 'goal' && !goal) return;
+  if (ev.name === '楓幣' || ui.fac.flying > 30) return;
+  const sink = ev.sold ? 'shop' : 'bag';
+  const path = document.querySelector(`#facWires path[data-w="${CSS.escape('m:' + ev.map + '>' + sink)}"]`);
+  const world = $('#facWorld'); if (!path || !world) return;
+  const len = path.getTotalLength(); if (!len) return;
+  const el = document.createElement('div');
+  el.className = 'loot' + (goal ? ' goal' : '') + (ev.sold ? ' sold' : '');
+  const u = id ? itemImg(id) : '';
+  el.innerHTML = (u ? `<img src="${esc(u)}" alt="">` : `<span>${esc(ev.name.slice(0, 2))}</span>`) + (ev.qty > 1 ? `<b>${ev.qty}</b>` : '') + (goal ? '<i>🎯</i>' : '');
+  el.title = ev.name + ' × ' + ev.qty + (ev.sold ? `（自動賣出 ${fmt(ev.money)} 楓幣）` : '');
+  world.appendChild(el); ui.fac.flying++;
+  const dur = goal ? 2200 : 1600, t0 = performance.now();
+  const step = now => {
+    const k = Math.min(1, (now - t0) / dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    const p = path.getPointAtLength(e * len);
+    el.style.transform = `translate(${p.x - 14}px, ${p.y - 14}px) scale(${goal ? 1.25 : 1})`;
+    if (k < 1) requestAnimationFrame(step);
+    else {
+      el.remove(); ui.fac.flying--;
+      const n = document.querySelector(`.fnode[data-fn="${sink}"]`); if (n) { n.classList.remove('pulse'); void n.offsetWidth; n.classList.add('pulse'); }
+      const list = ui.fac.recent[sink]; list.unshift({ id, name: ev.name, qty: ev.qty, goal, money: ev.money, at: Date.now() }); list.length = Math.min(list.length, 24);
+      renderRecent();
+    }
+  };
+  requestAnimationFrame(step);
+}
+function renderRecent() {
+  for (const sink of ['bag', 'shop']) {
+    const box = document.querySelector(`[data-recent="${sink}"]`); if (!box) continue;
+    const list = ui.fac.recent[sink].filter(x => Date.now() - x.at < 10 * 60 * 1000);
+    const money = sink === 'shop' ? list.reduce((a, x) => a + (x.money || 0), 0) : 0;
+    box.innerHTML = list.length ? `<div class="dim" style="margin-top:4px">最近收到${money ? `（賣得 ${short(money)}）` : ''}</div><div class="rc">${list.slice(0, 12).map(x => { const u = x.id ? itemImg(x.id) : ''; return `<span class="${x.goal ? 'goal' : ''}" title="${esc(x.name + ' × ' + x.qty)}">${u ? `<img src="${esc(u)}" alt="">` : esc(x.name.slice(0, 2))}${x.qty > 1 ? `<b>${x.qty}</b>` : ''}</span>`; }).join('')}</div>` : '';
+  }
+}
+document.addEventListener('change', e => {
+  if (e.target.id === 'facFx' || e.target.id === 'facFxGoal') {
+    ui.fac.fx = !$('#facFx').checked ? 'off' : $('#facFxGoal').checked ? 'goal' : 'all';
+    try { localStorage.setItem('facFx', ui.fac.fx); } catch (_) {}
+  }
+});
+try { if (localStorage.getItem('facMax') === '1' && document.getElementById('board')) document.getElementById('board').classList.add('fac-max'); } catch (_) {}
 // 匯入：把角色目前所在的地圖放上看板，並用你在遊戲裡手動設好的自動販售當範本
 function boardImport() {
   const cfg = boardCfg(), onBoard = new Set(Object.values(cfg.lanes).flat());
