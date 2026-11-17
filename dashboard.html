@@ -262,8 +262,12 @@
       <div id="mpChars"></div>
     </div>
     <div class="card">
-      <h3>批次換圖</h3>
+      <h3>批次換圖／組隊</h3>
       <div class="bar"><span>把勾選的角色送到</span><select id="mpTarget" style="min-width:260px"></select><button class="btn primary" id="mpGo">換圖</button><span class="dim" id="mpMsg"></span></div>
+      <div class="bar"><span>把勾選的角色（2～6 隻）組成一隊，隊長</span><select id="ptLeader"></select>
+        <label><input type="checkbox" id="ptLeave" checked> 先離開原本的隊伍</label><button class="btn primary" id="ptGo">組隊</button><span class="dim" id="ptMsg"></span></div>
+      <details><summary class="dim">目前的隊伍</summary><div id="ptNow"></div></details>
+      <details id="ptJobsBox" open><summary class="dim">最近的換圖／組隊進度</summary><div id="ptJobs"></div></details>
       <div class="dim">遊戲標示「換圖只移動目前角色」：不是目前角色的，中控會嘗試直接指定；若被遊戲拒絕，紀錄會顯示失敗，請先「⇄ 切換」再換。等級低於地圖最低等級的會略過。</div>
     </div>
     <div class="card">
@@ -1621,7 +1625,16 @@ function renderMaps() {
     $('#mpTarget').innerHTML = Object.entries(byR).map(([r, ms]) => `<optgroup label="${esc(r)}">${ms.sort((a, b) => a.minLevel - b.minLevel || a.lvMin - b.lvMin).map(m => `<option value="${esc(m.id)}">${esc(m.name)}（Lv${m.minLevel}＋，怪 ${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}）</option>`).join('')}</optgroup>`).join('');
     $('#wRegion').innerHTML = '<option value="">全部區域</option>' + Object.keys(byR).map(r => `<option>${esc(r)}</option>`).join('');
   }
-  renderWorldMaps(); renderWorldItem();
+  // 組隊：隊長選單＋目前隊伍
+  const sel = cs.filter(c => ui.mpSel.has(c.id));
+  const curLeader = $('#ptLeader').value;
+  $('#ptLeader').innerHTML = sel.length ? sel.slice().sort((a, b) => b.lv - a.lv).map(c => `<option value="${c.id}" ${curLeader === c.id ? 'selected' : ''}>${esc(c.name)} Lv${c.lv}</option>`).join('') : '<option value="">（先勾選角色）</option>';
+  const seen = new Set(), parties = [];
+  for (const s of snaps()) { const p = s.party && s.party.party; if (p && p.members && !seen.has(p.code)) { seen.add(p.code); parties.push(p); } }
+  $('#ptNow').innerHTML = parties.length ? parties.map(p => `<div>${p.members.map(m => `${m.leader ? '👑' : ''}${esc(m.name)} <span class="dim">Lv${m.lv}・${esc((mapOf(m.map) || {}).name || m.map || '')}${m.auto ? '' : '・未掛機'}</span>`).join('、')}</div>`).join('') : '<span class="dim">目前回報的角色都沒有隊伍（只看得到各帳號目前角色的隊伍）</span>';
+  const ij = (DATA.jobs || []).filter(j => j.kind === 'idle' && (j.batches[0].targets || []).some(x => x.action === 'map' || String(x.action).startsWith('party'))).slice(-8).reverse();
+  $('#ptJobs').innerHTML = ij.length ? ij.map(j => { const st = JOB_STATUS[j.status] || [j.status, '']; return `<div style="margin:4px 0"><span class="dim">${clock(j.createdAt)}</span> <span class="${st[1]}">${st[0]}</span> ${esc(j.fromName)}：${(j.log || []).slice(-4).map(l => esc(l.msg)).join(' → ')}</div>`; }).join('') : '<span class="dim">還沒有</span>';
+  renderWorldItem(); renderWorldMaps();
 }
 function renderWorldMaps() {
   const reg = $('#wRegion').value, lv = Number($('#wLv').value) || 0, q = $('#wSearch').value.trim(), boss = $('#wBoss').checked;
@@ -1732,13 +1745,13 @@ function runPlanner() {
     return `<div class="card" style="margin:8px 0"><div class="bar"><b>第 ${i + 1} 組</b>　建議地圖 <b>${esc(b.map.name)}</b> <span class="dim">${esc(b.map.region || '')}・怪 Lv${b.map.lvMin}~${b.map.lvMax}</span>
       <span>組隊加成 ×${b.partyMult.toFixed(1)}${b.holyMult > 1 ? `・神聖祈禱 ×${b.holyMult.toFixed(2)}` : ''}</span>
       <span>估計合計 <b>${short(b.total)}</b>/小時${r.cur ? `（目前合計 ${short(r.cur)}，${gain >= 0 ? '+' : ''}${(gain * 100).toFixed(0)}%）` : ''}</span>
-      <button class="btn primary" data-ppgo="${i}">這組全部換到這張圖</button></div>
+      <button class="btn primary" data-ppgo="${i}">這組全部換到這張圖</button>${r.g.length >= 2 ? `<button class="btn primary" data-ppparty="${i}">組隊並換到這張圖</button>` : ''}</div>
       ${b.buffs.length ? `<div class="dim">隊伍增益：${esc(b.buffs.join('、'))}</div>` : '<div class="dim">隊伍增益：無（加一位祭司可大幅提升經驗）</div>'}
       <table><thead><tr><th class="nosort">角色</th><th class="nosort">職業</th><th class="nosort num">Lv</th><th class="nosort">目前地圖</th><th class="nosort num">目前每小時</th><th class="nosort num">估計每小時</th><th class="nosort">備註</th></tr></thead><tbody>
       ${b.per.map(x => `<tr><td>${esc(x.c.name)}</td><td class="dim">${esc(x.c.jobName || x.c.job)}</td><td class="num">${x.c.lv}</td><td class="dim">${esc(x.c.curMap ? x.c.curMap.name : '—')}</td><td class="num">${x.c.cur ? short(x.c.cur) : '—'}</td><td class="num">${short(x.exp)}</td>
         <td class="dim">${[!x.eligible && '<span class="bad">等級太低，分不到經驗</span>', x.hf < 1 && x.eligible && `命中約 ${(x.hf * 100).toFixed(0)}%`, x.c.guess && '能力用推估'].filter(Boolean).join('、')}</td></tr>`).join('')}</tbody></table>
       ${r.alt.length ? `<div class="dim">其他選擇：${r.alt.map(a => `${esc(a.map.name)}（${short(a.total)}/小時）`).join('、')}</div>` : ''}</div>`;
-  }).join('') + '<div class="dim">組隊功能（從中控建隊、邀請、同圖）下一版提供；目前請先換圖，再於遊戲內組隊。</div>';
+  }).join('');
 }
 document.addEventListener('click', async e => {
   const t = e.target;
@@ -1754,17 +1767,28 @@ document.addEventListener('click', async e => {
     if (!ok.length) { $('#mpMsg').textContent = '勾選的角色等級都不夠'; return; }
     if (!confirm(`把 ${ok.length} 隻角色送到「${map.name}」？${low.length ? `\n略過等級不足：${low.map(c => c.name).join('、')}` : ''}`)) return;
     const r = await api('/api/idle', { targets: ok.map(c => ({ charId: c.id, action: 'map', map: map.id, mapName: map.name })) });
-    $('#mpMsg').textContent = `已送出 ${ok.length} 隻（${r.jobs.length} 個帳號），結果請看總覽的「自動處理紀錄」或工作紀錄`;
+    $('#mpMsg').textContent = `已送出 ${ok.length} 隻（${r.jobs.length} 個帳號），進度看下方「最近的換圖／組隊進度」`;
     await poll(true);
   };
   try {
     if (t.id === 'mpGo') { const map = mapOf($('#mpTarget').value); const list = mapCandidates().filter(c => ui.mpSel.has(c.id)); if (!list.length) { $('#mpMsg').textContent = '先勾選角色'; return; } await sendMoves(list, map); }
     if (t.dataset && t.dataset.ppgo !== undefined) { const r = ui.ppRes[Number(t.dataset.ppgo)]; await sendMoves(r.g, r.best.map); }
+    const makeParty = async (list, leaderId, map) => {
+      if (list.length < 2 || list.length > 6) { $('#ptMsg').textContent = '一隊要 2～6 隻'; return; }
+      const leader = list.find(c => c.id === leaderId) || list.slice().sort((a, b) => b.lv - a.lv)[0];
+      const leave = $('#ptLeave').checked;
+      if (!confirm(`組隊：隊長 ${leader.name}，隊員 ${list.filter(c => c !== leader).map(c => c.name).join('、')}${map ? `\n完成後全部前往「${map.name}」` : ''}${leave ? '\n會先讓這些角色離開原本的隊伍' : ''}\n\n各帳號的遊戲分頁要開著，約 1 分鐘完成。`)) return;
+      const r = await api('/api/party', { members: list.map(c => c.id), leaderId: leader.id, leaveOld: leave, ...(map ? { map: map.id, mapName: map.name } : {}) });
+      $('#ptMsg').textContent = `已送出（${r.jobs.length} 個帳號），進度看下方「最近的換圖／組隊進度」`;
+      await poll(true);
+    };
+    if (t.id === 'ptGo') { const list = mapCandidates().filter(c => ui.mpSel.has(c.id)); await makeParty(list, $('#ptLeader').value, null); }
+    if (t.dataset && t.dataset.ppparty !== undefined) { const r = ui.ppRes[Number(t.dataset.ppparty)]; await makeParty(r.g, null, r.best.map); }
   } catch (err) { alert('失敗：' + err.message); }
 });
 document.addEventListener('change', e => {
   const t = e.target;
-  if (t.dataset && t.dataset.mpsel) { if (t.checked) ui.mpSel.add(t.dataset.mpsel); else ui.mpSel.delete(t.dataset.mpsel); $('#mpSelInfo').textContent = `已選 ${ui.mpSel.size} 隻`; return; }
+  if (t.dataset && t.dataset.mpsel) { if (t.checked) ui.mpSel.add(t.dataset.mpsel); else ui.mpSel.delete(t.dataset.mpsel); renderMaps(); return; }
   if (['wRegion', 'wBoss'].includes(t.id)) renderWorldMaps();
 });
 document.addEventListener('input', e => {

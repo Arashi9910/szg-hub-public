@@ -163,6 +163,56 @@ function routeForAccount(accountId) {
     .sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0));
   return list.find(s => s.activeCharId === s.char.id) || list[0];
 }
+// 組隊：隊長的帳號負責（離開舊隊伍→）建立隊伍→讓同帳號的角色加入→邀請其他帳號；其他帳號（離開舊隊伍→）等邀請並接受；最後可一起換圖
+function createPartyJobs(body) {
+  const ids = [...new Set((body.members || []).filter(Boolean))];
+  if (ids.length < 2) throw new Error('至少要選 2 隻角色');
+  if (ids.length > 6) throw new Error('每隊最多 6 人');
+  const leaderId = body.leaderId && ids.includes(body.leaderId) ? body.leaderId : ids[0];
+  const leaderAcc = accountOfChar(leaderId);
+  if (!leaderAcc) throw new Error('找不到隊長的帳號');
+  const byAcc = {};
+  for (const id of ids) { const acc = accountOfChar(id); if (!acc) throw new Error(`找不到 ${charName(id)} 的帳號`); (byAcc[acc] || (byAcc[acc] = [])).push(id); }
+  if (Object.values(byAcc).some(l => l.length > 2)) throw new Error('同一個帳號最多 2 隻角色');
+  const codeOf = acc => { const r = routeForAccount(acc); return r && r.playerCode; };
+  const leaderName = charName(leaderId);
+  const map = body.map ? { map: String(body.map), mapName: String(body.mapName || body.map).slice(0, 40) } : null;
+  const plans = {};
+  for (const [acc, list] of Object.entries(byAcc)) {
+    const steps = [];
+    const leave = id => body.leaveOld !== false && steps.push({ charId: id, name: charName(id), action: 'partyLeave' });
+    if (acc === leaderAcc) {
+      leave(leaderId);
+      steps.push({ charId: leaderId, name: leaderName, action: 'partyCreate', stopOnFail: true });
+      for (const id of list.filter(x => x !== leaderId)) { leave(id); steps.push({ charId: id, name: charName(id), action: 'partyJoin', leaderId }); }
+      const others = Object.keys(byAcc).filter(a => a !== leaderAcc);
+      const codes = others.map(codeOf).filter(Boolean);
+      const namesByCode = {}; for (const a of others) { const c = codeOf(a); if (c) namesByCode[c] = byAcc[a].map(charName); }
+      if (codes.length) steps.push({ charId: leaderId, name: leaderName, action: 'partyInvite', codes, namesByCode });
+    } else {
+      // 其他帳號：第一隻接受邀請；同帳號的第二隻用「加入我的角色隊伍」跟進
+      list.forEach((id, i) => { leave(id); steps.push(i === 0 ? { charId: id, name: charName(id), action: 'partyAccept', leaderName, stopOnFail: true } : { charId: id, name: charName(id), action: 'partyJoin', leaderId: list[0] }); });
+    }
+    if (map) for (const id of list) steps.push({ charId: id, name: charName(id), action: 'map', ...map });
+    plans[acc] = steps;
+  }
+  const missing = Object.keys(plans).filter(acc => !routeForAccount(acc));
+  if (missing.length) throw new Error('有帳號的遊戲分頁沒開：' + missing.map(a => (byAcc[a] || []).map(charName).join('、')).join('；'));
+  const jobs = [];
+  for (const [acc, steps] of Object.entries(plans)) {
+    const route = routeForAccount(acc);
+    const job = {
+      id: crypto.randomBytes(6).toString('hex'), kind: 'idle', status: 'approved', createdAt: Date.now(), approvedAt: Date.now(),
+      fromCharId: route.char.id, fromName: route.char.name, fromCode: route.playerCode, toCharId: route.char.id, toName: route.char.name, toCode: route.playerCode,
+      batches: [{ targets: steps, items: [], gear: [], money: 0 }], batchIndex: 0, log: [], lastMsg: '',
+    };
+    jobLog(job, `組隊（隊長 ${leaderName}）：` + steps.map(t => `${t.name} ${({ partyLeave: '離隊', partyCreate: '建隊', partyJoin: '加入', partyInvite: '邀請', partyAccept: '接受邀請', map: '前往 ' + (t.mapName || '') })[t.action]}`).join('、'));
+    db.jobs.push(job); jobs.push(job);
+  }
+  save();
+  return jobs;
+}
+
 function createIdleJobs(body) {
   const targets = (body.targets || []).filter(t => t && t.charId && IDLE_ACTIONS.has(t.action));
   if (!targets.length) throw new Error('沒有選擇角色');
@@ -376,6 +426,17 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/jobs/approve-all') {
       for (const j of db.jobs) if (j.status === 'pending') { j.status = 'approved'; j.approvedAt = Date.now(); jobLog(j, '已確認，排隊等待執行'); }
       save();
+      return send(res, 200, { ok: true });
+    }
+
+    // ---- 組隊 ----
+    if (req.method === 'POST' && url.pathname === '/api/party') {
+      const jobs = createPartyJobs(JSON.parse(await readBody(req)));
+      return send(res, 200, { ok: true, jobs });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/party/code') {
+      const { charId, code } = JSON.parse(await readBody(req));
+      if (charId && code) { db.partyCodes = db.partyCodes || {}; db.partyCodes[charId] = { code: String(code), at: Date.now() }; save(); }
       return send(res, 200, { ok: true });
     }
 

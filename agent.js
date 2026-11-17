@@ -462,8 +462,71 @@ function agentMain(ctx) {
       return true;
     }
 
+    // ---------- 組隊 ----------
+    // 用 characterId 指定角色（同帳號第二隻也可以），每一步都先查這隻角色目前的隊伍狀態
+    async function partyState(charId) {
+      const j = await game({ type: 'sync', characterId: charId });
+      return { party: (j && j.party) || null, invites: (j && j.partyInvites) || [] };
+    }
+    const sleepP = ms => new Promise(r => setTimeout(r, ms));
+    async function partyStep(t) {
+      const cid = t.charId;
+      if (t.action === 'partyLeave') {
+        const st = await partyState(cid);
+        if (!st.party) return `${t.name} 沒有隊伍`;
+        await game({ type: 'partyLeave', characterId: cid });
+        return `${t.name} 離開原本的隊伍`;
+      }
+      if (t.action === 'partyCreate') {
+        let st = await partyState(cid);
+        if (!st.party) { await game({ type: 'partyCreate', characterId: cid }); await sleepP(800); st = await partyState(cid); }
+        if (!st.party) throw new Error('建立隊伍失敗');
+        partyCodeOf[cid] = st.party.code;
+        hub('POST', '/api/party/code', { charId: cid, code: st.party.code }).catch(() => {});
+        return `${t.name} 的隊伍已就緒`;
+      }
+      if (t.action === 'partyJoin') {
+        const code = partyCodeOf[t.leaderId] || t.code;
+        if (!code) throw new Error('還不知道隊長的隊伍代碼');
+        const st = await partyState(cid);
+        if (st.party && st.party.code === code) return `${t.name} 已在隊伍中`;
+        await game({ type: 'partyJoin', code, characterId: cid });
+        return `${t.name} 加入隊伍`;
+      }
+      if (t.action === 'partyInvite') {
+        // 等其他帳號先離開舊隊伍再邀請；30 秒後還沒進隊的再邀一次
+        await sleepP(5000);
+        const invite = async codes => { for (const code of codes) { try { await game({ type: 'partyInvite', code, characterId: cid }); } catch (e) { console.warn('[szg-hub party]', e.message); } await sleepP(600); } };
+        await invite(t.codes || []);
+        await sleepP(30000);
+        const st = await partyState(cid);
+        const inParty = new Set(((st.party && st.party.members) || []).map(m => m.name));
+        const again = (t.codes || []).filter(code => !((t.namesByCode || {})[code] || []).every(n => inParty.has(n)));
+        if (again.length) await invite(again);
+        return `${t.name} 已邀請 ${(t.codes || []).length} 個帳號${again.length ? `（${again.length} 個重新邀請）` : ''}`;
+      }
+      if (t.action === 'partyAccept') {
+        // 等隊長的邀請出現（最多約 2 分鐘），找不到符合的就不亂接
+        for (let i = 0; i < 24; i++) {
+          const st = await partyState(cid);
+          if (st.party && st.party.members && st.party.members.some(m => m.name === t.leaderName)) { partyCodeOf[cid] = st.party.code; return `${t.name} 已在 ${t.leaderName} 的隊伍`; }
+          const inv = (st.invites || []).find(v => JSON.stringify(v).includes(t.leaderName)) || ((st.invites || []).length === 1 ? st.invites[0] : null);
+          if (inv) {
+            await game({ type: 'partyInviteAccept', inviteId: inv.id, characterId: cid });
+            await sleepP(800);
+            const after = await partyState(cid); if (after.party) partyCodeOf[cid] = after.party.code;
+            return `${t.name} 接受 ${t.leaderName} 的邀請`;
+          }
+          await sleepP(5000);
+        }
+        throw new Error(`2 分鐘內沒收到 ${t.leaderName} 的邀請`);
+      }
+      throw new Error('未知的組隊步驟');
+    }
+    const partyCodeOf = {};
+
     // ---------- 掛機控制 ----------
-    const IDLE_LABEL = { start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換角色', wake: '領取離線收益', map: '換地圖' };
+    const IDLE_LABEL = { start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換角色', wake: '領取離線收益', map: '換地圖', partyLeave: '離開隊伍', partyCreate: '建立隊伍', partyJoin: '加入隊伍', partyInvite: '邀請隊友', partyAccept: '接受邀請' };
     async function idleAction(charId, action) {
       if (action === 'restart') {
         await game({ type: 'stop', characterId: charId });
@@ -479,6 +542,10 @@ function agentMain(ctx) {
       // 掛機指令先做，切換角色放最後（切換後頁面要重新整理）
       const targets = ((job.batches[0] && job.batches[0].targets) || []).slice().sort((a, b) => (a.action === 'switch') - (b.action === 'switch'));
       for (const t of targets) {
+        if (t.action && t.action.startsWith('party')) {
+          try { done.push(await partyStep(t)); } catch (e) { failed.push(`${t.name} ${IDLE_LABEL[t.action] || t.action}（${e.message}）`); if (t.stopOnFail) break; }
+          continue;
+        }
         if (t.action === 'map') {
           try {
             setBadge(null, `${t.name}：前往 ${t.mapName || t.map}…`);
