@@ -26,6 +26,8 @@
   .holder:hover { border-color: var(--accent); }
   .holder.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
   .holder.lk { opacity: .6; }
+  #filterCard > summary { cursor: pointer; } #filterCard > summary b { color: var(--text); font-size: 13px; }
+  .holder.wh { cursor: default; border-style: dashed; color: var(--dim); } .holder.wh:hover { border-color: var(--line); }
   .bag-char { margin-bottom: 12px; }
   .bag-char .hd { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
   .bag-char .hd b { font-size: 14px; }
@@ -42,6 +44,7 @@
   .tile.sup { outline: 1px dashed var(--good); outline-offset: -3px; }
   .action-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 14px; z-index: 30; background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; padding: 9px 14px; box-shadow: 0 8px 30px rgba(0,0,0,.55); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; max-width: calc(100% - 40px); }
   .action-bar .sum b { font-size: 15px; }
+  .give-grp { display: inline-flex; gap: 6px; align-items: center; padding-left: 10px; border-left: 1px solid var(--line); }
   nav button, .jobs-btn, header .btn { white-space: nowrap; }
   header h1 { white-space: nowrap; }
   .jobs-btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; cursor: pointer; font: inherit; display: inline-flex; gap: 6px; align-items: center; }
@@ -156,7 +159,6 @@
   <nav>
     <button data-tab="overview" class="on">總覽</button>
     <button data-tab="gear">裝備</button>
-    <button data-tab="res">資源</button>
     <button data-tab="trade">交易</button>
     <button data-tab="bag">背包</button>
     <button data-tab="maps">地圖</button>
@@ -175,7 +177,8 @@
   <!-- 總覽 -->
   <section id="overview" class="on">
     <div class="card attn" id="ovAttn"></div>
-    <div class="card"><div class="stats-row" id="ovSummary"></div></div>
+    <div class="card"><div class="stats-row" id="ovSummary"></div>
+      <details id="ovMoneyBox" style="margin-top:8px"><summary class="dim" style="cursor:pointer">楓幣分布（每隻角色、帳號倉庫）</summary><div id="mesoOut" style="margin-top:6px"></div></details></div>
     <div class="card">
       <h3>所有角色</h3>
       <div class="dim help-src">★ 設定本尊（收集、分發的目的地）。帳號名稱可以直接點擊修改。「目前」是那個帳號遊戲分頁正在操作的角色，另一隻顯示較淡，按「⇄ 切換」可以換過去。灰色列＝超過 5 分鐘沒更新（那個設定檔的遊戲分頁可能沒開，或進入離線掛機）。勾選左邊的方塊後，畫面底部會出現批次操作列。</div>
@@ -200,34 +203,32 @@
 
   <!-- 裝備 -->
   <section id="gear">
-    <div class="bar">
-      <span>檢視：</span>
-      <label><input type="radio" name="gview" value="matrix" checked> 穿戴對照</label>
-      <label><input type="radio" name="gview" value="list"> 裝備清單（穿戴＋背包＋倉庫）</label>
-      <span style="margin-left:16px">素質：</span>
-      <label><input type="radio" name="gmode" value="stats" checked> 目前（含衝卷）</label>
-      <label><input type="radio" name="gmode" value="cleanStats"> 原始（未衝卷）</label>
+    <div class="card gear-top">
+      <div class="bar" style="margin:0">
+        <div class="seg" id="gViewSeg"><button data-gv="list">裝備清單</button><button data-gv="matrix">穿戴對照</button><button data-gv="auto">撿到自動處理</button></div>
+        <div class="seg" id="gModeSeg" title="素質要看衝卷後的目前數值，還是衝卷前的原始數值"><button data-gm="stats">目前素質（含衝卷）</button><button data-gm="cleanStats">原始（未衝卷）</button></div>
+        <span style="display:none"><input type="radio" name="gview" value="matrix"><input type="radio" name="gview" value="list" checked><input type="radio" name="gmode" value="stats" checked><input type="radio" name="gmode" value="cleanStats"></span>
+      </div>
+      <div class="bar" id="gQuick" style="margin:10px 0 0">
+        <input id="fName" placeholder="搜尋裝備名稱" style="width:170px" autocomplete="off">
+        <span class="dim">常用組合</span><select id="presetSel"><option value="">（未選擇）</option></select>
+        <button class="btn" id="presetSave">存成組合</button><button class="btn" id="presetDel">刪除組合</button><button class="btn" id="filterReset">清除條件</button>
+        <label title="同名的裝備合成一列，後面列出在誰身上"><input type="checkbox" id="gGroup"> 同名合併</label>
+      </div>
     </div>
 
-    <details class="cfg card">
-      <summary>各部位要顯示哪些素質（穿戴對照用）</summary>
+    <details class="cfg card" id="slotCfgBox">
+      <summary>各部位要顯示哪些素質</summary>
       <div class="slotcfg" id="slotCfg"></div>
     </details>
 
-    <div class="card" id="filterCard" style="display:none">
-      <h3>篩選條件</h3>
-      <div class="bar">
-        <span>預設組合：</span>
-        <select id="presetSel"><option value="">（未選擇）</option></select>
-        <button class="btn" id="presetSave">存成組合</button>
-        <button class="btn" id="presetDel">刪除組合</button>
-        <button class="btn" id="filterReset">清除條件</button>
-      </div>
+    <details class="card" id="filterCard">
+      <summary class="fsum"><b>篩選條件</b> <span id="fSummary" class="dim"></span></summary>
+      <div style="margin-top:10px">
       <div class="bar"><span style="width:70px">部位</span><div class="chips" id="fSlots"></div></div>
       <div class="bar"><span style="width:70px">位置</span><div class="chips" id="fLocs"></div></div>
       <div class="bar"><span style="width:70px">職業需求</span><div class="chips" id="fJobs"></div></div>
       <div class="bar"><span style="width:70px">角色</span><select id="fChar"><option value="">全部角色</option></select>
-        <span>名稱含</span><input id="fName" placeholder="例如：手套" style="width:120px">
         <span>需求等級</span><input type="number" id="fLvMin" placeholder="最低"> ~ <input type="number" id="fLvMax" placeholder="最高">
         <span>強化 ≥</span><input type="number" id="fPlus">
         <span>剩餘可衝 ≥</span><input type="number" id="fSlotsLeft">
@@ -237,7 +238,8 @@
         <div><div id="fConds"></div><button class="btn" id="addCond">＋ 新增條件</button></div>
       </div>
       <div class="bar"><span style="width:70px">顯示欄位</span><div class="chips" id="fCols"></div></div>
-    </div>
+      </div>
+    </details>
 
     <div class="card" id="asCard">
       <h3>撿到裝備自動處理</h3>
@@ -258,17 +260,6 @@
   </section>
 
   <!-- 資源 -->
-  <section id="res">
-    <div class="card"><h3>楓幣</h3><div id="mesoOut"></div></div>
-    <div class="card"><h3>收集清單（本尊以外的角色身上有什麼）</h3><div id="collectOut"></div></div>
-    <div class="bar">
-      <input id="rSearch" placeholder="搜尋道具名稱" style="width:180px">
-      <select id="rKind"><option value="">全部類別</option></select>
-      <label><input type="checkbox" id="rExMain"> 不含本尊</label>
-      <label><input type="checkbox" id="rWh" checked> 含倉庫</label>
-    </div>
-    <div id="itemOut"></div>
-  </section>
   <!-- 交易 -->
   <section id="trade">
 
@@ -284,8 +275,9 @@
       <div class="bar" style="margin-top:8px"><button class="btn primary" id="mkCollect">建立收集工作</button><span class="dim" id="collectMsg"></span></div>
     </div>
 
+    <div class="card tip-card">💡 要把東西給某隻角色，最快的方式是到「<a href="#" data-goto="bag">背包</a>」勾選物品（可以跨好幾隻角色），再按底部的「給 … 送出」。下面的「分發」適合要指定數量或轉楓幣時使用。</div>
     <div class="card">
-      <h3>分發：指定物品給某隻角色</h3>
+      <h3>分發：指定數量、轉楓幣給某隻角色</h3>
       <div class="bar">
         <span>從</span><select id="gFrom"></select>
         <span>給</span><select id="gTo"></select>
@@ -310,6 +302,7 @@
         <div class="seg" id="bKinds"></div>
         <label><input type="checkbox" id="bSellOnly"> 只看可賣</label>
         <label><input type="checkbox" id="bHideLocked"> 隱藏已鎖定</label>
+        <label title="「依道具」裡把各帳號倉庫的數量也列出來（倉庫的東西不能直接賣，只顯示）"><input type="checkbox" id="bWh"> 含倉庫</label>
         <details class="bag-adv"><summary>更多篩選</summary><div id="ffBag"></div></details>
       </div>
       <div id="bChars" class="char-strip"></div>
@@ -332,12 +325,17 @@
       <details id="ptJobsBox" open><summary class="dim">最近的換圖進度</summary><div id="ptJobs"></div></details>
       <div class="dim">遊戲標示「換圖只移動目前角色」：不是目前角色的，中控會嘗試直接指定；若被遊戲拒絕，紀錄會顯示失敗，請先「⇄ 切換」再換。等級低於地圖最低等級的會略過。</div>
     </div>
+    <div class="card" id="effCard" style="display:none">
+      <h3>練功效率提示</h3>
+      <div class="dim help-src">根據「實戰 DPS」：有效傷害占總傷害比例低，代表大部分傷害打在快死的怪身上（溢傷），通常是怪物太弱，換到怪物血量較高的圖每小時經驗會更多。建議地圖是用下面「組隊效率試算」同一套估算，只算這隻角色單人，實際請以換圖後的每小時經驗為準。</div>
+      <div id="effHints"></div>
+    </div>
     <div class="card">
       <h3>組隊效率試算（經驗）</h3>
       <div class="bar"><span>每隊最多</span><input type="number" id="ppSize" min="1" max="6" value="6" style="width:56px"><span>人</span>
         <label><input type="checkbox" id="ppKeepMap"> 只考慮角色目前所在的地圖</label>
         <button class="btn primary" id="ppRun">計算勾選角色的建議分組</button></div>
-      <div class="dim">分組方式：依等級由高到低，每組最多設定人數，和組內最高等級差 15 級以上的另成一組，祭司盡量平均分到各組。估算方式：先用每隻角色面板上的「每小時經驗」反推牠的輸出能力（每小時傷害），再依遊戲規則估算新組合：怪物太弱時會被出手速度卡住（假設每隻每小時最多約 2,400 隻，實測更高的用實測值），同圖每多 1 位合格隊友經驗 +10%（6 人 +50%）、隊伍增益技能（祭司「神聖祈禱」加經驗，激勵／精神強力／楓葉祝福加輸出）、怪物比角色高太多時命中下降、等級低於怪物 5 級以上而且打不太到的不算經驗。經驗按傷害 60%、等級 40% 分配。<b>這是估算，實際請以換圖後的每小時經驗為準。</b>沒有「每小時經驗」的角色（打開過主控台一次就會有）會用同等級的角色推估。</div>
+      <div class="dim">分組方式：依等級由高到低，每組最多設定人數，和組內最高等級差 15 級以上的另成一組，祭司盡量平均分到各組。估算方式：先取每隻角色的輸出能力（每小時傷害）：有「實戰 DPS」（統計滿 5 分鐘）就直接用實際傷害，沒有的才用面板上的「每小時經驗」反推，再依遊戲規則估算新組合：怪物太弱時會被出手速度卡住（假設每隻每小時最多約 2,400 隻，實測更高的用實測值），同圖每多 1 位合格隊友經驗 +10%（6 人 +50%）、隊伍增益技能（祭司「神聖祈禱」加經驗，激勵／精神強力／楓葉祝福加輸出）、怪物比角色高太多時命中下降、等級低於怪物 5 級以上而且打不太到的不算經驗。經驗按傷害 60%、等級 40% 分配。<b>這是估算，實際請以換圖後的每小時經驗為準。</b>沒有「每小時經驗」的角色（打開過主控台一次就會有）會用同等級的角色推估。</div>
       <div id="ppOut"></div>
     </div>
     <div class="card">
@@ -648,6 +646,14 @@ function renderOverview() {
     <div class="stat"><b>${short(totalMoney)}</b><span>楓幣總和（含倉庫）</span></div>
     <div class="stat"><b>${fmt(totalPts)}</b><span>點數總和${ptsKnown.length < accLatest.length ? `（${ptsKnown.length}/${accLatest.length} 帳號有回報）` : ''}</span></div>`;
 
+  // 楓幣分布
+  if ($('#ovMoneyBox').open) {
+    const ss = snaps().slice().sort((a, b) => (b.char.money || 0) - (a.char.money || 0)), main = S.mainCharId;
+    const charTotal = ss.reduce((a, s) => a + (s.char.money || 0), 0), whTotal = accLatest.reduce((a, s) => a + (s.char.warehouseMesos || 0), 0);
+    $('#mesoOut').innerHTML = `<div class="dim sm" style="margin-bottom:4px">角色身上 ${short(charTotal)}・帳號倉庫 ${short(whTotal)}・本尊以外 ${short(charTotal + whTotal - (main && DATA.chars[main] ? DATA.chars[main].char.money || 0 : 0))}</div>
+      <div class="chips">${ss.map(s => `<span class="tag ${s.char.id === main ? 'main' : ''}">${esc(s.char.name)} ${short(s.char.money)}</span>`).join('')}${accLatest.filter(s => s.char.warehouseMesos).map(s => `<span class="tag">${esc(accountLabel(s.accountId, s))}倉庫 ${short(s.char.warehouseMesos)}</span>`).join('')}</div>`;
+  }
+
   // 表格
   document.querySelectorAll('#ovMode button').forEach(b => b.classList.toggle('on', (b.dataset.ovmode === 'active') === ui.ovOnlyActive));
   $('#ovMore').checked = ui.ovMore;
@@ -715,7 +721,7 @@ document.addEventListener('click', async e => {
     if (t.dataset.dpsopen) { const id = t.dataset.dpsopen; if (ui.ovOpen.has(id)) ui.ovOpen.delete(id); else ui.ovOpen.add(id); renderOverview(); return; }
     if (t.dataset.ovmode) { ui.ovOnlyActive = t.dataset.ovmode === 'active'; try { localStorage.setItem('ovOnlyActive', ui.ovOnlyActive ? '1' : '0'); } catch (_) {} renderOverview(); return; }
     if (t.hasAttribute('data-openjobs')) { openJobs(); return; }
-    if (t.dataset.goto) { document.querySelector(`nav button[data-tab="${t.dataset.goto}"]`).click(); return; }
+    if (t.dataset.goto) { e.preventDefault(); document.querySelector(`nav button[data-tab="${t.dataset.goto}"]`).click(); return; }
     if (t.dataset.attn) {
       const ids = t.dataset.ids.split(',').filter(Boolean);
       t.disabled = true; t.textContent = '送出中…';
@@ -725,6 +731,7 @@ document.addEventListener('click', async e => {
     }
   } catch (err) { alert('失敗：' + err.message); }
 });
+document.addEventListener('toggle', e => { if (e.target.id === 'ovMoneyBox' && e.target.open) renderOverview(); }, true);
 document.addEventListener('change', e => { if (e.target.id === 'ovMore') { ui.ovMore = e.target.checked; try { localStorage.setItem('ovMore', ui.ovMore ? '1' : '0'); } catch (_) {} renderOverview(); } });
 document.addEventListener('input', e => { if (e.target.id === 'ovSearch') { ui.ovQ = e.target.value; renderOverview(); } });
 
@@ -863,6 +870,12 @@ function renderList() {
   const th = (key, label, cls = '') => `<th data-gsort="${key}" class="${cls}">${label}${ui.gearSort.key === key ? (ui.gearSort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
   const bagRowsN = rows.filter(g => g.loc === '背包');
   for (const id of [...ui.gearSel]) if (!rows.some(g => g.uid === id)) ui.gearSel.delete(id);
+  // 篩選摘要
+  const fs = [f.slots.length && '部位 ' + f.slots.map(slotLabel).join('/'), f.locs.length && f.locs.length < LOCS.length && '只看' + f.locs.join('/'), f.jobs.length && '職業 ' + JOBS.filter(([, b]) => f.jobs.includes(b)).map(([n]) => n).join('/'),
+    f.char && (DATA.chars[f.char] ? DATA.chars[f.char].char.name : '指定角色'), (f.lvMin !== '' || f.lvMax !== '') && `Lv ${f.lvMin || 0}~${f.lvMax || '∞'}`, f.plus !== '' && `強化≥${f.plus}`, f.slotsLeft !== '' && `可衝≥${f.slotsLeft}`, f.wearable && '有人能穿',
+    f.conds.filter(c => c.val !== '').length && `素質條件 ${f.conds.filter(c => c.val !== '').length} 條`].filter(Boolean);
+  $('#fSummary').textContent = fs.length ? '已套用：' + fs.join('・') : '（未設定，點開設定部位、位置、職業、等級、素質條件、顯示欄位）';
+  if (ui.gearGroup) { $('#gearOut').innerHTML = gearGroupView(rows, mode); return; }
   let h = (mode === 'cleanStats' ? '<div class="bar warn">目前顯示「原始（未衝卷）」：素質、強化、可衝次數都是衝卷前的樣子（滑鼠移到強化／可衝欄可看實際值）。篩選條件裡的「強化次數、剩餘可衝」仍以實際值判斷。</div>' : '') + `<div class="bar"><span class="dim">共 ${rows.length} 件（背包 ${bagRowsN.length} 件）${rows.length > ui.gearLimit ? `，先顯示 ${ui.gearLimit} 件` : ''}</span>
       <span style="margin-left:12px">已勾選 <b>${ui.gearSel.size}</b> 件</span>
       <button class="btn" id="gSelAll">勾選篩選結果中背包的裝備</button><button class="btn" id="gSelNone">清除</button>
@@ -886,77 +899,58 @@ function renderList() {
   $('#gearOut').innerHTML = h;
 }
 
+ui.gearView = (() => { try { return localStorage.getItem('gearView') || 'list'; } catch (_) { return 'list'; } })();
+ui.gearGroup = (() => { try { return localStorage.getItem('gearGroup') === '1'; } catch (_) { return false; } })();
 function renderGear() {
-  const view = document.querySelector('input[name=gview]:checked').value;
+  const view = ui.gearView, mode = statMode();
+  document.querySelector(`input[name=gview][value=${view === 'matrix' ? 'matrix' : 'list'}]`).checked = true;
+  document.querySelectorAll('#gViewSeg button').forEach(b => b.classList.toggle('on', b.dataset.gv === view));
+  document.querySelectorAll('#gModeSeg button').forEach(b => b.classList.toggle('on', b.dataset.gm === mode));
+  $('#gModeSeg').style.display = view === 'auto' ? 'none' : '';
+  $('#gQuick').style.display = view === 'list' ? '' : 'none';
   $('#filterCard').style.display = view === 'list' ? '' : 'none';
-  if (view === 'matrix') renderMatrix(); else renderList();
+  $('#slotCfgBox').style.display = view === 'matrix' ? '' : 'none';
+  $('#asCard').style.display = view === 'auto' ? '' : 'none';
+  $('#gearOut').style.display = view === 'auto' ? 'none' : '';
+  $('#gGroup').checked = ui.gearGroup;
+  if (view === 'matrix') renderMatrix(); else if (view === 'list') renderList();
 }
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-gv],[data-gm],[data-gselmany]');
+  if (!t) return;
+  if (t.dataset.gv) { ui.gearView = t.dataset.gv; try { localStorage.setItem('gearView', ui.gearView); } catch (_) {} renderGear(); }
+  if (t.dataset.gm) { document.querySelector(`input[name=gmode][value=${t.dataset.gm}]`).checked = true; renderGear(); }
+  if (t.dataset.gselmany) { const ids = t.dataset.gselmany.split(','), all = ids.every(id => ui.gearSel.has(id)); for (const id of ids) { if (all) ui.gearSel.delete(id); else ui.gearSel.add(id); } renderList(); }
+});
+document.addEventListener('change', e => { if (e.target.id === 'gGroup') { ui.gearGroup = e.target.checked; try { localStorage.setItem('gearGroup', ui.gearGroup ? '1' : '0'); } catch (_) {} renderList(); } });
 
+// 同名合併：每種裝備一列，後面列出在誰身上（背包的可以點選）
+function gearGroupView(rows, mode) {
+  const g = {};
+  for (const x of rows) {
+    const a = g[x.name] || (g[x.name] = { name: x.name, slot: x.slot, itemId: x.itemId, reqLevel: x.reqLevel, n: 0, maxPlus: 0, items: [] });
+    a.n++; a.maxPlus = Math.max(a.maxPlus, x.plus || 0); a.items.push(x);
+  }
+  const list = Object.values(g).sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot) || b.n - a.n || cmp(a.name, b.name));
+  let h = `<div class="bar"><span class="dim">共 ${list.length} 種、${rows.length} 件</span><span style="margin-left:12px">已勾選 <b>${ui.gearSel.size}</b> 件</span>
+    <button class="btn" id="gSelAll">勾選篩選結果中背包的裝備</button><button class="btn" id="gSelNone">清除</button>
+    <button class="btn" data-gact="lock">🔒 鎖定</button><button class="btn" data-gact="unlock">解鎖</button><button class="btn warn" data-gact="sell">賣出</button>
+    <span class="dim" id="gActMsg">${esc(ui.gearMsg || '點「在誰身上」的名字可以選取那隻角色背包裡的這種裝備；穿戴中、倉庫的只顯示。')}</span></div>
+    <table class="sticky"><thead><tr><th class="nosort">裝備</th><th class="nosort">部位</th><th class="nosort num">件數</th><th class="nosort num">最高強化</th><th class="nosort num">需求Lv</th><th class="nosort">在誰身上</th></tr></thead><tbody>`;
+  for (const a of list.slice(0, 500)) {
+    const by = {};
+    for (const x of a.items) { const k = x.charName + '|' + x.loc; (by[k] = by[k] || []).push(x); }
+    const chips = Object.values(by).sort((p, q) => q.length - p.length).map(xs => {
+      const x0 = xs[0], bag = x0.loc === '背包', ids = xs.map(x => x.uid).filter(Boolean), sel = bag && ids.length && ids.every(id => ui.gearSel.has(id));
+      const tip = xs.map(x => `${x.plus ? '+' + x.plus + ' ' : ''}${statLine(x[mode] || {}, STAT_ORDER) || '無素質'}　可衝 ${x.slotsLeft}/${x.maxSlots}${x.locked ? '　🔒' : ''}`).join('\n');
+      const pl = xs.map(x => x.plus).filter(Boolean);
+      return `<span class="holder ${sel ? 'sel' : ''} ${bag ? '' : 'wh'}" ${bag && ids.length ? `data-gselmany="${esc(ids.join(','))}"` : ''} title="${esc(tip)}">${x0.loc === '倉庫' ? '📦 ' : x0.loc === '穿戴' ? '👕 ' : ''}${esc(x0.charName)}${xs.length > 1 ? ` <b>×${xs.length}</b>` : ''}${pl.length ? ` <b class="plus">+${Math.max(...pl)}</b>` : ''}${xs.every(x => x.locked) ? ' 🔒' : ''}</span>`;
+    }).join('');
+    h += `<tr><td>${iname(a.itemId, a.name)}</td><td>${slotLabel(a.slot)}</td><td class="num"><b>${a.n}</b></td><td class="num">${a.maxPlus ? `<span class="plus">+${a.maxPlus}</span>` : '<span class="dim">0</span>'}</td><td class="num">${a.reqLevel}</td><td class="wrap">${chips}</td></tr>`;
+  }
+  return h + '</tbody></table>' + (list.length > 500 ? '<div class="dim">只顯示前 500 種，請用篩選縮小範圍</div>' : '');
+}
 // ================= 資源 =================
-function renderRes() {
-  const latest = latestByAccount();
-  const ss = snaps().slice().sort((a, b) => cmp(accountLabel(a.accountId, a), accountLabel(b.accountId, b)) || cmp(a.char.name, b.char.name));
-  const main = S.mainCharId;
-
-  // 楓幣
-  const accs = Object.values(latest);
-  const charTotal = ss.reduce((a, s) => a + (s.char.money || 0), 0);
-  const whTotal = accs.reduce((a, s) => a + (s.char.warehouseMesos || 0), 0);
-  $('#mesoOut').innerHTML = `<div class="stats-row" style="margin-bottom:8px">
-      <div class="stat"><b>${short(charTotal + whTotal)}</b><span>總和</span></div>
-      <div class="stat"><b>${short(charTotal)}</b><span>角色身上</span></div>
-      <div class="stat"><b>${short(whTotal)}</b><span>帳號倉庫</span></div>
-      <div class="stat"><b>${short(charTotal + whTotal - (main && DATA.chars[main] ? DATA.chars[main].char.money : 0))}</b><span>本尊以外</span></div></div>
-    <div class="chips">${ss.map(s => `<span class="tag ${s.char.id === main ? 'main' : ''}">${esc(s.char.name)} ${short(s.char.money)}</span>`).join('')}
-    ${accs.filter(s => s.char.warehouseMesos).map(s => `<span class="tag">${esc(accountLabel(s.accountId, s))}倉庫 ${short(s.char.warehouseMesos)}</span>`).join('')}</div>`;
-
-  // 收集清單
-  if (!main) $('#collectOut').innerHTML = '<span class="dim">先到「總覽」點 ★ 設定哪隻是本尊。</span>';
-  else {
-    let h = `<table><thead><tr><th class="nosort">角色</th><th class="nosort num">楓幣</th><th class="nosort num">卷軸</th><th class="nosort num">消耗品</th><th class="nosort num">其他道具</th><th class="nosort num">背包裝備</th><th class="nosort num">倉庫裝備</th><th class="nosort">更新</th></tr></thead><tbody>`;
-    const tot = { money: 0, scroll: 0, use: 0, etc: 0, bag: 0, wh: 0 };
-    for (const s of ss) {
-      if (s.char.id === main) continue;
-      const it = (s.items || []).filter(i => i.loc === '背包');
-      const sum = kind => it.filter(i => kind(i.kind)).reduce((a, i) => a + i.qty, 0);
-      const r = { money: s.char.money || 0, scroll: sum(k => k === '卷軸'), use: sum(k => k === '消耗'), etc: sum(k => k !== '卷軸' && k !== '消耗'),
-        bag: (s.gear || []).filter(g => g.loc === '背包').length, wh: latest[s.accountId] === s ? (s.gear || []).filter(g => g.loc === '倉庫').length : 0 };
-      for (const k in tot) tot[k] += r[k];
-      h += `<tr><td>${esc(s.char.name)}</td><td class="num">${short(r.money)}</td><td class="num">${fmt(r.scroll)}</td><td class="num">${fmt(r.use)}</td><td class="num">${fmt(r.etc)}</td><td class="num">${r.bag}</td><td class="num">${r.wh}</td><td class="dim">${ago(Date.now() - s.receivedAt)}</td></tr>`;
-    }
-    h += `<tr><td><b>合計</b></td><td class="num"><b>${short(tot.money)}</b></td><td class="num"><b>${fmt(tot.scroll)}</b></td><td class="num"><b>${fmt(tot.use)}</b></td><td class="num"><b>${fmt(tot.etc)}</b></td><td class="num"><b>${tot.bag}</b></td><td class="num"><b>${tot.wh}</b></td><td></td></tr></tbody></table>
-      <div class="dim" style="margin-top:6px">消耗品包含補給用的藥水；倉庫欄位每個帳號只算一次。</div>`;
-    $('#collectOut').innerHTML = h;
-  }
-
-  // 道具總表
-  const q = $('#rSearch').value.trim(), kind = $('#rKind').value, exMain = $('#rExMain').checked, withWh = $('#rWh').checked;
-  const agg = {};
-  const kinds = new Set();
-  for (const s of ss) {
-    if (exMain && s.char.id === main) continue;
-    for (const i of s.items || []) {
-      kinds.add(i.kind);
-      if (i.loc === '倉庫' && (!withWh || latest[s.accountId] !== s)) continue;
-      const a = agg[i.key] || (agg[i.key] = { name: i.name, itemId: i.itemId, kind: i.kind, total: 0, holders: [] });
-      a.total += i.qty;
-      a.holders.push({ who: i.loc === '倉庫' ? accountLabel(s.accountId, s) + '倉庫' : s.char.name, qty: i.qty, main: s.char.id === main });
-    }
-  }
-  const kSel = $('#rKind');
-  if (kSel.options.length - 1 !== kinds.size) kSel.innerHTML = '<option value="">全部類別</option>' + [...kinds].sort().map(k => `<option ${k === kind ? 'selected' : ''}>${esc(k)}</option>`).join('');
-  let rows = Object.values(agg).filter(a => (!q || a.name.includes(q)) && (!kind || a.kind === kind));
-  const k = ui.itemSort.key, d = ui.itemSort.dir;
-  rows.sort((a, b) => cmp(a[k], b[k]) * d || cmp(a.name, b.name));
-  const th = (key, label, cls = '') => `<th data-isort="${key}" class="${cls}">${label}${ui.itemSort.key === key ? (ui.itemSort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
-  let h = `<table class="sticky"><thead><tr>${th('name','道具')}${th('kind','類別')}${th('total','總數','num')}<th class="nosort">分布（由多到少）</th></tr></thead><tbody>`;
-  for (const a of rows) {
-    a.holders.sort((x, y) => y.qty - x.qty);
-    h += `<tr><td>${iname(a.itemId, a.name)}</td><td class="dim">${esc(a.kind)}</td><td class="num">${fmt(a.total)}</td><td class="wrap">${a.holders.map(x => `<span class="tag ${x.main ? 'main' : ''}">${esc(x.who)} ${fmt(x.qty)}</span>`).join('')}</td></tr>`;
-  }
-  if (!rows.length) h += '<tr><td colspan="4" class="empty">沒有符合的道具</td></tr>';
-  $('#itemOut').innerHTML = h + '</tbody></table>';
-}
 
 
 // ================= 交易／背包 共用：物品篩選器 =================
@@ -1190,7 +1184,7 @@ function renderGivePick() {
 
 // ---------- 背包頁 ----------
 // ---------- 背包（全角色） ----------
-ui.bag = { view: 'item', q: '', kind: '', sellOnly: false, hideLocked: false, chars: new Set() };
+ui.bag = { view: 'item', q: '', kind: '', sellOnly: false, hideLocked: false, wh: false, chars: new Set(), giveTo: '' };
 try { const v = localStorage.getItem('bagView'); if (v === 'char' || v === 'item') ui.bag.view = v; } catch (_) {}
 const BAG_KIND_ORDER = ['裝備', '消耗', '卷軸', '其他', '裝飾', '點數'];
 const kindRank = k => { const i = BAG_KIND_ORDER.indexOf(k); return i < 0 ? 99 : i; };
@@ -1222,7 +1216,7 @@ function renderBag() {
   const b = ui.bag;
   document.querySelectorAll('#bView button').forEach(x => x.classList.toggle('on', x.dataset.bview === b.view));
   if (document.activeElement !== $('#bSearch')) $('#bSearch').value = b.q;
-  $('#bSellOnly').checked = b.sellOnly; $('#bHideLocked').checked = b.hideLocked;
+  $('#bSellOnly').checked = b.sellOnly; $('#bHideLocked').checked = b.hideLocked; $('#bWh').checked = b.wh;
   if (!ui.pickOpen.startsWith('bag|') && (!document.activeElement || !document.activeElement.closest || !document.activeElement.closest('#ffBag'))) $('#ffBag').innerHTML = ffHTML('bag', ui.ff.bag, true, true);
   renderBagList();
 }
@@ -1259,10 +1253,32 @@ function bagItemView(vis) {
     const a = g[k] || (g[k] = { k, t: r.t, name: r.name, kind: r.kind, itemId: r.t === 'g' ? r.g.itemId : r.i.itemId, price: r.t === 'i' ? r.i.sellPrice || 0 : 0, total: 0, value: 0, holders: [] });
     a.total += r.qty; a.value += r.value; a.holders.push({ s, r, sid: bagSid(s.char.id, r.id) });
   }
+  // 倉庫（每個帳號取最新的快照，只顯示不能選）
+  if (ui.bag.wh) {
+    const accs = new Set(vis.map(s => s.accountId)), q = ui.bag.q.trim(), kind = ui.bag.kind;
+    for (const s of Object.values(latestByAccount())) {
+      if (!accs.has(s.accountId)) continue;
+      const lbl = accountLabel(s.accountId, s) + '倉庫';
+      for (const i of s.items || []) {
+        if (i.loc !== '倉庫' || (q && !i.name.includes(q)) || (kind && i.kind !== kind)) continue;
+        const k = 'i:' + i.key;
+        const a = g[k] || (g[k] = { k, t: 'i', name: i.name, kind: i.kind, itemId: i.itemId, price: i.sellPrice || 0, total: 0, value: 0, holders: [] });
+        a.total += i.qty; a.holders.push({ wh: lbl, qty: i.qty });
+      }
+      for (const x of s.gear || []) {
+        if (x.loc !== '倉庫' || (q && !x.name.includes(q)) || (kind && kind !== '裝備')) continue;
+        const k = 'g:' + x.name;
+        const a = g[k] || (g[k] = { k, t: 'g', name: x.name, kind: '裝備', itemId: x.itemId, price: 0, total: 0, value: 0, holders: [] });
+        a.total += 1; const h = a.holders.find(y => y.wh === lbl); if (h) h.qty++; else a.holders.push({ wh: lbl, qty: 1 });
+      }
+    }
+  }
   const list = Object.values(g).sort((x, y) => kindRank(x.kind) - kindRank(y.kind) || y.value - x.value || cmp(x.name, y.name));
   if (!list.length) return `<div class="card empty">${bagChars().length ? '沒有符合條件的物品' : '還沒有背包資料：打開遊戲分頁，約 10 秒後會出現。'}</div>`;
   let h = `<div class="card" style="padding:0"><table class="sticky"><thead><tr><th class="nosort" style="width:28px"></th><th class="nosort">物品</th><th class="nosort">類別</th><th class="nosort num">總數</th><th class="nosort num">商店單價</th><th class="nosort num">可賣總額</th><th class="nosort">在誰身上（點名字選取那一份）</th></tr></thead><tbody>`;
-  for (const a of list.slice(0, 600)) {
+  for (const a0 of list.slice(0, 600)) {
+    const whs = a0.holders.filter(x => x.wh), a = { ...a0, holders: a0.holders.filter(x => !x.wh) };
+    const whChips = whs.map(x => `<span class="holder wh" title="倉庫的東西不能直接賣">📦 ${esc(x.wh)} <b>${fmt(x.qty)}</b></span>`).join('');
     const nSel = a.holders.filter(x => ui.bagSel.has(x.sid)).length;
     a.holders.sort((x, y) => y.r.qty - x.r.qty);
     // 裝備：同一隻角色的同名裝備合成一顆（×件數），點一下選那隻的全部；要單件選請用「依角色」
@@ -1272,8 +1288,8 @@ function bagItemView(vis) {
         return `<span class="holder ${allSel ? 'sel' : ''} ${lk ? 'lk' : ''}" data-bpick="${esc(sids.join(','))}" title="${esc(xs.map(x => `${x.r.g.plus ? '+' + x.r.g.plus + ' ' : ''}${statLine(x.r.g.stats || {}, STAT_ORDER) || '無素質'}　可衝 ${x.r.g.slotsLeft}/${x.r.g.maxSlots}${x.r.locked ? '　🔒' : ''}`).join('\n'))}">${esc(xs[0].s.char.name)}${xs.length > 1 ? ` <b>×${xs.length}</b>` : ''}${pl.length ? ` <b class="plus">+${Math.max(...pl)}${pl.length > 1 ? '…' : ''}</b>` : ''}${lk ? ' 🔒' : xs.some(x => x.r.locked) ? ' <span title="部分鎖定">🔒</span>' : ''}</span>`; }).join(''); };
     const chips = a.t === 'g' ? gearChips()
       : a.holders.map(x => `<span class="holder ${ui.bagSel.has(x.sid) ? 'sel' : ''} ${x.r.locked ? 'lk' : ''}" data-bpick="${esc(x.sid)}">${esc(x.s.char.name)} <b>${fmt(x.r.qty)}</b>${x.r.i.lockedQty ? (x.r.locked ? ' 🔒' : ` <span title="其中 ${fmt(x.r.i.lockedQty)} 個已鎖定">🔒${fmt(x.r.i.lockedQty)}</span>`) : ''}${x.r.i.supply ? ' <span title="補給使用中，不會被賣掉">💊</span>' : ''}</span>`).join('');
-    h += `<tr><td><input type="checkbox" data-bgroup="${esc(a.k)}" ${nSel && nSel === a.holders.length ? 'checked' : ''}></td><td>${iname(a.itemId, a.name)}</td><td class="dim">${esc(a.kind)}</td><td class="num"><b>${fmt(a.total)}</b></td>
-      <td class="num dim">${a.price ? fmt(a.price) : '—'}</td><td class="num">${a.value ? short(a.value) : '<span class="dim">—</span>'}</td><td class="wrap">${chips}</td></tr>`;
+    h += `<tr><td>${a.holders.length ? `<input type="checkbox" data-bgroup="${esc(a.k)}" ${nSel && nSel === a.holders.length ? 'checked' : ''}>` : ''}</td><td>${iname(a.itemId, a.name)}</td><td class="dim">${esc(a.kind)}</td><td class="num"><b>${fmt(a.total)}</b></td>
+      <td class="num dim">${a.price ? fmt(a.price) : '—'}</td><td class="num">${a.value ? short(a.value) : '<span class="dim">—</span>'}</td><td class="wrap">${chips}${whChips}</td></tr>`;
   }
   return h + `</tbody></table>${list.length > 600 ? '<div class="dim" style="padding:8px">只顯示前 600 種，請用搜尋或類別縮小範圍</div>' : ''}</div>`;
 }
@@ -1299,6 +1315,7 @@ function bagCharView(vis) {
   return blocks.join('') || `<div class="card empty">${bagChars().length ? '沒有符合條件的物品' : '還沒有背包資料：打開遊戲分頁，約 10 秒後會出現。'}</div>`;
 }
 function renderBagBar() {
+  if (document.activeElement && document.activeElement.id === 'bGiveTo') return; // 正在選目標角色時不要重畫
   const sel = bagSelected(), bar = $('#bagBar');
   const vis = bagVisibleChars(), visCount = vis.reduce((a, s) => a + bagRows(s).length, 0);
   if (!sel.length) {
@@ -1313,7 +1330,30 @@ function renderBagBar() {
   bar.style.display = '';
   bar.innerHTML = `<span class="sum">已選 <b>${sel.length}</b> 項・<b>${chars.size}</b> 隻角色${est ? `・賣出約 <b class="good">${short(est)}</b> 楓幣` : ''}</span>
     ${notReady.length ? `<span class="warn" title="${esc(notReady.map(s => s.char.name).join('、'))}">⚠ ${notReady.length} 隻離線或不是目前角色，工作會等到它上線</span>` : ''}
-    <button class="btn primary" data-bact="sell" ${nSell ? '' : 'disabled'}>賣出${nSell < sel.length ? `（${nSell} 項可賣）` : ''}</button><button class="btn" data-bact="lock">鎖定</button><button class="btn" data-bact="unlock">解鎖</button><button class="btn" data-bquick="clear">清除選擇</button><span class="dim" id="bMsg"></span>`;
+    <button class="btn primary" data-bact="sell" ${nSell ? '' : 'disabled'}>賣出${nSell < sel.length ? `（${nSell} 項可賣）` : ''}</button><button class="btn" data-bact="lock">鎖定</button><button class="btn" data-bact="unlock">解鎖</button>
+    <span class="give-grp"><span class="dim">給</span><select id="bGiveTo">${charOpt(ui.bag.giveTo || S.mainCharId || '', true).replace('（選擇角色）', '（選角色）')}</select><button class="btn" data-bact="give" title="把選取的東西交易給這隻角色（數量＝全部可交易的）">送出 ▸</button></span>
+    <button class="btn" data-bquick="clear">清除選擇</button><span class="dim" id="bMsg"></span>`;
+}
+// 分發：選取的東西依來源角色各建一個交易工作給目標角色
+function bagGiveJobs(to) {
+  if (!to) throw new Error('請先在「給」選擇要給哪隻角色');
+  const by = {}, skipped = [];
+  for (const x of bagSelected()) {
+    if (x.s.char.id === to) continue;
+    const r = x.r, list = by[x.s.char.id] || (by[x.s.char.id] = { items: [], gear: [] });
+    if (r.t === 'i') {
+      const q = Math.min(r.i.tradableQty ?? r.free, r.free);
+      if (r.i.supply || !(q > 0)) { skipped.push(r.name); continue; }
+      list.items.push({ key: r.i.key, name: r.i.name, cat: r.i.cat, qty: q });
+    } else {
+      if (r.g.locked || r.g.tradable === false) { skipped.push(r.name); continue; }
+      list.gear.push({ uid: r.g.uid, name: gearLabel(r.g) });
+    }
+  }
+  const reqs = Object.entries(by).filter(([, v]) => v.items.length || v.gear.length)
+    .map(([from, v]) => ({ kind: 'give', fromCharId: from, toCharId: to, batches: toBatches(v.items.flatMap(it => splitItem(it)), v.gear, 0) }));
+  if (!reqs.length) throw new Error('選取的東西都不能交易（已鎖定、補給使用中，或就是目標角色自己的）');
+  return { reqs, skipped };
 }
 // 依選取建立工作：每隻角色一個工作
 function bagJobs(kind) {
@@ -1367,6 +1407,14 @@ document.addEventListener('click', async e => {
       else for (const s of bagVisibleChars()) for (const r of bagRows(s)) if (d.bquick === 'all' || r.sellable) ui.bagSel.add(bagSid(s.char.id, r.id));
       renderBagList(); return;
     }
+    if (d.bact === 'give') {
+      const to = $('#bGiveTo').value; ui.bag.giveTo = to;
+      const { reqs, skipped } = bagGiveJobs(to);
+      const n = reqs.reduce((a, r) => a + r.batches.reduce((x, b) => x + b.items.length + b.gear.length, 0), 0);
+      if (!confirm(`建立 ${reqs.length} 個交易工作：${reqs.map(r => DATA.chars[r.fromCharId].char.name).join('、')} → ${DATA.chars[to].char.name}（共 ${n} 格）？${skipped.length ? `\n\n略過（不能交易）：${[...new Set(skipped)].slice(0, 8).join('、')}${skipped.length > 8 ? '…' : ''}` : ''}\n\n建立後要在「工作」確認執行；執行時雙方的遊戲分頁都要開著，而且是目前角色。`)) return;
+      await api('/api/jobs', reqs);
+      ui.bagSel.clear(); await poll(true); openJobs(); return;
+    }
     if (d.bact) {
       const reqs = bagJobs(d.bact);
       if (d.bact === 'sell') {
@@ -1385,6 +1433,8 @@ document.addEventListener('change', e => {
   if (!t.closest || !t.closest('#bag')) return;
   if (t.id === 'bSellOnly') { ui.bag.sellOnly = t.checked; renderBagList(); }
   if (t.id === 'bHideLocked') { ui.bag.hideLocked = t.checked; renderBagList(); }
+  if (t.id === 'bWh') { ui.bag.wh = t.checked; renderBagList(); }
+  if (t.id === 'bGiveTo') { ui.bag.giveTo = t.value; renderBagBar(); }
   if (t.dataset.bgroup) {
     const k = t.dataset.bgroup;
     for (const s of bagVisibleChars()) for (const r of bagRows(s)) { const gk = r.t === 'g' ? 'g:' + r.name : r.id; if (gk !== k) continue; const sid = bagSid(s.char.id, r.id); if (t.checked) ui.bagSel.add(sid); else ui.bagSel.delete(sid); }
@@ -1940,6 +1990,7 @@ function renderMaps() {
   const cs = mapCandidates();
   $('#mpChars').innerHTML = `<div class="chips">${cs.map(c => { const m = mapOf(c.map); return `<label title="${esc(m ? m.name : '')}"><input type="checkbox" data-mpsel="${c.id}" ${ui.mpSel.has(c.id) ? 'checked' : ''}>${esc(c.name)} <span class="dim">Lv${c.lv}${m ? '・' + esc(m.name) : ''}${activeCharOf(c.accountId) === c.id ? '' : '（非目前）'}</span></label>`; }).join('')}</div>`;
   $('#mpSelInfo').textContent = `已選 ${ui.mpSel.size} 隻`;
+  renderEffHints();
   if (!$('#mpTarget').options.length) {
     const byR = {}; for (const m of WORLD.maps) (byR[m.region || '其他'] || (byR[m.region || '其他'] = [])).push(m);
     $('#mpTarget').innerHTML = Object.entries(byR).map(([r, ms]) => `<optgroup label="${esc(r)}">${ms.sort((a, b) => a.minLevel - b.minLevel || a.lvMin - b.lvMin).map(m => `<option value="${esc(m.id)}">${esc(m.name)}（Lv${m.minLevel}＋，怪 ${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}）</option>`).join('')}</optgroup>`).join('');
@@ -1949,7 +2000,7 @@ function renderMaps() {
   const seen = new Set(), parties = [];
   for (const s of snaps()) { const p = s.party && s.party.party; if (p && p.members && !seen.has(p.code)) { seen.add(p.code); parties.push(p); } }
   $('#ptNow').innerHTML = parties.length ? parties.map(p => `<div>${p.members.map(m => `${m.leader ? '👑' : ''}${esc(m.name)} <span class="dim">Lv${m.lv}・${esc((mapOf(m.map) || {}).name || m.map || '')}${m.auto ? '' : '・未掛機'}</span>`).join('、')}</div>`).join('') : '<span class="dim">目前回報的角色都沒有隊伍（只看得到各帳號目前角色的隊伍）</span>';
-  const ij = (DATA.jobs || []).filter(j => j.kind === 'idle' && (j.batches[0].targets || []).some(x => x.action === 'map')).slice(-8).reverse();
+  const ij = (DATA.jobs || []).filter(j => j.kind === 'idle' && !j.partyRun && (j.batches[0].targets || []).some(x => x.action === 'map')).slice(-8).reverse();
   $('#ptJobs').innerHTML = ij.length ? ij.map(j => { const st = JOB_STATUS[j.status] || [j.status, '']; return `<div style="margin:4px 0"><span class="dim">${clock(j.createdAt)}</span> <span class="${st[1]}">${st[0]}</span> ${esc(j.fromName)}：${(j.log || []).slice(-4).map(l => esc(l.msg)).join(' → ')}</div>`; }).join('') : '<span class="dim">還沒有</span>';
   renderWorldItem(); renderWorldMaps();
 }
@@ -1989,6 +2040,27 @@ function renderWorldItem() {
   $('#wItemOut').innerHTML = out.length ? `<table><thead><tr><th class="nosort">道具</th><th class="nosort num">機率</th><th class="nosort">數量</th><th class="nosort">怪物</th><th class="nosort">地圖</th><th class="nosort num">地圖最低等級</th></tr></thead><tbody>${out.slice(0, 200).map(o =>
     `<tr><td>${iname(o.id, o.item)}</td><td class="num"><b>${chancePct(o.r[3])}</b></td><td>${o.r[1]}${o.r[2] > o.r[1] ? '~' + o.r[2] : ''}</td><td>${mobImg(o.mob)}${esc(o.mob.name)} <span class="dim">Lv${o.mob.lv}${o.mob.isBoss ? '・王' : ''}</span></td><td>${esc(o.map.name)} <span class="dim">${esc(o.map.region || '')}</span></td><td class="num">${o.map.minLevel}</td></tr>`).join('')}</tbody></table>${out.length > 200 ? '<div class="dim">只列前 200 筆</div>' : ''}`
     : `<div class="dim">找不到「${esc(q)}」的掉落資料（${ids.length ? '有這個道具，但沒有怪物掉' : '沒有這個名稱的道具'}）</div>`;
+}
+
+// ---- 練功效率提示（依實戰 DPS 的溢傷比例） ----
+function renderEffHints() {
+  const out = [];
+  for (const s of snaps()) {
+    const d = dpsOf(s.char.id), m = mapOf(s.char.map);
+    if (!d || !m || d.w60.span < 5 * 60000 || !d.w60.dmg || (s.activeCharId && s.activeCharId !== s.char.id)) continue;
+    const eff = d.w60.eff / d.w60.dmg;
+    if (eff >= 0.75) continue;
+    const c = { id: s.char.id, name: s.char.name, lv: s.char.lv, job: s.char.job, jobName: s.char.jobName, kcap: 2400, power: d.w60.dps * 3600 / hitFactor(s.char.lv, m) };
+    const kph = d.w60.kills / (d.w60.span / 3600000); if (kph > 0) c.kcap = Math.max(2400, kph * 1.2);
+    const best = WORLD.maps.filter(x => x.xpHp > 0 && x.minLevel <= c.lv && !(x.boss || []).length).map(x => groupEstimate([c], x)).sort((a, b) => b.total - a.total)[0];
+    const here = groupEstimate([c], m);
+    out.push({ s, d, eff, best, here, gain: best && here.total ? best.total / here.total - 1 : 0 });
+  }
+  out.sort((a, b) => a.eff - b.eff);
+  $('#effCard').style.display = out.length ? '' : 'none';
+  $('#effHints').innerHTML = out.map(o => `<div class="attn-row warn"><span class="ic">⚡</span><span class="tx"><b>${esc(o.s.char.name)}</b> 在 ${esc(o.s.char.mapName || '')}：有效傷害只有 <b>${(o.eff * 100).toFixed(0)}%</b>（DPS ${short(o.d.w60.dps)}、每小時擊殺 ${fmt(Math.round(o.d.w60.kills / (o.d.w60.span / 3600000)))}）
+    ${o.best && o.best.map.id !== o.s.char.map && o.gain > 0.05 ? `<span class="dim">→ 建議 <b style="color:var(--text)">${esc(o.best.map.name)}</b>（怪 Lv${o.best.map.lvMin}~${o.best.map.lvMax}，估計經驗 ${o.gain >= 0 ? '+' : ''}${(o.gain * 100).toFixed(0)}%）</span>` : '<span class="dim">→ 目前地圖已經是估算裡最好的選擇</span>'}</span>
+    ${o.best && o.best.map.id !== o.s.char.map && o.gain > 0.05 ? `<span class="act"><button class="btn" data-effgo="${o.s.char.id}|${esc(o.best.map.id)}">換過去</button></span>` : ''}</div>`).join('');
 }
 
 // ---- 組隊效率試算 ----
@@ -2040,6 +2112,15 @@ function runPlanner() {
     c.curParty = mates.length > 1 ? `目前同圖隊友 ${mates.length - 1} 人${hasHs ? '＋神聖祈禱' : ''}` : '';
     c.power = c.hourly && m && m.xpHp ? c.hourly / (m.xpHp * hitFactor(c.lv, m) * c.curMult) : null;
     if (c.hourly && m && m.avgXp) c.kcap = Math.max(KCAP, (c.hourly / c.curMult / m.avgXp) * 1.2);
+    c.src = c.power ? '經驗反推' : '';
+    // 有實戰 DPS 就改用實際傷害（不受組隊經驗加成影響，比較準）；統計滿 5 分鐘才採用
+    const d = dpsOf(c.id);
+    if (d && d.w60.span >= 5 * 60000 && d.w60.dps > 0 && m) {
+      c.power = d.w60.dps * 3600 / hitFactor(c.lv, m);
+      const kph = d.w60.kills / (d.w60.span / 3600000);
+      if (kph > 0) c.kcap = Math.max(KCAP, kph * 1.2);
+      c.src = '實戰 DPS';
+    }
   }
   const known = pick.filter(c => c.power);
   for (const c of pick) if (!c.power) {
@@ -2074,7 +2155,7 @@ function runPlanner() {
       ${b.buffs.length ? `<div class="dim">隊伍增益：${esc(b.buffs.join('、'))}</div>` : '<div class="dim">隊伍增益：無（加一位祭司可大幅提升經驗）</div>'}
       <table><thead><tr><th class="nosort">角色</th><th class="nosort">職業</th><th class="nosort num">Lv</th><th class="nosort">目前地圖</th><th class="nosort num">目前每小時</th><th class="nosort num">估計每小時</th><th class="nosort">備註</th></tr></thead><tbody>
       ${b.per.map(x => `<tr><td>${esc(x.c.name)}</td><td class="dim">${esc(x.c.jobName || x.c.job)}</td><td class="num">${x.c.lv}</td><td class="dim">${esc(x.c.curMap ? x.c.curMap.name : '—')}</td><td class="num">${x.c.cur ? short(x.c.cur) : '—'}</td><td class="num">${short(x.exp)}</td>
-        <td class="dim">${[!x.eligible && '<span class="bad">等級太低，分不到經驗</span>', x.hf < 1 && x.eligible && `命中約 ${(x.hf * 100).toFixed(0)}%`, x.c.guess && '能力用推估', x.c.curParty].filter(Boolean).join('、')}</td></tr>`).join('')}</tbody></table>
+        <td class="dim">${[!x.eligible && '<span class="bad">等級太低，分不到經驗</span>', x.hf < 1 && x.eligible && `命中約 ${(x.hf * 100).toFixed(0)}%`, x.c.guess ? '能力用同等級推估' : x.c.src && `能力依${x.c.src}`, x.c.curParty].filter(Boolean).join('、')}</td></tr>`).join('')}</tbody></table>
       ${r.alt.length ? `<div class="dim">其他選擇：${r.alt.map(a => `${esc(a.map.name)}（${short(a.total)}/小時）`).join('、')}</div>` : ''}</div>`;
   }).join('');
 }
@@ -2098,6 +2179,7 @@ document.addEventListener('click', async e => {
   try {
     if (t.id === 'mpGo') { const map = mapOf($('#mpTarget').value); const list = mapCandidates().filter(c => ui.mpSel.has(c.id)); if (!list.length) { $('#mpMsg').textContent = '先勾選角色'; return; } await sendMoves(list, map); }
     if (t.dataset && t.dataset.ppgo !== undefined) { const r = ui.ppRes[Number(t.dataset.ppgo)]; await sendMoves(r.g, r.best.map); }
+    if (t.dataset && t.dataset.effgo) { const [cid, mid] = t.dataset.effgo.split('|'); const c = mapCandidates().find(x => x.id === cid), m = WORLD.maps.find(x => String(x.id) === mid); if (c && m) await sendMoves([c], m); }
   } catch (err) { alert('失敗：' + err.message); }
 });
 document.addEventListener('change', e => {
@@ -2200,7 +2282,6 @@ function renderAll() {
   const active = document.querySelector('nav button.on').dataset.tab;
   if (active === 'overview') { renderOverview(); renderIdleCard(); }
   if (active === 'gear') { renderGear(); renderAS(); }
-  if (active === 'res') renderRes();
   if (active === 'trade') renderTrade();
   if (active === 'bag') renderBag();
   if (active === 'quiz') loadQuiz().then(renderQuiz);
@@ -2248,7 +2329,6 @@ document.addEventListener('click', e => {
   const t = e.target;
   if (t.dataset.ovsort) { const k = t.dataset.ovsort; ui.ovSort = { key: k, dir: ui.ovSort.key === k ? -ui.ovSort.dir : 1 }; renderOverview(); }
   if (t.dataset.gsort) { const k = t.dataset.gsort; ui.gearSort = { key: k, dir: ui.gearSort.key === k ? -ui.gearSort.dir : (k.startsWith('inc') || k === 'plus' ? -1 : 1) }; renderList(); }
-  if (t.dataset.isort) { const k = t.dataset.isort; ui.itemSort = { key: k, dir: ui.itemSort.key === k ? -ui.itemSort.dir : (k === 'total' ? -1 : 1) }; renderRes(); }
   if (t.dataset.main) { saveSettings({ mainCharId: S.mainCharId === t.dataset.main ? null : t.dataset.main }).then(renderOverview); }
   if (t.id === 'gearMore') { ui.gearLimit += 300; renderList(); }
   if (t.id === 'addCond') { readFilterFromUI(); ui.filter.conds.push({ join: 'and', stat: 'incPAD', op: '>=', val: '' }); renderFilterUI(); renderList(); }
@@ -2290,10 +2370,8 @@ document.addEventListener('change', e => {
     return;
   }
   if (t.closest('#filterCard')) { readFilterFromUI(); ui.gearLimit = 300; renderList(); }
-  if (t.closest('#res .bar')) renderRes();
 });
 document.addEventListener('input', e => {
-  if (e.target.id === 'rSearch') renderRes();
   if (e.target.id === 'fName') { readFilterFromUI(); renderList(); }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('label-edit')) e.target.blur(); });

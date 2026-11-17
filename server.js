@@ -106,8 +106,8 @@ market = makeMarket(() => db, save, id => charName(id));
 // 冒險資料庫（外部）：題庫、道具／怪物資料與圖示
 const extdb = makeExtDb(DATA_DIR, () => db.settings || {}, msg => { console.log('[資料庫] ' + msg); quizLog(msg); save(); });
 extdb.schedule();
-// 組隊功能已移除：之前留下的組隊工作一律取消
-for (const j of db.jobs) if (j.partyRun && ['approved', 'running', 'pending'].includes(j.status)) j.status = 'cancelled';
+// 組隊功能已移除：之前留下的組隊工作直接刪掉（面板「最近的換圖進度」不再顯示）
+db.jobs = db.jobs.filter(j => !j.partyRun);
 
 
 // ================= 交易工作 =================
