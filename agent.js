@@ -318,6 +318,8 @@ function agentMain(ctx) {
           itemStackCount: (c.inventoryStacks || []).length,
         },
         autoSell: (() => { const a = c.autoSell && c.autoSell.maps; const x = a && a[c.map]; return x ? { map: c.map, enabled: !!x.enabled, itemIds: (x.itemIds || []).slice(0, 400) } : { map: c.map, enabled: false, itemIds: [] }; })(),
+        // 所有地圖的自動販售設定（你在遊戲裡手動設過的），給派工看板匯入當範本
+        autoSellAll: (() => { const a = (c.autoSell && c.autoSell.maps) || {}; const o = {}; for (const [m, x] of Object.entries(a).slice(0, 60)) if (x) o[m] = { enabled: !!x.enabled, itemIds: (x.itemIds || []).slice(0, 400) }; return o; })(),
         points: (() => { const v = state.cashPoints != null ? state.cashPoints : (c.cashPoints != null ? c.cashPoints : c.points); return typeof v === 'number' ? v : (v && typeof v.balance === 'number' ? v.balance : undefined); })(),
         idleOffline: trackOffline() ? { since: offlineSince } : undefined,
         party: (() => { try { const t = JSON.stringify({ party: state.party || null, invites: state.partyInvites || null, accountParty: state.accountParty || null }); return t.length < 8000 ? JSON.parse(t) : { truncated: true }; } catch (_) { return undefined; } })(),
@@ -350,7 +352,7 @@ function agentMain(ctx) {
         await loadCatalog();
         try { await loadAccount(); } catch (_) {}
         const snap = buildSnapshot(state);
-        const hash = JSON.stringify([snap.char, snap.playerCode, snap.eligibleKnown, snap.knowledge, snap.idleOffline, snap.party, snap.points, snap.autoSell, snap.gear.map(g => g.uid + g.plus + g.loc + g.locked).join('|'), snap.items.map(i => i.key + i.qty + i.loc + i.tradableQty + i.lockedQty).join('|')]);
+        const hash = JSON.stringify([snap.char, snap.playerCode, snap.eligibleKnown, snap.knowledge, snap.idleOffline, snap.party, snap.points, snap.autoSell, snap.autoSellAll, snap.gear.map(g => g.uid + g.plus + g.loc + g.locked).join('|'), snap.items.map(i => i.key + i.qty + i.loc + i.tradableQty + i.lockedQty).join('|')]);
         const now = Date.now();
         if (hash !== lastHash || now - lastSent > HEARTBEAT_MS) {
           lastHash = hash; lastSent = now;

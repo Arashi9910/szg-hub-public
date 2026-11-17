@@ -111,6 +111,37 @@
   .grid.named .tile .q { bottom: auto; top: 30px; }
   .tile .tn { font-size: 11px; line-height: 1.15; text-align: center; padding: 3px 3px 0; color: var(--text); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   @media (max-width: 1100px) { .lanes { grid-template-columns: 1fr; } }
+  .fac { position: relative; height: calc(100vh - var(--hdr, 52px) - 150px); min-height: 520px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px; cursor: grab; touch-action: none;
+    background-color: #0c121c; background-image: radial-gradient(circle, #24324a 1px, transparent 1.2px); background-size: 22px 22px; }
+  .fac.panning { cursor: grabbing; }
+  .fac-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .fac-wires { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+  .fac-wires .w-base { fill: none; stroke-width: 3; opacity: .18; }
+  .fac-wires .w { fill: none; stroke-width: 2.2; stroke-linecap: round; }
+  .fac-wires .w.flow { stroke-dasharray: 2 10; animation: wflow var(--dur, 1.2s) linear infinite; stroke-width: 3.2; }
+  .fac-wires .w.pend { stroke-dasharray: 7 6; animation: wflow 0.8s linear infinite; }
+  .fac-wires .w.idle { stroke-dasharray: 3 6; opacity: .5; }
+  .fac-wires .w.soon { stroke-dasharray: 4 7; opacity: .45; }
+  .fac-wires .w.tmp { stroke-dasharray: 6 5; stroke-width: 2.5; }
+  .fac-wires .w-lbl { fill: var(--text); font-size: 12px; paint-order: stroke; stroke: #0c121c; stroke-width: 4px; }
+  @keyframes wflow { to { stroke-dashoffset: -24; } }
+  .fnode { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 6px 18px rgba(0,0,0,.45); cursor: default; user-select: none; }
+  .fnode .fn-hd { padding: 6px 9px; border-bottom: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 9px 9px 0 0; display: flex; gap: 6px; align-items: center; cursor: move; background: var(--panel2); }
+  .fnode .fn-bd { padding: 6px 9px 8px; line-height: 1.5; }
+  .fnode.fchar .fn-hd { border-top-color: var(--accent); } .fnode.fchar.pend { border-color: var(--warn); }
+  .fnode.fmap.hot { outline: 2px dashed var(--accent); outline-offset: 3px; }
+  .fnode.fsink .fn-hd { border-top-color: #e0b341; } .fnode.fsink.soon { opacity: .55; border-style: dashed; } .fnode.fsink.soon .fn-hd { border-top-color: var(--dim); }
+  .fnode .big { font-size: 20px; font-weight: 600; }
+  .fnode .flane { margin-left: auto; font-size: 11px; padding: 0 2px; }
+  .fnode .fn-act { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+  .fnode .fgoal { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fnode .fgoal img.ico { width: 18px; height: 18px; }
+  .lane-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .port { position: absolute; top: 15px; width: 14px; height: 14px; border-radius: 50%; background: var(--panel); border: 2px solid var(--accent); }
+  .port.out { right: -8px; cursor: crosshair; background: var(--accent); box-shadow: 0 0 0 4px rgba(79,127,209,.25); }
+  .port.out:hover { transform: scale(1.25); }
+  .port.in { left: -8px; } .port.out2 { right: -8px; border-color: var(--dim); }
+  .fac-hud { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 6px; align-items: center; background: rgba(15,21,32,.85); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
   img.ico { width: 22px; height: 22px; object-fit: contain; vertical-align: middle; margin-right: 4px; image-rendering: pixelated; }
   img.mico { max-width: 44px; max-height: 40px; object-fit: contain; vertical-align: middle; margin-right: 6px; image-rendering: pixelated; }
   .cell-gear img.ico { width: 26px; height: 26px; float: left; margin: 2px 6px 0 0; }
@@ -340,9 +371,12 @@
     <div class="card">
       <h3>派工看板</h3>
       <div class="dim help-src">把角色拖到地圖上決定去哪裡（也可以點一下角色再點地圖）。地圖分成「練功、打卷軸、打裝備」三條路線，每張圖可以設定：🎯 要打的目標道具（看板會估計派去的角色每小時大約打到幾個）、💰 自動販售（撿到就賣給商店的道具，遊戲伺服器處理，分頁沒開也有效）。排好後按「套用派工」：要移動的角色換過去，並套用那張圖的自動販售。遊戲只能設定「目前所在地圖」的自動販售，所以換圖和設定是一起做的。估計值和地圖分頁的組隊試算用同一套方法，只是參考。</div>
-      <div class="bar"><button class="btn" id="bdApply">▶ 套用派工</button><button class="btn" id="bdClear">清除派工</button><span class="dim" id="bdMsg"></span></div>
+      <div class="bar"><div class="seg" id="bdViewSeg"><button data-bview2="factory">🏭 工廠圖</button><button data-bview2="list">☰ 清單</button></div>
+        <button class="btn" id="bdApply">▶ 套用派工</button><button class="btn" id="bdImport" title="把角色目前所在的地圖放上看板，並用你在遊戲裡設好的自動販售當範本">⤓ 匯入目前設定</button><button class="btn" id="bdClear">清除派工</button>
+        <select id="bdAddMap" style="max-width:260px"><option value="">＋ 加入地圖…</option></select><span class="dim" id="bdMsg"></span></div>
     </div>
-    <div class="board">
+    <div id="bdFactory" class="fac"></div>
+    <div class="board" id="bdList">
       <div class="pool-col card"><div class="lane-hd"><b>角色</b><input id="bdSearch" placeholder="搜尋" style="width:90px" autocomplete="off"></div><div id="bdPool" class="pool"></div><div class="dim sm" style="margin-top:6px">拖回這裡＝不派工</div></div>
       <div id="bdLanes" class="lanes"></div>
     </div>
@@ -488,7 +522,7 @@ function emptyFilter() {
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const fmt = n => n == null ? '—' : Number(n).toLocaleString('zh-TW');
-const short = n => { if (n == null) return '—'; n = Number(n); if (n >= 1e8) return (n/1e8).toFixed(2).replace(/\.?0+$/,'') + ' 億'; if (n >= 1e4) return (n/1e4).toFixed(1).replace(/\.0$/,'') + ' 萬'; return fmt(n); };
+const short = n => { if (n == null) return '—'; n = Number(n); if (n >= 1e8) return (n/1e8).toFixed(2).replace(/\.?0+$/,'') + ' 億'; if (n >= 1e4) return (n/1e4).toFixed(1).replace(/\.0$/,'') + ' 萬'; return fmt(Math.round(n)); };
 const ago = ms => { const m = Math.floor(ms/60000); if (m < 1) return '剛剛'; if (m < 60) return m + ' 分前'; const h = Math.floor(m/60); if (h < 24) return h + ' 小時前'; return Math.floor(h/24) + ' 天前'; };
 const hm = ms => { if (ms <= 0) return '0m'; const m = Math.round(ms/60000); const h = Math.floor(m/60); return h ? `${h}h${String(m%60).padStart(2,'0')}m` : `${m}m`; };
 const clock = t => { const d = new Date(t); return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
@@ -2259,7 +2293,7 @@ const LANES = [['train', '練功', '經驗'], ['scroll', '打卷軸', '卷軸'],
 ui.board = { pick: null, sellEdit: null, goalEdit: null, dragging: false, sellDraft: null, q: '' };
 function boardCfg() {
   const b = S.board || {};
-  return { lanes: { train: [], scroll: [], gear: [], ...(b.lanes || {}) }, assign: { ...(b.assign || {}) }, sell: { ...(b.sell || {}) }, goals: { ...(b.goals || {}) } };
+  return { lanes: { train: [...((b.lanes || {}).train || [])], scroll: [...((b.lanes || {}).scroll || [])], gear: [...((b.lanes || {}).gear || [])] }, assign: { ...(b.assign || {}) }, sell: { ...(b.sell || {}) }, goals: { ...(b.goals || {}) }, pos: { ...(b.pos || {}) } };
 }
 let boardSaveTimer = null;
 function saveBoard(cfg) { S.board = cfg; clearTimeout(boardSaveTimer); boardSaveTimer = setTimeout(() => saveSettings({ board: cfg }), 300); }
@@ -2286,8 +2320,11 @@ function dropRate(est, map, itemId) {
 }
 function assignedMap(cfg, c) { return cfg.assign[c.id] || null; }
 function renderBoard() {
+  const fv = ui.board.view === 'factory';
+  document.querySelectorAll('#bdViewSeg button').forEach(b => b.classList.toggle('on', b.dataset.bview2 === ui.board.view));
+  if ($('#bdFactory')) { $('#bdFactory').style.display = fv ? '' : 'none'; $('#bdList').style.display = fv ? 'none' : ''; }
   if (!WORLD) { loadWorld().then(() => WORLD && renderBoard()); $('#bdLanes').innerHTML = '<div class="card dim">還沒有地圖資料：打開任一個遊戲分頁，約 10 秒後會自動上傳。</div>'; return; }
-  if (ui.board.dragging) return;
+  if (ui.board.dragging || ui.fac.drag) return;
   const cfg = boardCfg(), chars = boardChars(), onBoard = new Set(Object.values(cfg.lanes).flat());
   const where = c => cfg.assign[c.id] || (onBoard.has(c.map) ? c.map : null); // 沒指定、但人已經在看板上的某張圖，就算在那張圖
   const moving = chars.filter(c => cfg.assign[c.id] && cfg.assign[c.id] !== c.map);
@@ -2304,6 +2341,9 @@ function renderBoard() {
       ${maps.map(m => boardMapCard(lane, m, chars.filter(c => where(c) === m.id), cfg)).join('')}
       <select class="bd-add" data-bdadd="${lane}"><option value="">＋ 加入地圖…</option>${WORLD.maps.filter(m => !onBoard.has(m.id) && m.mobs && m.mobs.length).sort((a, b) => a.minLevel - b.minLevel || a.lvMin - b.lvMin).map(m => `<option value="${esc(m.id)}">${esc(m.name)}（Lv${m.minLevel}＋・怪 ${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}）</option>`).join('')}</select></div>`;
   }).join('');
+  const addSel = $('#bdAddMap');
+  if (document.activeElement !== addSel) addSel.innerHTML = '<option value="">＋ 加入地圖…</option>' + WORLD.maps.filter(m => !onBoard.has(m.id) && m.mobs && m.mobs.length).sort((a, b) => a.minLevel - b.minLevel || a.lvMin - b.lvMin).map(m => `<option value="${esc(m.id)}">${esc(m.name)}（Lv${m.minLevel}＋・怪 ${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}）</option>`).join('');
+  if (fv) renderFactory();
   renderSellEditor(cfg, chars);
   renderGoalEditor(cfg);
 }
@@ -2451,10 +2491,193 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('change', e => {
   const t = e.target;
+  if (t.id === 'bdAddMap' && t.value) { const cfg = boardCfg(); cfg.lanes.train = [...cfg.lanes.train, t.value]; saveBoard(cfg); renderBoard(); return; }
   if (t.dataset && t.dataset.bdadd) { if (!t.value) return; const cfg = boardCfg(); cfg.lanes[t.dataset.bdadd] = [...cfg.lanes[t.dataset.bdadd], t.value]; saveBoard(cfg); renderBoard(); }
   if (t.id === 'bdSellOn' && ui.board.sellDraft) ui.board.sellDraft.enabled = t.checked;
 });
 document.addEventListener('input', e => { if (e.target.id === 'bdSearch') { ui.board.q = e.target.value; renderBoard(); } });
+
+// ================= 派工看板：工廠圖（節點＋連線） =================
+ui.board.view = (() => { try { return localStorage.getItem('boardView') || 'factory'; } catch (_) { return 'factory'; } })();
+ui.fac = { pan: null, zoom: 1, drag: null };
+try { const v = JSON.parse(localStorage.getItem('facView') || 'null'); if (v) { ui.fac.pan = v.pan; ui.fac.zoom = v.zoom; } } catch (_) {}
+const LANE_COLOR = { train: 'var(--good)', scroll: '#a78bfa', gear: '#f08a5d' };
+const LANE_NAME = { train: '練功', scroll: '打卷軸', gear: '打裝備' };
+const FN_W = { c: 190, m: 260, s: 210 };
+function facDefaults(cfg, chars) {
+  const pos = {}, laneOrder = ['train', 'scroll', 'gear'];
+  chars.forEach((c, i) => pos['c:' + c.id] = [30, 30 + i * 84]);
+  let y = 30;
+  for (const lane of laneOrder) for (const id of cfg.lanes[lane]) { pos['m:' + id] = [330, y]; y += 170; }
+  pos.exp = [700, 30]; pos.shop = [700, 200]; pos.bag = [700, 370]; pos.forge = [990, 370]; pos.out = [1270, 300];
+  return pos;
+}
+function facPos(cfg, chars) { const d = facDefaults(cfg, chars), p = cfg.pos || {}; for (const k of Object.keys(d)) if (p[k]) d[k] = p[k]; return d; }
+function facMapLane(cfg, id) { for (const [l, ids] of Object.entries(cfg.lanes)) if (ids.includes(id)) return l; return 'train'; }
+function renderFactory() {
+  const box = $('#bdFactory');
+  if (ui.fac.drag) return;
+  const cfg = boardCfg(), chars = boardChars().filter(c => c.active), pos = facPos(cfg, chars);
+  const onBoard = Object.values(cfg.lanes).flat();
+  const where = c => cfg.assign[c.id] && cfg.assign[c.id] !== '__pool' ? cfg.assign[c.id] : (onBoard.includes(c.map) && cfg.assign[c.id] !== '__pool' ? c.map : null);
+  // 每張圖的估算
+  const est = {}, totals = { exp: 0, goals: {}, sellMaps: 0 };
+  for (const id of onBoard) {
+    const m = mapOf(id); if (!m) continue;
+    const here = chars.filter(c => where(c) === id);
+    const e = here.length ? groupEstimate(here, m) : null, lane = facMapLane(cfg, id);
+    const goals = (cfg.goals[id] || []).map(g => ({ id: g, r: e ? dropRate(e, m, g) : 0 }));
+    est[id] = { m, here, e, lane, goals };
+    if (e && lane === 'train') totals.exp += e.total;
+    for (const g of goals) totals.goals[g.id] = (totals.goals[g.id] || 0) + g.r;
+    if (cfg.sell[id] && cfg.sell[id].enabled && here.length) totals.sellMaps++;
+  }
+  const rate = r => r >= 10 ? fmt(Math.round(r)) + '/時' : r >= 0.1 ? r.toFixed(1) + '/時' : r > 0 ? `每 ${fmt(Math.round(1 / r))} 時 1` : '—';
+  const node = (key, cls, w, inner, title = '') => { const [x, y] = pos[key]; return `<div class="fnode ${cls}" data-fn="${esc(key)}" style="left:${x}px;top:${y}px;width:${w}px" ${title ? `title="${esc(title)}"` : ''}>${inner}</div>`; };
+  let html = '';
+  for (const c of chars) {
+    const to = where(c), pend = cfg.assign[c.id] && cfg.assign[c.id] !== '__pool' && cfg.assign[c.id] !== c.map, d = dpsOf(c.id);
+    html += node('c:' + c.id, 'fchar' + (pend ? ' pend' : ''), FN_W.c, `<div class="fn-hd" data-fdrag><b>${esc(c.name)}</b><span class="dim sm">Lv${c.lv}</span></div>
+      <div class="fn-bd sm"><span class="dim">${esc(c.jobName || '')}</span>${d ? ` ・DPS ${short(d.w5.dps || d.w60.dps)}` : ''}<div class="dim">${pend ? `<span class="warn">${esc((mapOf(c.map) || {}).name || '?')} → ${esc((mapOf(to) || {}).name || '')}</span> <a data-funassign="${c.id}" title="取消派工">✕</a>` : esc((mapOf(c.map) || {}).name || '—')}</div></div>
+      <span class="port out" data-fport="${c.id}" title="拖曳連到地圖＝派工"></span>`);
+  }
+  for (const id of onBoard) {
+    const x = est[id]; if (!x) continue;
+    const sell = cfg.sell[id];
+    const stat = x.lane === 'train' ? (x.e ? `<div>經驗 <b>${short(x.e.total)}</b>/時</div>` : '<div class="dim">沒有角色</div>')
+      : (x.goals.length ? x.goals.map(g => `<div class="fgoal">${iname(g.id, wName(g.id))} <b>${rate(g.r)}</b></div>`).join('') : `<div class="dim">還沒選目標 → 🎯</div>`);
+    html += node('m:' + id, 'fmap', FN_W.m, `<div class="fn-hd" data-fdrag style="border-color:${LANE_COLOR[x.lane]}"><span class="lane-dot" style="background:${LANE_COLOR[x.lane]}"></span><b>${esc(x.m.name)}</b>
+        <select class="flane" data-flane="${esc(id)}" title="這張圖的用途">${Object.entries(LANE_NAME).map(([k, n]) => `<option value="${k}" ${k === x.lane ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+      <div class="fn-bd sm"><div class="dim">Lv${x.m.minLevel}＋・怪 ${x.m.lvMin}${x.m.lvMax !== x.m.lvMin ? '~' + x.m.lvMax : ''}・${x.here.length} 隻</div>${stat}
+        <div class="fn-act">${x.lane !== 'train' ? `<button class="btn sm" data-bdgoal="${esc(id)}">🎯 目標${(cfg.goals[id] || []).length ? ' ' + cfg.goals[id].length : ''}</button>` : ''}<button class="btn sm ${sell ? 'on' : ''}" data-bdsell="${esc(id)}">💰 販售${sell ? (sell.enabled ? ' ' + sell.itemIds.length : ' 關') : ''}</button><button class="btn sm" data-bddel="${x.lane}|${esc(id)}" title="從看板移除">✕</button></div></div>
+      <span class="port in" data-fin="${esc(id)}"></span><span class="port out2"></span>`);
+  }
+  html += node('exp', 'fsink', FN_W.s, `<div class="fn-hd" data-fdrag><b>📈 經驗</b></div><div class="fn-bd sm">練功地圖合計<div class="big">${short(totals.exp)}<span class="dim sm"> /時</span></div></div><span class="port in"></span>`);
+  html += node('shop', 'fsink', FN_W.s, `<div class="fn-hd" data-fdrag><b>💰 商店（自動販售）</b></div><div class="fn-bd sm">${totals.sellMaps} 張圖有角色、開著自動販售<div class="dim">撿到就賣，遊戲伺服器處理</div></div><span class="port in"></span>`);
+  const gl = Object.entries(totals.goals).filter(([, r]) => r > 0).sort((a, b) => b[1] - a[1]);
+  html += node('bag', 'fsink', FN_W.s, `<div class="fn-hd" data-fdrag><b>🎒 背包／倉庫</b></div><div class="fn-bd sm">${gl.length ? gl.slice(0, 6).map(([id, r]) => `<div class="fgoal">${iname(id, wName(id))} <b>${rate(r)}</b></div>`).join('') : '<div class="dim">在打卷軸／打裝備的圖設定 🎯 目標後，這裡會顯示每小時的預估收穫</div>'}</div><span class="port in"></span><span class="port out2"></span>`);
+  html += node('forge', 'fsink soon', FN_W.s, `<div class="fn-hd" data-fdrag><b>🔨 強化工坊</b></div><div class="fn-bd sm dim">規劃中：依衝裝規則批次衝卷</div><span class="port in"></span><span class="port out2"></span>`);
+  html += node('out', 'fsink soon', FN_W.s, `<div class="fn-hd" data-fdrag><b>🔀 分流</b></div><div class="fn-bd sm dim">規劃中：及格→鎖定／穿上<br>不及格→商店／市場</div><span class="port in"></span>`);
+  const W = 3000, H = Math.max(1600, 200 + Math.max(...Object.values(pos).map(p => p[1])) + 400);
+  if (!ui.fac.pan) ui.fac.pan = { x: 10, y: 10 };
+  ui.fac.est = est; ui.fac.where = where; ui.fac.chars = chars;
+  // 內容沒變就不重畫（避免連線動畫每 10 秒重來一次）
+  const sig = W + 'x' + H + html;
+  if (ui.fac.sig === sig && $('#facWorld')) { requestAnimationFrame(() => drawWires()); return; }
+  ui.fac.sig = sig;
+  box.innerHTML = `<div class="fac-world" id="facWorld" style="width:${W}px;height:${H}px;transform:translate(${ui.fac.pan.x}px,${ui.fac.pan.y}px) scale(${ui.fac.zoom})"><svg class="fac-wires" id="facWires" width="${W}" height="${H}"></svg>${html}</div>
+    <div class="fac-hud"><button class="btn sm" data-fzoom="1.15">＋</button><button class="btn sm" data-fzoom="0.87">－</button><button class="btn sm" data-fzoom="reset">重設視角</button><button class="btn sm" data-fzoom="layout" title="把所有節點排回預設位置">重新排列</button>
+      <span class="dim sm">拖曳角色右邊的 ● 連到地圖＝派工・拖標題移動節點・拖空白處平移・滾輪縮放</span></div>`;
+  requestAnimationFrame(() => drawWires());
+}
+// 依節點實際位置畫線
+function drawWires(tmp) {
+  const svg = $('#facWires'); if (!svg) return;
+  const cfg = boardCfg(), est = ui.fac.est || {}, chars = ui.fac.chars || [];
+  const el = k => document.querySelector(`.fnode[data-fn="${CSS.escape(k)}"]`);
+  const pt = (k, side) => { const n = el(k); if (!n) return null; const x = n.offsetLeft, y = n.offsetTop; return side === 'r' ? [x + n.offsetWidth, y + 22] : [x, y + 22]; };
+  const curve = (a, b) => { const dx = Math.max(60, (b[0] - a[0]) / 2); return `M${a[0]},${a[1]} C${a[0] + dx},${a[1]} ${b[0] - dx},${b[1]} ${b[0]},${b[1]}`; };
+  let s = '';
+  const wire = (a, b, cls, color, label, dur) => { if (!a || !b) return; const d = curve(a, b); s += `<path d="${d}" class="w-base" stroke="${color}"/><path d="${d}" class="w ${cls}" stroke="${color}" style="--dur:${dur || 1.2}s"/>`; if (label) { const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2; s += `<text x="${mx}" y="${my - 6}" class="w-lbl" text-anchor="middle">${esc(label)}</text>`; } };
+  for (const c of chars) {
+    const to = ui.fac.where(c); if (!to) continue;
+    const pend = cfg.assign[c.id] && cfg.assign[c.id] !== c.map, lane = (est[to] || {}).lane || 'train';
+    wire(pt('c:' + c.id, 'r'), pt('m:' + to, 'l'), pend ? 'pend' : 'flow', pend ? 'var(--warn)' : LANE_COLOR[lane], '', 1.4);
+  }
+  for (const [id, x] of Object.entries(est)) {
+    if (!x.here.length) continue;
+    const from = pt('m:' + id, 'r');
+    if (x.lane === 'train' && x.e) wire(from, pt('exp', 'l'), 'flow', LANE_COLOR.train, '+' + short(x.e.total) + '/時', 0.9);
+    const sell = cfg.sell[id];
+    if (sell && sell.enabled) wire(from, pt('shop', 'l'), 'flow', '#e0b341', '賣 ' + sell.itemIds.length + ' 項', 1.6);
+    if (x.lane !== 'train') { const g = x.goals.filter(q => q.r > 0); wire(from, pt('bag', 'l'), g.length ? 'flow' : 'idle', LANE_COLOR[x.lane], g.length ? g.length + ' 種目標' : '', g.length ? 1.1 : 0); }
+  }
+  wire(pt('bag', 'r'), pt('forge', 'l'), 'soon', 'var(--dim)', '');
+  wire(pt('forge', 'r'), pt('out', 'l'), 'soon', 'var(--dim)', '');
+  if (tmp && tmp.a) s += `<path d="${curve(tmp.a, tmp.b)}" class="w tmp" stroke="var(--accent)"/>`;
+  svg.innerHTML = s;
+}
+function facSaveView() { try { localStorage.setItem('facView', JSON.stringify({ pan: ui.fac.pan, zoom: ui.fac.zoom })); } catch (_) {} }
+function facWorldPt(e) { const r = $('#bdFactory').getBoundingClientRect(); return [(e.clientX - r.left - ui.fac.pan.x) / ui.fac.zoom, (e.clientY - r.top - ui.fac.pan.y) / ui.fac.zoom]; }
+function facApplyTransform() { const w = $('#facWorld'); if (w) w.style.transform = `translate(${ui.fac.pan.x}px,${ui.fac.pan.y}px) scale(${ui.fac.zoom})`; }
+document.addEventListener('pointerdown', e => {
+  const box = e.target.closest && e.target.closest('#bdFactory'); if (!box || e.button !== 0) return;
+  if (e.target.closest('button, select, a, input')) return;
+  const port = e.target.closest('[data-fport]');
+  if (port) { // 拉線派工
+    const n = port.closest('.fnode'); ui.fac.drag = { type: 'wire', char: port.dataset.fport, a: [n.offsetLeft + n.offsetWidth, n.offsetTop + 22] };
+    e.preventDefault(); box.setPointerCapture(e.pointerId); return;
+  }
+  const hd = e.target.closest('[data-fdrag]');
+  if (hd) { const n = hd.closest('.fnode'); const [wx, wy] = facWorldPt(e); ui.fac.drag = { type: 'node', key: n.dataset.fn, el: n, dx: wx - n.offsetLeft, dy: wy - n.offsetTop, moved: false }; e.preventDefault(); box.setPointerCapture(e.pointerId); return; }
+  if (e.target.closest('.fnode, .fac-hud')) return;
+  ui.fac.drag = { type: 'pan', sx: e.clientX, sy: e.clientY, px: ui.fac.pan.x, py: ui.fac.pan.y }; box.setPointerCapture(e.pointerId); box.classList.add('panning');
+});
+document.addEventListener('pointermove', e => {
+  const d = ui.fac.drag; if (!d) return;
+  if (d.type === 'pan') { ui.fac.pan = { x: d.px + e.clientX - d.sx, y: d.py + e.clientY - d.sy }; facApplyTransform(); return; }
+  const [wx, wy] = facWorldPt(e);
+  if (d.type === 'node') { d.moved = true; d.el.style.left = Math.max(0, wx - d.dx) + 'px'; d.el.style.top = Math.max(0, wy - d.dy) + 'px'; drawWires(); return; }
+  if (d.type === 'wire') {
+    d.b = [wx, wy]; drawWires(d);
+    document.querySelectorAll('.fmap.hot').forEach(x => x.classList.remove('hot'));
+    const over = document.elementFromPoint(e.clientX, e.clientY); const m = over && over.closest && over.closest('.fmap'); if (m) m.classList.add('hot');
+  }
+});
+document.addEventListener('pointerup', e => {
+  const d = ui.fac.drag; if (!d) return;
+  ui.fac.drag = null; $('#bdFactory') && $('#bdFactory').classList.remove('panning');
+  if (d.type === 'pan') { facSaveView(); return; }
+  if (d.type === 'node') { if (d.moved) { const cfg = boardCfg(); cfg.pos = { ...(cfg.pos || {}), [d.key]: [d.el.offsetLeft, d.el.offsetTop] }; saveBoard(cfg); ui.fac.sig = null; } return; }
+  if (d.type === 'wire') {
+    document.querySelectorAll('.fmap.hot').forEach(x => x.classList.remove('hot'));
+    const over = document.elementFromPoint(e.clientX, e.clientY); const m = over && over.closest && over.closest('.fmap');
+    if (m) { const id = m.dataset.fn.slice(2); const c = DATA.chars[d.char], mm = mapOf(id);
+      if (c && mm && c.char.lv < mm.minLevel) { alert(`${c.char.name} 等級 ${c.char.lv}，未達 ${mm.name} 的 Lv${mm.minLevel}`); renderFactory(); return; }
+      boardMove(d.char, id); return; }
+    drawWires();
+  }
+});
+document.addEventListener('wheel', e => {
+  const box = e.target.closest && e.target.closest('#bdFactory'); if (!box) return;
+  e.preventDefault();
+  const r = box.getBoundingClientRect(), z0 = ui.fac.zoom, z = Math.min(1.6, Math.max(0.35, z0 * (e.deltaY < 0 ? 1.1 : 0.9)));
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  ui.fac.pan = { x: mx - (mx - ui.fac.pan.x) * z / z0, y: my - (my - ui.fac.pan.y) * z / z0 }; ui.fac.zoom = z; facApplyTransform(); facSaveView();
+}, { passive: false });
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-fzoom],[data-funassign],[data-bview2]'); if (!t || !t.closest('#board')) return;
+  if (t.dataset.bview2) { ui.board.view = t.dataset.bview2; try { localStorage.setItem('boardView', ui.board.view); } catch (_) {} renderBoard(); return; }
+  if (t.dataset.funassign) { const cfg = boardCfg(); delete cfg.assign[t.dataset.funassign]; saveBoard(cfg); renderBoard(); return; }
+  const z = t.dataset.fzoom;
+  if (z === 'reset') { ui.fac.zoom = 1; ui.fac.pan = { x: 10, y: 10 }; facApplyTransform(); facSaveView(); return; }
+  if (z === 'layout') { const cfg = boardCfg(); cfg.pos = {}; saveBoard(cfg); renderBoard(); return; }
+  ui.fac.zoom = Math.min(1.6, Math.max(0.35, ui.fac.zoom * Number(z))); facApplyTransform(); facSaveView();
+});
+document.addEventListener('change', e => {
+  const t = e.target; if (!t.dataset || !t.dataset.flane) return;
+  const cfg = boardCfg(), id = t.dataset.flane; for (const l of Object.keys(cfg.lanes)) cfg.lanes[l] = cfg.lanes[l].filter(x => x !== id); cfg.lanes[t.value].push(id); saveBoard(cfg); renderBoard();
+});
+// 匯入：把角色目前所在的地圖放上看板，並用你在遊戲裡手動設好的自動販售當範本
+function boardImport() {
+  const cfg = boardCfg(), onBoard = new Set(Object.values(cfg.lanes).flat());
+  const all = snaps(), added = [], tpl = [], diff = [];
+  for (const s of all) { const isActive = activeCharOf(s.accountId) === s.char.id; if (!isActive || !s.char.map || onBoard.has(s.char.map) || !mapOf(s.char.map)) continue; cfg.lanes.train.push(s.char.map); onBoard.add(s.char.map); added.push(mapOf(s.char.map).name); }
+  const byMap = {};
+  for (const s of all) for (const [m, x] of Object.entries(s.autoSellAll || {})) { if (!mapOf(m) || !x || !(x.itemIds || []).length) continue; (byMap[m] = byMap[m] || []).push({ who: s.char.name, x }); }
+  let overwrite = null;
+  for (const [m, list] of Object.entries(byMap)) {
+    const cnt = {}; for (const v of list) { const k = JSON.stringify([v.x.enabled, [...v.x.itemIds].sort((a, b) => a - b)]); (cnt[k] = cnt[k] || []).push(v); }
+    const best = Object.values(cnt).sort((a, b) => b.length - a.length || b[0].x.itemIds.length - a[0].x.itemIds.length)[0];
+    if (cfg.sell[m]) { if (overwrite === null) overwrite = confirm('有些地圖已經有販售範本了，要用遊戲裡的設定覆蓋嗎？\n（確定＝覆蓋，取消＝保留看板上的）'); if (!overwrite) continue; }
+    cfg.sell[m] = { enabled: best[0].x.enabled, itemIds: [...best[0].x.itemIds] };
+    tpl.push(mapOf(m).name + (Object.keys(cnt).length > 1 ? '' : ''));
+    if (Object.keys(cnt).length > 1) diff.push(`${mapOf(m).name}（${Object.keys(cnt).length} 種設定，採用 ${best.map(v => v.who).join('、')} 的）`);
+  }
+  saveBoard(cfg); renderBoard();
+  alert(`匯入完成：\n・放上看板的地圖：${added.length ? added.join('、') : '（都已經在看板上）'}（先放在「練功」，可以在節點標題的下拉選單改用途）\n・匯入販售範本：${tpl.length} 張圖${diff.length ? `\n\n同一張圖不同角色設定不一樣的：\n${diff.join('\n')}` : ''}`);
+}
+document.addEventListener('click', e => { if (e.target.id === 'bdImport') boardImport(); });
 
 // ================= 冒險資料庫（圖示、道具資料） =================
 let EXT = { items: {}, mobs: {} }, EXT_BYNAME = {}, extLoading = null;
