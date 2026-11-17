@@ -1,0 +1,14 @@
+{
+  "version": "0.10.1",
+  "notes": "表格標頭凍結（裝備清單、穿戴對照、總覽、道具）",
+  "files": [
+    "server.js",
+    "update.js",
+    "agent.js",
+    "dashboard.html",
+    "szg-hub.user.js",
+    "README.md",
+    "version.json",
+    "quiz-bank.json"
+  ]
+}
