@@ -311,10 +311,11 @@ function agentMain(ctx) {
           gearBagCount: (c.equipmentBag || []).length,
           itemStackCount: (c.inventoryStacks || []).length,
         },
+        points: (() => { const v = state.cashPoints != null ? state.cashPoints : (c.cashPoints != null ? c.cashPoints : c.points); return typeof v === 'number' ? v : (v && typeof v.balance === 'number' ? v.balance : undefined); })(),
         idleOffline: trackOffline() ? { since: offlineSince } : undefined,
         party: (() => { try { const t = JSON.stringify({ party: state.party || null, invites: state.partyInvites || null, accountParty: state.accountParty || null }); return t.length < 8000 ? JSON.parse(t) : { truncated: true }; } catch (_) { return undefined; } })(),
         knowledge: (() => { const k = lastKnowledge || state.knowledge; return k ? { ready: !!k.ready, remaining: k.remaining,
-          round: k.round ? { index: k.round.index, done: !!k.round.done, correct: k.round.correct } : null, dbg: `${quizDbg.step}｜${quizDbg.why}｜${quizDbg.ticks}次｜${quizDbg.at ? Math.round((Date.now() - quizDbg.at) / 1000) + '秒前' : ''}${quizDbg.err ? '｜' + quizDbg.err : ''}` } : undefined; })(),
+          round: k.round ? { index: k.round.index, done: !!k.round.done, correct: k.round.correct } : null, dbg: { why: quizDbg.why, err: quizDbg.err, step: quizDbg.step, ticks: quizDbg.ticks } } : undefined; })(),
         gear, items,
       };
     }
@@ -342,7 +343,7 @@ function agentMain(ctx) {
         await loadCatalog();
         try { await loadAccount(); } catch (_) {}
         const snap = buildSnapshot(state);
-        const hash = JSON.stringify([snap.char, snap.playerCode, snap.eligibleKnown, snap.knowledge, snap.idleOffline, snap.party, snap.gear.map(g => g.uid + g.plus + g.loc + g.locked).join('|'), snap.items.map(i => i.key + i.qty + i.loc + i.tradableQty + i.lockedQty).join('|')]);
+        const hash = JSON.stringify([snap.char, snap.playerCode, snap.eligibleKnown, snap.knowledge, snap.idleOffline, snap.party, snap.points, snap.gear.map(g => g.uid + g.plus + g.loc + g.locked).join('|'), snap.items.map(i => i.key + i.qty + i.loc + i.tradableQty + i.lockedQty).join('|')]);
         const now = Date.now();
         if (hash !== lastHash || now - lastSent > HEARTBEAT_MS) {
           lastHash = hash; lastSent = now;
@@ -823,23 +824,32 @@ function agentMain(ctx) {
     })();
 
     let quizRunning = false;
-    let lastKnowledge = null;
-    const quizDbg = { step: '', at: 0, err: '', ticks: 0, why: '' };
+    let lastKnowledge = null, lastKnowledgeDay = '', lastKnowledgeChar = '', lastQuizSyncAt = 0, lastQuizErr = { msg: '', at: 0 }, waitingQ = null;
+    const quizDbg = { step: '', at: 0, err: '', ticks: 0, why: '' }; let quizErrAt = 0;
     const qstep = st => { quizDbg.step = st; quizDbg.at = Date.now(); };
     async function quizTick() {
       if (quizRunning) { if (Date.now() - quizDbg.at > 5 * 60 * 1000) { quizDbg.err = '卡在 ' + quizDbg.step + ' 超過 5 分鐘，重設'; quizRunning = false; } return; }
       quizDbg.ticks++;
       // 只在真的有交易／背包工作時讓路（agentRunning 只是每 3 秒查一次工作，背景分頁會跟這裡同時醒來）
       if (agentBusy) { quizDbg.why = '交易/背包工作中'; return; }
-      quizRunning = true; qstep('開始'); quizDbg.why = '';
+      quizRunning = true; qstep('開始'); quizDbg.why = ''; if (Date.now() - quizErrAt > 30 * 60 * 1000) quizDbg.err = '';
       try {
         const state = readState();
         if (!state || !state.character) return;
         qstep('讀題庫');
         const cfg = await hub('GET', '/api/quiz');
         const charId = state.character.id;
+        const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10); // 台灣時間午夜重置
+        if (lastKnowledgeDay !== today || lastKnowledgeChar !== charId) { lastKnowledge = null; lastKnowledgeDay = today; lastKnowledgeChar = charId; }
+        // 沒開自動作答：只偶爾同步一次讓面板顯示剩餘次數；今天次數已用完：到午夜前都不再同步，減少對遊戲伺服器的請求
+        if (!cfg.auto) { quizDbg.why = '未開啟'; if (lastKnowledge && Date.now() - lastQuizSyncAt < 15 * 60 * 1000) return; }
+        else if (lastKnowledge && lastKnowledge.remaining === 0 && (!lastKnowledge.round || lastKnowledge.round.done)) { quizDbg.why = '今日次數用完'; return; }
+        // 正在等你在面板作答：題庫還沒有答案就不用一直同步（最多 10 分鐘確認一次題目還在）
+        if (cfg.auto && waitingQ && waitingQ.char === charId && cfg.answers[waitingQ.k] == null && Date.now() - waitingQ.at < 10 * 60 * 1000) { quizDbg.why = waitingQ.why; return; }
+        waitingQ = null;
         qstep('同步');
-        let j = await game({ type: 'sync' });
+        lastQuizSyncAt = Date.now();
+        let j = await gameRetry({ type: 'sync', characterId: charId });
         let k = j && j.knowledge;
         if (k) lastKnowledge = k;
         qstep('已同步');
@@ -852,7 +862,7 @@ function agentMain(ctx) {
             if (!(k.remaining > 0)) { quizDbg.why = '今日次數用完'; return; }
             setBadge(null, `知識王：開始新一輪（今日剩 ${k.remaining} 次）`);
             qstep('開新一輪');
-            j = await game({ type: 'knowledgeStart' });
+            j = await gameRetry({ type: 'knowledgeStart', characterId: charId });
             k = j.knowledge; if (k) lastKnowledge = k; await log(`開始新一輪（今日剩 ${k && k.remaining}）`);
             continue;
           }
@@ -861,20 +871,21 @@ function agentMain(ctx) {
             // 剛作答完，遊戲可能先顯示對錯、過一下才給下一題
             if (++waitNext > 8) { quizDbg.err = '等不到下一題：' + JSON.stringify({ i: r.index, done: r.done, fb: !!r.feedback, keys: Object.keys(r) }).slice(0, 150); return; }
             qstep('等下一題'); await new Promise(res => setTimeout(res, 2500));
-            j = await game({ type: 'sync' }); k = j.knowledge; if (k) lastKnowledge = k; continue;
+            j = await gameRetry({ type: 'sync', characterId: charId }); k = j.knowledge; if (k) lastKnowledge = k; continue;
           }
           waitNext = 0;
           const ans = cfg.answers[qnorm(q.text)];
           const idx = ans == null ? -1 : q.options.findIndex(o => qnorm(o) === qnorm(ans));
           if (idx < 0) {
             quizDbg.why = '等你作答第 ' + (r.index + 1) + ' 題';
+            waitingQ = { char: charId, k: qnorm(q.text), at: Date.now(), why: quizDbg.why };
             await hub('POST', '/api/quiz/unknown', { q: q.text, options: q.options, charId });
             setBadge(null, `知識王：第 ${r.index + 1} 題題庫沒有，等你在面板選答案`);
             return;
           }
           setBadge(null, `知識王：第 ${r.index + 1} 題 → ${q.options[idx]}`);
           qstep('作答 ' + (r.index + 1));
-          j = await game({ type: 'knowledgeAnswer', round: r.id, index: r.index, answer: idx });
+          j = await gameRetry({ type: 'knowledgeAnswer', round: r.id, index: r.index, answer: idx, characterId: charId });
           learnFrom(j);
           const f = j.knowledge && j.knowledge.round && j.knowledge.round.feedback;
           if (f && typeof f.correctIndex === 'number' && f.selected !== f.correctIndex) await log(`答錯：${q.text}（選 ${q.options[idx]}，正解 ${f.options[f.correctIndex]}），已更正題庫`);
@@ -882,8 +893,13 @@ function agentMain(ctx) {
           if (k && k.round && k.round.done) await log(`本輪結束：答對 ${k.round.correct}/5`);
         }
       } catch (e) {
-        console.warn('[szg-hub quiz]', e); quizDbg.err = e.message + '@' + quizDbg.step;
-        hub('POST', '/api/quiz/log', { msg: '自動作答出錯：' + e.message }).catch(() => {});
+        console.warn('[szg-hub quiz]', e); quizDbg.err = e.message + '@' + quizDbg.step; quizErrAt = Date.now();
+        // 同樣的錯誤 10 分鐘內只記一次，免得紀錄被洗版
+        if (e.message !== lastQuizErr.msg || Date.now() - lastQuizErr.at > 10 * 60 * 1000) {
+          lastQuizErr = { msg: e.message, at: Date.now() };
+          const st = readState();
+          hub('POST', '/api/quiz/log', { charId: st && st.character && st.character.id, msg: '自動作答出錯：' + e.message }).catch(() => {});
+        }
       } finally { quizRunning = false; qstep('閒置'); }
     }
 

@@ -474,7 +474,7 @@ function renderOverview() {
   for (const m of missingChars()) rows.push({ missing: true, c: m, account: accountLabel(m.accountId, m.refSnap) });
 
   const k = ui.ovSort.key, d = ui.ovSort.dir;
-  const val = r => ({ account: r.account, name: r.c.name, job: r.c.jobName || r.c.job, lv: r.c.lv, exp: r.c.expPct, hourly: r.c.hourlyExp, map: r.c.mapName, idle: r.missing ? null : (r.c.auto ? r.remain : -1), money: r.c.money, hp: r.c.hpQty, mp: r.c.mpQty, upd: r.s ? -r.s.receivedAt : null }[k]);
+  const val = r => ({ account: r.account, name: r.c.name, job: r.c.jobName || r.c.job, lv: r.c.lv, exp: r.c.expPct, hourly: r.c.hourlyExp, map: r.c.mapName, idle: r.missing ? null : (r.c.auto ? r.remain : -1), money: r.c.money, points: r.s && r.s.points, hp: r.c.hpQty, mp: r.c.mpQty, upd: r.s ? -r.s.receivedAt : null }[k]);
   rows.sort((a, b) => cmp(val(a), val(b)) * d || cmp(a.account, b.account) || cmp(a.c.name, b.c.name));
 
   // 腳本版本檢查
@@ -499,6 +499,9 @@ function renderOverview() {
   const idleOn = live.filter(r => r.c.auto && (r.remain == null || r.remain > 0)).length;
   const soon = live.filter(r => r.c.auto && r.remain != null && r.remain > 0 && r.remain < 3600e3).length;
   const offN = Object.values(latestByAccount()).filter(s => s.idleOffline).length;
+  const accLatest = Object.values(latestByAccount());
+  const ptsKnown = accLatest.filter(s => typeof s.points === 'number');
+  const totalPts = ptsKnown.reduce((a, s) => a + s.points, 0);
   const lowPot = live.filter(r => (r.c.hpQty != null && r.c.hpQty < 50) || (r.c.mpQty != null && r.c.mpQty < 20)).length;
   $('#ovSummary').innerHTML = `
     <div class="stat"><b>${live.length}<span class="dim" style="font-size:13px"> / ${rows.length}</span></b><span>已同步角色</span></div>
@@ -506,16 +509,17 @@ function renderOverview() {
     <div class="stat"><b class="${soon ? 'warn' : ''}">${soon}</b><span>1 小時內結束</span></div>
     <div class="stat"><b class="${lowPot ? 'bad' : ''}">${lowPot}</b><span>藥水偏少</span></div>
     <div class="stat"><b class="${offN ? 'warn' : ''}">${offN}</b><span>離線掛機中（資料暫停）</span></div>
-    <div class="stat"><b>${short(totalMoney)}</b><span>楓幣總和（含倉庫）</span></div>`;
+    <div class="stat"><b>${short(totalMoney)}</b><span>楓幣總和（含倉庫）</span></div>
+    <div class="stat"><b>${fmt(totalPts)}</b><span>點數總和（${ptsKnown.length} / ${accLatest.length} 個帳號有回報）</span></div>`;
 
   const th = (key, label, cls = '') => `<th data-ovsort="${key}" class="${cls}">${label}${ui.ovSort.key === key ? (ui.ovSort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
-  let h = `<table class="sticky"><thead><tr><th class="nosort"><input type="checkbox" id="ovAll" title="全選"></th><th class="nosort"></th>${th('account','帳號')}${th('name','角色')}${th('job','職業')}${th('lv','Lv','num')}${th('exp','EXP%','num')}${th('hourly','每小時經驗','num')}${th('map','地圖')}${th('idle','掛機')}${th('money','楓幣','num')}${th('hp','HP藥','num')}${th('mp','MP藥','num')}<th class="nosort num">裝備欄</th><th class="nosort num">道具</th><th class="nosort">交易ID</th>${th('upd','更新')}</tr></thead><tbody>`;
-  if (!rows.length) h += `<tr><td colspan="17" class="empty">還沒有資料。打開任一個設定檔的遊戲分頁，右下角出現「中控：已連線」就代表在回報了。</td></tr>`;
+  let h = `<table class="sticky"><thead><tr><th class="nosort"><input type="checkbox" id="ovAll" title="全選"></th><th class="nosort"></th>${th('account','帳號')}${th('name','角色')}${th('job','職業')}${th('lv','Lv','num')}${th('exp','EXP%','num')}${th('hourly','每小時經驗','num')}${th('map','地圖')}${th('idle','掛機')}${th('money','楓幣','num')}${th('points','點數','num')}${th('hp','HP藥','num')}${th('mp','MP藥','num')}<th class="nosort num">裝備欄</th><th class="nosort num">道具</th><th class="nosort">交易ID</th>${th('upd','更新')}</tr></thead><tbody>`;
+  if (!rows.length) h += `<tr><td colspan="18" class="empty">還沒有資料。打開任一個設定檔的遊戲分頁，右下角出現「中控：已連線」就代表在回報了。</td></tr>`;
   for (const r of rows) {
     const c = r.c;
     if (r.missing) {
       h += `<tr class="stale"><td><input type="checkbox" data-isel="${c.id}" ${ui.idleSel.has(c.id) ? 'checked' : ''}></td><td></td><td>${esc(r.account)}</td><td>${esc(c.name)}${switchBtn(c.id, c.accountId)}</td><td class="dim">${esc(c.job)}</td><td class="num">${c.lv}</td><td colspan="3" class="dim">未同步詳細資料（按「⇄ 切換」一次就會出現）</td>
-        <td>${c.auto ? '<span class="good">● 掛機中</span>' : '<span class="bad">● 未掛機</span>'} ${autoToggle(c.id)}</td><td colspan="7"></td></tr>`;
+        <td>${c.auto ? '<span class="good">● 掛機中</span>' : '<span class="bad">● 未掛機</span>'} ${autoToggle(c.id)}</td><td colspan="8"></td></tr>`;
       continue;
     }
     const isMain = S.mainCharId === c.id;
@@ -537,6 +541,7 @@ function renderOverview() {
       <td>${esc(c.mapName)}</td>
       <td>${idle} ${autoToggle(c.id)}</td>
       <td class="num">${short(c.money)}</td>
+      <td class="num" title="點數是整個帳號共用">${typeof r.s.points === 'number' ? fmt(r.s.points) : '<span class="dim">—</span>'}</td>
       <td class="num" title="${esc(c.hpItem || '')}">${pot(c.hpQty, 50)}</td>
       <td class="num" title="${esc(c.mpItem || '')}">${pot(c.mpQty, 20)}</td>
       <td class="num">${c.gearBagCount ?? '—'}</td>
@@ -1256,7 +1261,9 @@ function renderQuiz() {
     const st = !k ? '<span class="dim">腳本尚未回報</span>'
       : k.round && !k.round.done ? `<span class="warn">作答中：第 ${(k.round.index || 0) + 1} 題，已答對 ${k.round.correct || 0}</span>`
       : `今日剩 <b>${k.remaining ?? '?'}</b> 次${k.round && k.round.done ? `　上一輪 ${k.round.correct}/5` : ''}`;
-    return `<tr><td>${esc(accountLabel(acc, s))}</td><td>${st}</td><td class="dim">${clock(s.at)}</td></tr>`;
+    const d = k && (typeof k.dbg === 'object' ? k.dbg : null);
+    const why = d && (d.err ? `<div class="bad">最近錯誤：${esc(d.err)}</div>` : d.why ? `<div class="dim">${esc(d.why)}</div>` : '');
+    return `<tr><td>${esc(accountLabel(acc, s))}</td><td>${st}${why || ''}</td><td class="dim">${clock(s.at)}</td></tr>`;
   });
   $('#quizStatus').innerHTML = `<table><tr><th>帳號</th><th>狀態</th><th>更新</th></tr>${rows.join('')}</table>`;
   $('#quizLearned').innerHTML = (QUIZ.learned || []).slice().reverse().map(x => `<div>${esc(x.q)} → <b>${esc(x.answer)}</b> <span class="dim">${esc(x.by || '')}</span></div>`).join('') || '<span class="dim">還沒有</span>';

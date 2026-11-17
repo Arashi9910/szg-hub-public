@@ -448,8 +448,10 @@ const server = http.createServer(async (req, res) => {
       const answers = {};
       for (const [k, x] of Object.entries(bank)) answers[k] = x.answer;
       const st = quizStore();
+      // 等你作答的題目：超過 12 小時沒再出現的（那輪已經結束）自動清掉
+      for (const [k, u] of Object.entries(st.unknown)) if (Date.now() - (u.at || 0) > 12 * 3600e3) delete st.unknown[k];
       return send(res, 200, { auto: !!db.settings.quizAuto, answers, count: Object.keys(bank).length,
-        unknown: Object.values(st.unknown), learned: Object.values(st.learned).slice(-100), log: st.log.slice(-50) });
+        unknown: Object.values(st.unknown).sort((a, b) => b.at - a.at).slice(0, 40), learned: Object.values(st.learned).slice(-100), log: st.log.slice(-50) });
     }
     if (req.method === 'GET' && url.pathname === '/api/quiz/export') {
       return send(res, 200, { version: 1, questions: Object.values(quizBank()).map(x => ({ q: x.q, options: x.options || [], answer: x.answer, src: x.src })) });
