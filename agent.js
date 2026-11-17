@@ -280,6 +280,7 @@ function agentMain(ctx) {
           gearBagCount: (c.equipmentBag || []).length,
           itemStackCount: (c.inventoryStacks || []).length,
         },
+        idleOffline: trackOffline() ? { since: offlineSince } : undefined,
         knowledge: (() => { const k = lastKnowledge || state.knowledge; return k ? { ready: !!k.ready, remaining: k.remaining,
           round: k.round ? { index: k.round.index, done: !!k.round.done, correct: k.round.correct } : null, dbg: `${quizDbg.step}｜${quizDbg.why}｜${quizDbg.ticks}次｜${quizDbg.at ? Math.round((Date.now() - quizDbg.at) / 1000) + '秒前' : ''}${quizDbg.err ? '｜' + quizDbg.err : ''}` } : undefined; })(),
         gear, items,
@@ -309,7 +310,7 @@ function agentMain(ctx) {
         await loadCatalog();
         try { await loadAccount(); } catch (_) {}
         const snap = buildSnapshot(state);
-        const hash = JSON.stringify([snap.char, snap.playerCode, snap.eligibleKnown, snap.knowledge, snap.gear.map(g => g.uid + g.plus + g.loc + g.locked).join('|'), snap.items.map(i => i.key + i.qty + i.loc + i.tradableQty + i.lockedQty).join('|')]);
+        const hash = JSON.stringify([snap.char, snap.playerCode, snap.eligibleKnown, snap.knowledge, snap.idleOffline, snap.gear.map(g => g.uid + g.plus + g.loc + g.locked).join('|'), snap.items.map(i => i.key + i.qty + i.loc + i.tradableQty + i.lockedQty).join('|')]);
         const now = Date.now();
         if (hash !== lastHash || now - lastSent > HEARTBEAT_MS) {
           lastHash = hash; lastSent = now;
@@ -404,8 +405,33 @@ function agentMain(ctx) {
       for (const v of Object.values(o)) { const q = findQuote(v, depth + 1); if (q) return q; }
       return null;
     }
+    // ---------- 遊戲的「離線掛機」（60 分鐘沒操作會暫停畫面更新，點一下繼續才領回累積的經驗／楓幣／掉落） ----------
+    const isIdleOffline = () => !!document.getElementById('idleOffline');
+    let offlineSince = 0;
+    function trackOffline() {
+      if (isIdleOffline()) { if (!offlineSince) offlineSince = GM_getValue('offlineSince', 0) || Date.now(); GM_setValue('offlineSince', offlineSince); }
+      else if (offlineSince) { offlineSince = 0; GM_setValue('offlineSince', 0); }
+      return offlineSince;
+    }
+    // 幫忙按「點一下繼續」，等遊戲把最新資料同步回來
+    async function wakePage(why) {
+      if (!isIdleOffline()) return false;
+      const before = sessionStorage.getItem('mapleSessionView') || '';
+      const btn = document.getElementById('idleOfflineResume') || document.getElementById('idleOffline');
+      if (!btn) return false;
+      setBadge(null, '離線掛機：自動按「繼續」領取…');
+      btn.click();
+      for (let i = 0; i < 20; i++) { await new Promise(r => setTimeout(r, 500)); if (!isIdleOffline() && (sessionStorage.getItem('mapleSessionView') || '') !== before) break; }
+      await new Promise(r => setTimeout(r, 1500));
+      trackOffline();
+      const st = readState();
+      hub('POST', '/api/idle-log', { charId: st && st.character && st.character.id, msg: `${why}，已按「繼續」領取離線掛機的收益` }).catch(() => {});
+      lastHash = ''; // 下次立刻回報最新資料
+      return true;
+    }
+
     // ---------- 掛機控制 ----------
-    const IDLE_LABEL = { start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換角色' };
+    const IDLE_LABEL = { start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換角色', wake: '領取離線收益' };
     async function idleAction(charId, action) {
       if (action === 'restart') {
         await game({ type: 'stop', characterId: charId });
@@ -421,6 +447,10 @@ function agentMain(ctx) {
       // 掛機指令先做，切換角色放最後（切換後頁面要重新整理）
       const targets = ((job.batches[0] && job.batches[0].targets) || []).slice().sort((a, b) => (a.action === 'switch') - (b.action === 'switch'));
       for (const t of targets) {
+        if (t.action === 'wake') {
+          try { done.push((await wakePage('從面板要求')) ? `${t.name} 已領取離線收益` : `${t.name} 不在離線掛機狀態`); } catch (e) { failed.push(`${t.name} 領取（${e.message}）`); }
+          continue;
+        }
         if (t.action === 'switch') {
           try {
             if (sessionStorage.getItem('mapleCharacter') === t.charId) { done.push(`${t.name} 已經是目前角色`); continue; }
@@ -465,6 +495,8 @@ function agentMain(ctx) {
         }
         const r = await hub('GET', '/api/idle-policy');
         const p = r.policy, excluded = r.excluded || {}, last = r.last || {};
+        const since = trackOffline();
+        if (p.wakeHours > 0 && since && Date.now() - since >= p.wakeHours * H) await wakePage(`離線掛機已 ${p.wakeHours} 小時`);
         if (!p.autoRenew && !p.stopAfterHours) return;
         const skew = (state.serverTime || Date.now()) - Date.now();
         const now = Date.now() + skew;
@@ -666,7 +698,8 @@ function agentMain(ctx) {
           if (hash !== lastPlanHash) await log('試跑：會上架 ' + p.entries.map(e => `${e.name}×${e.qty} @${e.price.toLocaleString()}（${e.why}）`).join('、'));
           lastPlanHash = hash; return;
         }
-        // 自動上架：先拿最新的攤位與可上架清單
+        // 自動上架：離線掛機中先領回收益，再拿最新的攤位與可上架清單
+        if (isIdleOffline()) await wakePage('自動上架前');
         let m = await stallTick(true);
         if (!m) return;
         if (!m.mine) {
@@ -863,13 +896,14 @@ function agentMain(ctx) {
       agentRunning = true;
       try {
         await loadAccount().catch(() => null);
-        const state = readState();
+        let state = readState();
         if (!account || !state) return;
         const charId = sessionStorage.getItem('mapleCharacter');
         const res = await hub('GET', `/api/agent?code=${encodeURIComponent(account.playerCode)}&charId=${encodeURIComponent(charId)}`);
         const job = res && res.job;
         if (!job) { if (agentBusy) { agentBusy = false; lastJobAt = Date.now(); setBadge('ok'); } return; }
         agentBusy = true;
+        if (job.kind !== 'idle' && isIdleOffline()) { await wakePage('執行「' + ({ collect: '收集', give: '分發', sell: '賣出', lock: '鎖定', unlock: '解鎖' }[job.kind] || '工作') + '」前'); state = readState() || state; }
         if (res.role === 'owner') return await runBagJob(job, state, charId);
         const role = res.role; // 'giver' | 'receiver'
         const batch = job.batches[job.batchIndex];

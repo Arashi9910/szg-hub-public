@@ -143,7 +143,7 @@ const BAG_KINDS = new Set(['sell', 'lock', 'unlock', 'idle']);
 // ================= 掛機控制 =================
 // 指令（開始／暫停／重新開始）依帳號分組，交給那個帳號目前在線的遊戲頁面執行；
 // 同帳號的第二隻角色也可以直接控制（遊戲允許用 characterId 指定）。
-const IDLE_ACTIONS = new Set(['start', 'stop', 'restart', 'switch']);
+const IDLE_ACTIONS = new Set(['start', 'stop', 'restart', 'switch', 'wake']);
 function accountOfChar(charId) {
   const own = db.chars[charId];
   if (own) return own.accountId;
@@ -175,6 +175,11 @@ function createIdleJobs(body) {
       byAcc[acc].push({ charId: t.charId, name: charName(t.charId), action: 'switch' });
       continue;
     }
+    if (t.action === 'wake') {
+      // 領取離線收益是整個頁面的動作，一個帳號做一次就好
+      if (!(byAcc[acc] || []).some(x => x.action === 'wake')) (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'wake' });
+      continue;
+    }
     (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: t.action });
     db.settings.idleLast = { ...(db.settings.idleLast || {}), [t.charId]: { action: t.action, at: Date.now(), by: 'panel' } };
   }
@@ -191,7 +196,7 @@ function createIdleJobs(body) {
       toCharId: route.char.id, toName: route.char.name, toCode: route.playerCode,
       batches: [{ targets: list, items: [], gear: [], money: 0 }], batchIndex: 0, log: [], lastMsg: '',
     };
-    jobLog(job, '已送出：' + list.map(t => `${t.name} ${({ start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換為目前角色' })[t.action]}`).join('、'));
+    jobLog(job, '已送出：' + list.map(t => `${t.name} ${({ start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換為目前角色', wake: '領取離線掛機收益' })[t.action]}`).join('、'));
     db.jobs.push(job);
     jobs.push(job);
   }
@@ -460,7 +465,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/idle-policy') {
       const p = db.settings.idlePolicy || {};
-      return send(res, 200, { policy: { autoRenew: !!p.autoRenew, renewBeforeMin: Number(p.renewBeforeMin) || 30, stopAfterHours: Number(p.stopAfterHours) || 0 },
+      return send(res, 200, { policy: { autoRenew: !!p.autoRenew, renewBeforeMin: Number(p.renewBeforeMin) || 30, stopAfterHours: Number(p.stopAfterHours) || 0, wakeHours: Number(p.wakeHours) || 0 },
         excluded: db.settings.idleExcluded || {}, last: db.settings.idleLast || {} });
     }
     if (req.method === 'POST' && url.pathname === '/api/idle-log') {

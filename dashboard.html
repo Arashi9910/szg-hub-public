@@ -100,6 +100,7 @@
         <button class="btn primary" data-idle="start">▶ 開始掛機</button>
         <button class="btn" data-idle="stop">Ⅱ 暫停掛機</button>
         <button class="btn" data-idle="restart" title="先暫停再開始，掛機時間重新從 24 小時算起">↻ 重新開始</button>
+        <button class="btn" data-idle="wake" title="幫勾選的帳號按遊戲的「點一下繼續」，領回離線掛機期間累積的經驗、楓幣與掉落">⏏ 領取離線收益</button>
         <button class="btn" data-idle="switch" title="把勾選的角色切成該帳號的目前角色（同帳號勾兩隻時以後面那隻為準）">⇄ 切換為目前角色</button>
         <span class="dim" id="idleMsg"></span>
       </div>
@@ -109,6 +110,10 @@
       <div class="bar">
         <label><input type="checkbox" id="ipStop"> 掛滿</label><input type="number" id="ipStopH" min="1" max="24" step="0.5" style="width:64px"><span>小時後自動暫停</span>
         <span class="dim">（開啟後不會自動續掛）</span>
+      </div>
+      <div class="bar">
+        <label><input type="checkbox" id="ipWake"> 離線掛機每滿</label><input type="number" id="ipWakeH" min="1" max="23" style="width:64px"><span>小時自動按「繼續」領取一次</span>
+        <span class="dim">（遊戲閒置 60 分鐘會進入離線掛機、暫停更新，累積上限 24 小時；交易、背包、自動上架執行前也會自動領取）</span>
       </div>
       <div class="dim">自動規則套用在表格「自動」有勾的角色。從這裡按「暫停掛機」的角色不會被自動續掛重新開始。需要那個帳號的遊戲分頁開著才會執行。</div>
       <details style="margin-top:6px"><summary class="dim">自動處理紀錄</summary><div id="idleLogOut"></div></details>
@@ -398,13 +403,16 @@ function renderIdleCard() {
   if (document.activeElement !== $('#ipStopH')) $('#ipStopH').value = p.stopAfterHours || 8;
   $('#ipRenew').checked = !!p.autoRenew;
   $('#ipStop').checked = !!p.stopAfterHours;
+  if (document.activeElement !== $('#ipWakeH')) $('#ipWakeH').value = p.wakeHours || 12;
+  $('#ipWake').checked = !!p.wakeHours;
   $('#idleSelInfo').textContent = ui.idleSel.size ? `已選 ${ui.idleSel.size} 隻` : '先在下表左邊勾選角色';
   const logs = (DATA.idleLog || []).slice().reverse().slice(0, 30);
   $('#idleLogOut').innerHTML = logs.length ? logs.map(l => `<div><span class="dim">${clock(l.at)}</span> ${esc(l.name)}：${esc(l.msg)}</div>`).join('') : '<span class="dim">還沒有紀錄</span>';
 }
 function saveIdlePolicy() {
   const renew = $('#ipRenew').checked, stop = $('#ipStop').checked;
-  const policy = { autoRenew: renew, renewBeforeMin: Math.max(5, Number($('#ipRenewMin').value) || 30), stopAfterHours: stop ? Math.max(0.5, Number($('#ipStopH').value) || 8) : 0 };
+  const policy = { autoRenew: renew, renewBeforeMin: Math.max(5, Number($('#ipRenewMin').value) || 30), stopAfterHours: stop ? Math.max(0.5, Number($('#ipStopH').value) || 8) : 0,
+    wakeHours: $('#ipWake').checked ? Math.min(23, Math.max(1, Number($('#ipWakeH').value) || 12)) : 0 };
   return saveSettings({ idlePolicy: policy });
 }
 
@@ -452,12 +460,14 @@ function renderOverview() {
   const totalMoney = live.reduce((a, r) => a + (r.c.money || 0), 0) + Object.values(latestByAccount()).reduce((a, s) => a + (s.char.warehouseMesos || 0), 0);
   const idleOn = live.filter(r => r.c.auto && (r.remain == null || r.remain > 0)).length;
   const soon = live.filter(r => r.c.auto && r.remain != null && r.remain > 0 && r.remain < 3600e3).length;
+  const offN = Object.values(latestByAccount()).filter(s => s.idleOffline).length;
   const lowPot = live.filter(r => (r.c.hpQty != null && r.c.hpQty < 50) || (r.c.mpQty != null && r.c.mpQty < 20)).length;
   $('#ovSummary').innerHTML = `
     <div class="stat"><b>${live.length}<span class="dim" style="font-size:13px"> / ${rows.length}</span></b><span>已同步角色</span></div>
     <div class="stat"><b class="${idleOn < live.length ? 'warn' : 'good'}">${idleOn}</b><span>掛機中</span></div>
     <div class="stat"><b class="${soon ? 'warn' : ''}">${soon}</b><span>1 小時內結束</span></div>
     <div class="stat"><b class="${lowPot ? 'bad' : ''}">${lowPot}</b><span>藥水偏少</span></div>
+    <div class="stat"><b class="${offN ? 'warn' : ''}">${offN}</b><span>離線掛機中（資料暫停）</span></div>
     <div class="stat"><b>${short(totalMoney)}</b><span>楓幣總和（含倉庫）</span></div>`;
 
   const th = (key, label, cls = '') => `<th data-ovsort="${key}" class="${cls}">${label}${ui.ovSort.key === key ? (ui.ovSort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
@@ -477,7 +487,7 @@ function renderOverview() {
     else if (r.remain <= 0) idle = `<span class="bad">● 已到期</span> <span class="dim">${clock(c.until)}</span>`;
     else idle = `<span class="${r.remain < 3600e3 ? 'warn' : 'good'}">● 剩 ${hm(r.remain)}</span> <span class="dim">至 ${clock(c.until)}</span>`;
     const pot = (q, lim) => q == null ? '—' : `<span class="${q < lim ? 'bad' : ''}">${fmt(q)}</span>`;
-    h += `<tr class="${r.stale ? 'stale' : ''}">
+    h += `<tr class="${r.stale || r.s.idleOffline ? 'stale' : ''}">
       <td><input type="checkbox" data-isel="${c.id}" ${ui.idleSel.has(c.id) ? 'checked' : ''}></td>
       <td><span class="star ${isMain ? 'on' : ''}" data-main="${c.id}" title="設為本尊">★</span></td>
       <td><input class="label-edit" data-acc="${esc(r.s.accountId)}" value="${esc(r.account)}"></td>
@@ -494,7 +504,7 @@ function renderOverview() {
       <td class="num">${c.gearBagCount ?? '—'}</td>
       <td class="num">${c.itemStackCount ?? '—'}</td>
       <td class="dim">${esc(c.tradeId || '—')}</td>
-      <td class="dim">${ago(Date.now() - (r.s.receivedAt || r.s.at))}</td></tr>`;
+      <td class="dim">${r.s.idleOffline ? `<span class="warn" title="遊戲已進入離線掛機，畫面暫停更新">離線掛機中</span><div>資料停在 ${clock(r.s.idleOffline.since)}</div><button class="btn" data-wake="${c.id}" style="padding:1px 6px">⏏ 領取</button>` : ago(Date.now() - (r.s.receivedAt || r.s.at))}</td></tr>`;
   }
   h += '</tbody></table>';
   $('#ovTable').innerHTML = h;
@@ -1080,6 +1090,12 @@ document.addEventListener('click', async e => {
     if (t.id === 'idleSelAll') { idleTargets().forEach(r => ui.idleSel.add(r.id)); renderOverview(); renderIdleCard(); }
     if (t.id === 'idleSelStopped') { ui.idleSel.clear(); idleTargets().filter(r => !r.auto).forEach(r => ui.idleSel.add(r.id)); renderOverview(); renderIdleCard(); }
     if (t.id === 'idleSelNone') { ui.idleSel.clear(); renderOverview(); renderIdleCard(); }
+    if (t.dataset && t.dataset.wake) {
+      t.disabled = true; t.textContent = '領取中…';
+      await api('/api/idle', { targets: [{ charId: t.dataset.wake, action: 'wake' }] });
+      $('#idleMsg').textContent = '已送出領取，幾秒內資料會更新';
+      await poll(true);
+    }
     if (t.dataset && t.dataset.switch) {
       t.disabled = true; t.textContent = '切換中…';
       await api('/api/idle', { targets: [{ charId: t.dataset.switch, action: 'switch' }] });
@@ -1166,7 +1182,7 @@ document.addEventListener('change', e => {
   if (t.id === 'autoUpd') { saveSettings({ autoUpdate: t.checked }); return; }
   if (t.dataset && t.dataset.isel) { if (t.checked) ui.idleSel.add(t.dataset.isel); else ui.idleSel.delete(t.dataset.isel); renderIdleCard(); return; }
   if (t.dataset && t.dataset.iexcl) { saveSettings({ idleExcluded: { ...(S.idleExcluded || {}), [t.dataset.iexcl]: !t.checked } }); return; }
-  if (['ipRenew', 'ipStop', 'ipRenewMin', 'ipStopH'].includes(t.id)) { saveIdlePolicy().then(() => poll(true)); return; }
+  if (['ipRenew', 'ipStop', 'ipRenewMin', 'ipStopH', 'ipWake', 'ipWakeH'].includes(t.id)) { saveIdlePolicy().then(() => poll(true)); return; }
   if (t.id === 'cMoney') renderTrade();
   if (t.id === 'cKeep') { saveSettings({ collectKeepPct: keepPctValue() }); renderTrade(); }
   if (t.id === 'gFrom') { giveDraft.items = {}; giveDraft.gear.clear(); renderGivePick(); }
