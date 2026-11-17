@@ -144,7 +144,7 @@ function agentMain(ctx) {
     }
     // 把地圖、怪物、掉落表整理後交給中控（面板的「地圖」分頁用）；同一版本只傳一次
     async function uploadWorld(cat) {
-      const ver = String(cat.version || '') + ':' + Object.keys(cat.maps || {}).length + ':' + (cat.mobs || []).length;
+      const ver = 'w2:' + String(cat.version || '') + ':' + Object.keys(cat.maps || {}).length + ':' + (cat.mobs || []).length + ':' + Object.keys(cat.drops || {}).length;
       const have = await hub('GET', '/api/world/version');
       if (have && have.version === ver) return;
       const names = {};
@@ -156,6 +156,9 @@ function agentMain(ctx) {
         const o = drops[mapId] = {};
         for (const [mob, rows] of Object.entries(byMob || {})) o[mob] = (rows || []).map(r => [r.itemId, r.min, r.max, r.chance, r.questId || 0]);
       }
+      // 一般掉落（每隻怪通用）；上面的 drops 是少數地圖的專屬掉落，優先使用
+      const mobDrops = {};
+      for (const [mob, rows] of Object.entries(cat.drops || {})) mobDrops[mob] = (rows || []).map(r => [r.itemId, r.min, r.max, r.chance, r.questId || 0]);
       const skills = (Array.isArray(cat.skills) ? cat.skills : Object.values(cat.skills || {})).filter(s => s.effect && s.effect.party === true)
         .map(s => ({ name: s.name, job: s.job, tier: s.tier, kind: s.effect.kind, text: s.effect.text, top: (s.levels || [])[(s.levels || []).length - 1] || {} }));
       const jobs = {};
@@ -164,7 +167,7 @@ function agentMain(ctx) {
         version: ver, at: Date.now(), dropScale: cat.dropScale || 1000000, partyExpNotice: cat.partyExpNotice || '',
         maps: Object.values(cat.maps || {}).map(m => ({ id: m.id, msId: m.msId, name: m.name, region: m.region, minLevel: m.minLevel || 0, mobIds: m.mobIds || [], boss: (m.bossSpawns || []).map(b => b.mobId) })),
         mobs: (cat.mobs || []).map(m => ({ id: m.id, msId: m.msId, name: m.name, lv: m.lv, hp: m.hp, xp: m.xp, money: m.money, isBoss: !!m.isBoss, acc: m.meta && m.meta.accuracy, eva: m.meta && m.meta.evasion, def: m.defense })),
-        drops, names, skills, jobs,
+        drops, mobDrops, names, skills, jobs,
       };
       await hub('POST', '/api/world', world);
     }

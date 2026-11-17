@@ -1597,6 +1597,12 @@ const wName = id => { if (!id) return '楓幣'; const n = WORLD && WORLD.names[i
 const wKind = id => { if (!id) return '楓幣'; const n = WORLD && WORLD.names[id]; return n ? n[1] : ''; };
 const chancePct = c => { const p = (Number(c) || 0) / 1e4; return p >= 1 ? p.toFixed(p >= 10 ? 0 : 1) + '%' : p >= 0.01 ? p.toFixed(2) + '%' : '<0.01%'; };
 function mapOf(id) { return WORLD && WORLD.mapIdx[String(id)]; }
+// 某張地圖某隻怪的掉落：有地圖專屬掉落就用專屬的，否則用怪物的一般掉落
+function dropsFor(map, mob) {
+  const md = (WORLD.drops || {})[map.id] || (WORLD.drops || {})[String(map.msId)];
+  const special = md && (md[String(mob.msId)] || md[mob.id]);
+  return special || (WORLD.mobDrops || {})[String(mob.msId)] || (WORLD.mobDrops || {})[mob.id] || [];
+}
 function mapCandidates() {
   // 選角色列表：所有已同步角色＋同帳號未同步的角色
   const rows = snaps().map(s => ({ id: s.char.id, name: s.char.name, lv: s.char.lv, job: s.char.job, jobName: s.char.jobName, map: s.char.map, hourly: s.char.hourlyExp, accountId: s.accountId, synced: true }));
@@ -1635,9 +1641,8 @@ function renderWorldMaps() {
   $('#wMaps').innerHTML = h + '</tbody></table>';
 }
 function mapDetail(m) {
-  const drops = (WORLD.drops[m.id] || WORLD.drops[String(m.msId)] || {});
   return m.mobs.map(x => {
-    const rows = (drops[String(x.msId)] || drops[x.id] || []).slice().sort((a, b) => b[3] - a[3]);
+    const rows = dropsFor(m, x).slice().sort((a, b) => b[3] - a[3]);
     const money = Array.isArray(x.money) ? x.money.join('~') : (x.money || '—');
     return `<div style="margin:6px 0"><b>${esc(x.name)}</b>${x.isBoss ? ' <span class="warn">王</span>' : ''} <span class="dim">Lv${x.lv}・HP ${fmt(x.hp)}・經驗 ${fmt(x.xp)}・楓幣 ${esc(money)}</span>
       <div class="chips" style="margin-top:4px">${rows.length ? rows.map(r => `<span class="tag" title="${esc(wKind(r[0]))}">${esc(wName(r[0]))}${r[2] > 1 ? ` ×${r[1]}~${r[2]}` : ''} <b>${chancePct(r[3])}</b>${r[4] ? ' <span class="dim">任務</span>' : ''}</span>`).join('') : '<span class="dim">沒有掉落資料</span>'}</div></div>`;
@@ -1649,13 +1654,7 @@ function renderWorldItem() {
   const ids = Object.entries(WORLD.names).filter(([, n]) => n[0].includes(q)).map(([id]) => Number(id));
   if (q.includes('楓幣')) ids.push(0);
   const idSet = new Set(ids), out = [];
-  for (const m of WORLD.maps) {
-    const drops = WORLD.drops[m.id] || WORLD.drops[String(m.msId)] || {};
-    for (const [mobMs, rows] of Object.entries(drops)) for (const r of rows) if (idSet.has(Number(r[0]))) {
-      const mob = WORLD.mobByMs[mobMs] || WORLD.mobIdx[mobMs] || { name: mobMs, lv: '?' };
-      out.push({ item: wName(r[0]), map: m, mob, r });
-    }
-  }
+  for (const m of WORLD.maps) for (const mob of m.mobs) for (const r of dropsFor(m, mob)) if (idSet.has(Number(r[0]))) out.push({ item: wName(r[0]), map: m, mob, r });
   out.sort((a, b) => b.r[3] - a.r[3]);
   $('#wItemOut').innerHTML = out.length ? `<table><thead><tr><th class="nosort">道具</th><th class="nosort num">機率</th><th class="nosort">數量</th><th class="nosort">怪物</th><th class="nosort">地圖</th><th class="nosort num">地圖最低等級</th></tr></thead><tbody>${out.slice(0, 200).map(o =>
     `<tr><td>${esc(o.item)}</td><td class="num"><b>${chancePct(o.r[3])}</b></td><td>${o.r[1]}${o.r[2] > o.r[1] ? '~' + o.r[2] : ''}</td><td>${esc(o.mob.name)} <span class="dim">Lv${o.mob.lv}${o.mob.isBoss ? '・王' : ''}</span></td><td>${esc(o.map.name)} <span class="dim">${esc(o.map.region || '')}</span></td><td class="num">${o.map.minLevel}</td></tr>`).join('')}</tbody></table>${out.length > 200 ? '<div class="dim">只列前 200 筆</div>' : ''}`
