@@ -62,6 +62,7 @@
   .attn-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
   .attn-row:first-of-type { border-top: 0; }
   .attn-row .ic { width: 22px; text-align: center; } .attn-row .tx { flex: 1; line-height: 1.6; }
+  .attn-row.info .tx { color: var(--dim); }
   .attn-row.bad .tx b { color: var(--bad); } .attn-row.warn .tx b { color: var(--warn); }
   .attn-ok { color: var(--good); font-weight: 600; }
   table.ov td { vertical-align: middle; }
@@ -70,7 +71,8 @@
   table.ov tr.accstart td { border-top: 2px solid var(--line); }
   table.ov tr.picked td { background: #1d2c47; }
   .sm { font-size: 11px; }
-  .expbar { width: 70px; height: 4px; background: var(--line); border-radius: 2px; margin-top: 3px; overflow: hidden; }
+  .lvl { display: inline-block; min-width: 50px; }
+  .expbar { display: inline-block; vertical-align: middle; width: 56px; height: 5px; background: var(--line); border-radius: 3px; margin: 0 6px; overflow: hidden; }
   .expbar i { display: block; height: 100%; background: var(--accent); }
   .ov-rules { margin: 0 0 10px; border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; background: var(--panel2); }
   .ov-rules summary { cursor: pointer; } .ov-rules .rules-body { margin-top: 8px; }
@@ -633,7 +635,7 @@ function renderOverview() {
     }
     const isMain = S.mainCharId === c.id, st = idleState(r);
     const idle = st === 'off' ? `<span class="bad">● 未掛機</span>` : st === 'expired' ? `<span class="bad">● 已到期</span>` : r.remain == null ? `<span class="good">● 掛機中</span>`
-      : `<span class="${st === 'soon' ? 'warn' : 'good'}">● 剩 ${hm(r.remain)}</span><div class="dim sm">至 ${clock(c.until)}</div>`;
+      : `<span class="${st === 'soon' ? 'warn' : 'good'}" title="至 ${clock(c.until)}">● 剩 ${hm(r.remain)}</span>`;
     const pot = (q, lim) => q == null ? '<span class="dim">—</span>' : `<span class="${q < lim ? 'bad' : ''}">${fmt(q)}</span>`;
     const exp = c.expPct == null ? null : Math.max(0, Math.min(100, c.expPct));
     h += `<tr class="${cls}">
@@ -641,10 +643,10 @@ function renderOverview() {
       <td><span class="star ${isMain ? 'on' : ''}" data-main="${c.id}" title="設為本尊">★</span></td>
       <td>${accCell}</td>
       <td><div><b class="cn">${esc(c.name)}</b>${isMain ? ' <span class="tag main">本尊</span>' : ''}${switchBtn(c.id, r.s.accountId)}</div><div class="dim sm">${esc(c.jobName || '')}</div></td>
-      <td><div>Lv <b>${c.lv}</b></div>${exp == null ? '' : `<div class="expbar" title="${exp.toFixed(2)}%"><i style="width:${exp}%"></i></div><div class="dim sm">${exp.toFixed(1)}%</div>`}</td>
+      <td><span class="lvl">Lv <b>${c.lv}</b></span>${exp == null ? '' : `<span class="expbar" title="經驗 ${exp.toFixed(2)}%"><i style="width:${exp}%"></i></span><span class="dim sm">${exp.toFixed(1)}%</span>`}</td>
       <td class="num">${c.hourlyExp ? short(c.hourlyExp) : '<span class="dim">—</span>'}</td>
       <td>${esc(c.mapName)}</td>
-      <td>${idle}<div class="sm">${autoToggle(c.id)}</div></td>
+      <td>${idle} <span class="sm">${autoToggle(c.id)}</span></td>
       <td class="num">${short(c.money)}</td>
       <td class="num" title="點數是整個帳號共用">${typeof r.s.points === 'number' ? (r.active ? fmt(r.s.points) : `<span class="dim">${fmt(r.s.points)}</span>`) : '<span class="dim">—</span>'}</td>
       <td class="num" title="${esc((c.hpItem || '') + ' / ' + (c.mpItem || ''))}">${pot(c.hpQty, 50)} <span class="dim">/</span> ${pot(c.mpQty, 20)}</td>
