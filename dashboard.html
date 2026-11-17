@@ -14,13 +14,13 @@
   .bag-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 10px; }
   .bag-tools #bSearch { width: 180px; }
   .bag-adv { width: 100%; } .bag-adv summary { color: var(--dim); cursor: pointer; font-size: 12px; }
-  .char-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 8px; }
-  .ccard { border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; cursor: pointer; background: var(--panel2); position: relative; }
+  .char-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+  .ccard { border: 1px solid var(--line); border-radius: 7px; padding: 5px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; background: var(--panel2); position: relative; }
   .ccard:hover { border-color: var(--accent); }
   .ccard.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-  .ccard.off { opacity: .45; }
+  .ccard.off { opacity: .45; } .ccard.none { opacity: .35; }
   .ccard .nm { font-weight: 600; } .ccard .sub { color: var(--dim); font-size: 11px; }
-  .ccard .cnt { font-size: 12px; margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .ccard .cnt { font-size: 12px; margin-top: 2px; display: flex; gap: 8px; }
   .ccard .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: middle; }
   .holder { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; margin: 2px 4px 2px 0; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); font-size: 12px; cursor: pointer; user-select: none; }
   .holder:hover { border-color: var(--accent); }
@@ -1121,13 +1121,13 @@ function renderBagList() {
     Object.keys(kc).sort((x, y) => kindRank(x) - kindRank(y)).map(k => `<button data-bkind="${esc(k)}" class="${b.kind === k ? 'on' : ''}">${esc(k)}<span class="n">${kc[k]}</span></button>`).join('');
   // 角色卡
   $('#bChars').innerHTML = chars.map(s => {
-    const rows = bagRows(s, true), on = !b.chars.size || b.chars.has(s.char.id);
+    const rows = bagRows(s, true), on = !b.chars.size || b.chars.has(s.char.id), filtering = b.q.trim() || b.sellOnly || b.hideLocked;
     const nSel = bagRows(s, true, true).filter(r => ui.bagSel.has(bagSid(s.char.id, r.id))).length;
     const val = rows.reduce((a, r) => a + r.value, 0), nG = rows.filter(r => r.t === 'g').length, nI = rows.length - nG;
     const online = isOnline(s), active = !s.activeCharId || s.activeCharId === s.char.id;
-    return `<div class="ccard ${b.chars.has(s.char.id) ? 'on' : ''} ${on ? '' : 'off'}" data-bchar="${s.char.id}" title="點一下只看這隻；按住 Ctrl 可多選">
+    return `<div class="ccard ${b.chars.has(s.char.id) ? 'on' : ''} ${on ? '' : 'off'} ${filtering && !rows.length ? 'none' : ''}" data-bchar="${s.char.id}" title="${esc(accountLabel(s.accountId, s))}・點一下只看這隻；按住 Ctrl 可多選">
       <div><span class="dot" style="background:${online && active ? 'var(--good)' : online ? 'var(--warn)' : 'var(--bad)'}"></span><span class="nm">${esc(s.char.name)}</span>${S.mainCharId === s.char.id ? ' <span class="tag main">本尊</span>' : ''}</div>
-      <div class="sub">${esc(accountLabel(s.accountId, s))}・Lv${s.char.lv}・${!online ? '離線' : active ? '在線' : '非目前角色'}・${ago(Date.now() - (s.receivedAt || s.at))}</div>
+      <div class="sub">Lv${s.char.lv}・${!online ? '離線 ' + ago(Date.now() - (s.receivedAt || s.at)) : active ? '在線' : '非目前角色'}</div>
       <div class="cnt"><span>道具 <b>${nI}</b></span><span>裝備 <b>${nG}</b></span>${val ? `<span class="dim">可賣 ${short(val)}</span>` : ''}${nSel ? `<span class="good">已選 ${nSel}</span>` : ''}</div></div>`;
   }).join('') + (b.chars.size ? `<div class="ccard" data-bchar="*" style="display:flex;align-items:center;justify-content:center"><span class="dim">顯示全部角色</span></div>` : '');
   $('#bagOut').innerHTML = b.view === 'char' ? bagCharView(vis) : bagItemView(vis);
@@ -1147,8 +1147,12 @@ function bagItemView(vis) {
   for (const a of list.slice(0, 600)) {
     const nSel = a.holders.filter(x => ui.bagSel.has(x.sid)).length;
     a.holders.sort((x, y) => y.r.qty - x.r.qty);
-    const chips = a.t === 'g'
-      ? a.holders.map(x => `<span class="holder ${ui.bagSel.has(x.sid) ? 'sel' : ''} ${x.r.locked ? 'lk' : ''}" data-bpick="${esc(x.sid)}" title="${esc(statLine(x.r.g.stats || {}, STAT_ORDER))}　可衝 ${x.r.g.slotsLeft}/${x.r.g.maxSlots}">${esc(x.s.char.name)}${x.r.g.plus ? ` <b class="plus">+${x.r.g.plus}</b>` : ''}${x.r.locked ? ' 🔒' : ''}</span>`).join('')
+    // 裝備：同一隻角色的同名裝備合成一顆（×件數），點一下選那隻的全部；要單件選請用「依角色」
+    const gearChips = () => { const by = {}; for (const x of a.holders) (by[x.s.char.id] = by[x.s.char.id] || []).push(x);
+      return Object.values(by).sort((p, q) => q.length - p.length).map(xs => { const sids = xs.map(x => x.sid), allSel = sids.every(id => ui.bagSel.has(id)), lk = xs.every(x => x.r.locked);
+        const pl = xs.map(x => x.r.g.plus).filter(Boolean);
+        return `<span class="holder ${allSel ? 'sel' : ''} ${lk ? 'lk' : ''}" data-bpick="${esc(sids.join(','))}" title="${esc(xs.map(x => `${x.r.g.plus ? '+' + x.r.g.plus + ' ' : ''}${statLine(x.r.g.stats || {}, STAT_ORDER) || '無素質'}　可衝 ${x.r.g.slotsLeft}/${x.r.g.maxSlots}${x.r.locked ? '　🔒' : ''}`).join('\n'))}">${esc(xs[0].s.char.name)}${xs.length > 1 ? ` <b>×${xs.length}</b>` : ''}${pl.length ? ` <b class="plus">+${Math.max(...pl)}${pl.length > 1 ? '…' : ''}</b>` : ''}${lk ? ' 🔒' : xs.some(x => x.r.locked) ? ' <span title="部分鎖定">🔒</span>' : ''}</span>`; }).join(''); };
+    const chips = a.t === 'g' ? gearChips()
       : a.holders.map(x => `<span class="holder ${ui.bagSel.has(x.sid) ? 'sel' : ''} ${x.r.locked ? 'lk' : ''}" data-bpick="${esc(x.sid)}">${esc(x.s.char.name)} <b>${fmt(x.r.qty)}</b>${x.r.i.lockedQty ? (x.r.locked ? ' 🔒' : ` <span title="其中 ${fmt(x.r.i.lockedQty)} 個已鎖定">🔒${fmt(x.r.i.lockedQty)}</span>`) : ''}${x.r.i.supply ? ' <span title="補給使用中，不會被賣掉">💊</span>' : ''}</span>`).join('');
     h += `<tr><td><input type="checkbox" data-bgroup="${esc(a.k)}" ${nSel && nSel === a.holders.length ? 'checked' : ''}></td><td>${iname(a.itemId, a.name)}</td><td class="dim">${esc(a.kind)}</td><td class="num"><b>${fmt(a.total)}</b></td>
       <td class="num dim">${a.price ? fmt(a.price) : '—'}</td><td class="num">${a.value ? short(a.value) : '<span class="dim">—</span>'}</td><td class="wrap">${chips}</td></tr>`;
@@ -1234,7 +1238,7 @@ document.addEventListener('click', async e => {
       else { b.chars.clear(); b.chars.add(d.bchar); }
       renderBagList(); return;
     }
-    if (d.bpick) { if (ui.bagSel.has(d.bpick)) ui.bagSel.delete(d.bpick); else ui.bagSel.add(d.bpick); renderBagList(); return; }
+    if (d.bpick) { const ids = d.bpick.split(','), allSel = ids.every(id => ui.bagSel.has(id)); for (const id of ids) { if (allSel) ui.bagSel.delete(id); else ui.bagSel.add(id); } renderBagList(); return; }
     if (d.bcharsel) {
       const s = DATA.chars[d.bcharsel]; if (!s) return;
       for (const r of bagRows(s)) { const sid = bagSid(s.char.id, r.id); if (d.mode === 'none') ui.bagSel.delete(sid); else if (d.mode === 'all' || r.sellable) ui.bagSel.add(sid); }
