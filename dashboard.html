@@ -265,7 +265,7 @@
       <h3>批次換圖／組隊</h3>
       <div class="bar"><span>把勾選的角色送到</span><select id="mpTarget" style="min-width:260px"></select><button class="btn primary" id="mpGo">換圖</button><span class="dim" id="mpMsg"></span></div>
       <div class="bar"><span>把勾選的角色（2～6 隻）組成一隊，隊長</span><select id="ptLeader"></select>
-        <label><input type="checkbox" id="ptLeave" checked> 先離開原本的隊伍</label><button class="btn primary" id="ptGo">組隊</button><span class="dim" id="ptMsg"></span></div>
+        <label><input type="checkbox" id="ptLeave" checked> 先離開原本的隊伍</label><button class="btn primary" id="ptGo">組隊</button><button class="btn" id="ptCancel">取消進行中的組隊</button><span class="dim" id="ptMsg"></span></div>
       <details><summary class="dim">目前的隊伍</summary><div id="ptNow"></div></details>
       <details id="ptJobsBox" open><summary class="dim">最近的換圖／組隊進度</summary><div id="ptJobs"></div></details>
       <div class="dim">遊戲標示「換圖只移動目前角色」：不是目前角色的，中控會嘗試直接指定；若被遊戲拒絕，紀錄會顯示失敗，請先「⇄ 切換」再換。等級低於地圖最低等級的會略過。</div>
@@ -1786,10 +1786,18 @@ document.addEventListener('click', async e => {
       const leader = list.find(c => c.id === leaderId) || list.slice().sort((a, b) => b.lv - a.lv)[0];
       const leave = $('#ptLeave').checked;
       if (!confirm(`組隊：隊長 ${leader.name}，隊員 ${list.filter(c => c !== leader).map(c => c.name).join('、')}${map ? `\n完成後全部前往「${map.name}」` : ''}${leave ? '\n會先讓這些角色離開原本的隊伍' : ''}\n\n各帳號的遊戲分頁要開著，約 1 分鐘完成。`)) return;
-      const r = await api('/api/party', { members: list.map(c => c.id), leaderId: leader.id, leaveOld: leave, ...(map ? { map: map.id, mapName: map.name } : {}) });
+      const body = { members: list.map(c => c.id), leaderId: leader.id, leaveOld: leave, ...(map ? { map: map.id, mapName: map.name } : {}) };
+      let r;
+      try { r = await api('/api/party', body); }
+      catch (err) {
+        if (!/上一次組隊還在進行中/.test(err.message)) throw err;
+        if (!confirm(err.message + '\n\n要取消上一次，直接重新組隊嗎？')) return;
+        r = await api('/api/party', { ...body, force: true });
+      }
       $('#ptMsg').textContent = `已送出（${r.jobs.length} 個帳號），進度看下方「最近的換圖／組隊進度」`;
       await poll(true);
     };
+    if (t.id === 'ptCancel') { const r = await api('/api/party/cancel'); $('#ptMsg').textContent = r.cancelled ? `已取消 ${r.cancelled} 個進行中的組隊工作（正在等邀請的會在幾秒內停止）` : '目前沒有進行中的組隊'; await poll(true); }
     if (t.id === 'ptGo') { const list = mapCandidates().filter(c => ui.mpSel.has(c.id)); await makeParty(list, $('#ptLeader').value, null); }
     if (t.dataset && t.dataset.ppparty !== undefined) { const r = ui.ppRes[Number(t.dataset.ppparty)]; await makeParty(r.g, null, r.best.map); }
   } catch (err) { alert('失敗：' + err.message); }

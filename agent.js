@@ -463,65 +463,97 @@ function agentMain(ctx) {
     }
 
     // ---------- 組隊 ----------
-    // 用 characterId 指定角色（同帳號第二隻也可以），每一步都先查這隻角色目前的隊伍狀態
+    // 每次組隊有一個編號（job.partyRun）：隊長建好隊伍後把隊伍代碼回報中控，其他帳號只接受「這次」隊伍代碼的邀請，
+    // 不會誤接之前失敗那次留下來的舊邀請。組隊進行中被取消（或有新的一次）就立刻停止。
     async function partyState(charId) {
-      const j = await game({ type: 'sync', characterId: charId });
+      const j = await gameRetry({ type: 'sync', characterId: charId });
       return { party: (j && j.party) || null, invites: (j && j.partyInvites) || [] };
     }
     const sleepP = ms => new Promise(r => setTimeout(r, ms));
-    async function partyStep(t) {
+    // 很多帳號同時動作時遊戲常回「存檔忙碌」：多等幾次、每次隨機錯開
+    async function gameRetry(action) {
+      for (let i = 0; ; i++) {
+        try { return await game(action); }
+        catch (e) { if (i >= 6 || !/忙碌|稍後重試|稍後再試|busy/i.test(e.message)) throw e; await sleepP(2500 + Math.random() * 3000 + i * 1500); }
+      }
+    }
+    async function partyAlive(job) {
+      try { const r = await hub('GET', '/api/job-status?id=' + encodeURIComponent(job.id)); return r && ['approved', 'running'].includes(r.status); } catch (_) { return true; }
+    }
+    async function partyStep(t, job) {
       const cid = t.charId;
+      if (!(await partyAlive(job))) throw new Error('這次組隊已取消');
       if (t.action === 'partyLeave') {
         const st = await partyState(cid);
         if (!st.party) return `${t.name} 沒有隊伍`;
-        await game({ type: 'partyLeave', characterId: cid });
+        await gameRetry({ type: 'partyLeave', characterId: cid });
         return `${t.name} 離開原本的隊伍`;
       }
       if (t.action === 'partyCreate') {
         let st = await partyState(cid);
-        if (!st.party) { await game({ type: 'partyCreate', characterId: cid }); await sleepP(800); st = await partyState(cid); }
+        if (!st.party) { await gameRetry({ type: 'partyCreate', characterId: cid }); await sleepP(1000); st = await partyState(cid); }
         if (!st.party) throw new Error('建立隊伍失敗');
         partyCodeOf[cid] = st.party.code;
-        hub('POST', '/api/party/code', { charId: cid, code: st.party.code }).catch(() => {});
-        return `${t.name} 的隊伍已就緒`;
+        await hub('POST', '/api/party/code', { run: job.partyRun, charId: cid, code: st.party.code });
+        return `${t.name} 的隊伍已就緒（${st.party.code}）`;
       }
       if (t.action === 'partyJoin') {
-        const code = partyCodeOf[t.leaderId] || t.code;
-        if (!code) throw new Error('還不知道隊長的隊伍代碼');
+        const code = partyCodeOf[t.leaderId] || await waitRunCode(job, t.leaderId, 60);
+        if (!code) throw new Error('等不到隊伍代碼');
         const st = await partyState(cid);
         if (st.party && st.party.code === code) return `${t.name} 已在隊伍中`;
-        await game({ type: 'partyJoin', code, characterId: cid });
+        if (st.party) await gameRetry({ type: 'partyLeave', characterId: cid });
+        await gameRetry({ type: 'partyJoin', code, characterId: cid });
         return `${t.name} 加入隊伍`;
       }
       if (t.action === 'partyInvite') {
-        // 等其他帳號先離開舊隊伍再邀請；30 秒後還沒進隊的再邀一次
-        await sleepP(5000);
-        const invite = async codes => { for (const code of codes) { try { await game({ type: 'partyInvite', code, characterId: cid }); } catch (e) { console.warn('[szg-hub party]', e.message); } await sleepP(600); } };
+        await sleepP(3000);
+        const invite = async codes => { for (const code of codes) { try { await gameRetry({ type: 'partyInvite', code, characterId: cid }); } catch (e) { console.warn('[szg-hub party]', e.message); } await sleepP(800); } };
         await invite(t.codes || []);
-        await sleepP(30000);
-        const st = await partyState(cid);
-        const inParty = new Set(((st.party && st.party.members) || []).map(m => m.name));
-        const again = (t.codes || []).filter(code => !((t.namesByCode || {})[code] || []).every(n => inParty.has(n)));
-        if (again.length) await invite(again);
-        return `${t.name} 已邀請 ${(t.codes || []).length} 個帳號${again.length ? `（${again.length} 個重新邀請）` : ''}`;
+        // 30 秒、60 秒後檢查，還沒進隊的帳號再邀一次
+        let again = [];
+        for (const wait of [30000, 30000]) {
+          await sleepP(wait);
+          if (!(await partyAlive(job))) throw new Error('這次組隊已取消');
+          const st = await partyState(cid);
+          const inParty = new Set(((st.party && st.party.members) || []).map(m => m.name));
+          again = (t.codes || []).filter(code => !((t.namesByCode || {})[code] || []).every(n => inParty.has(n)));
+          if (!again.length) break;
+          await invite(again);
+        }
+        return `${t.name} 已邀請 ${(t.codes || []).length} 個帳號${again.length ? `（${again.length} 個重新邀請過）` : ''}`;
       }
       if (t.action === 'partyAccept') {
-        // 等隊長的邀請出現（最多約 2 分鐘），找不到符合的就不亂接
+        await sleepP(Math.random() * 3000); // 各帳號錯開
+        const code = await waitRunCode(job, t.leaderId, 120);
+        if (!code) throw new Error(`2 分鐘內隊長 ${t.leaderName} 沒有建好隊伍`);
         for (let i = 0; i < 24; i++) {
+          if (i && !(await partyAlive(job))) throw new Error('這次組隊已取消');
           const st = await partyState(cid);
-          if (st.party && st.party.members && st.party.members.some(m => m.name === t.leaderName)) { partyCodeOf[cid] = st.party.code; return `${t.name} 已在 ${t.leaderName} 的隊伍`; }
-          const inv = (st.invites || []).find(v => JSON.stringify(v).includes(t.leaderName)) || ((st.invites || []).length === 1 ? st.invites[0] : null);
+          if (st.party && st.party.code === code) { partyCodeOf[cid] = code; return `${t.name} 已在 ${t.leaderName} 的隊伍`; }
+          const inv = (st.invites || []).filter(v => v.partyCode === code).sort((a, b) => (b.expiresAt || 0) - (a.expiresAt || 0))[0];
           if (inv) {
-            await game({ type: 'partyInviteAccept', inviteId: inv.id, characterId: cid });
-            await sleepP(800);
-            const after = await partyState(cid); if (after.party) partyCodeOf[cid] = after.party.code;
-            return `${t.name} 接受 ${t.leaderName} 的邀請`;
+            if (st.party) await gameRetry({ type: 'partyLeave', characterId: cid });
+            await gameRetry({ type: 'partyInviteAccept', inviteId: inv.id, characterId: cid });
+            await sleepP(1000);
+            const after = await partyState(cid);
+            if (!after.party || after.party.code !== code) throw new Error('接受邀請後沒有進到隊伍');
+            partyCodeOf[cid] = code;
+            return `${t.name} 加入 ${t.leaderName} 的隊伍`;
           }
           await sleepP(5000);
         }
         throw new Error(`2 分鐘內沒收到 ${t.leaderName} 的邀請`);
       }
       throw new Error('未知的組隊步驟');
+    }
+    // 向中控等「這次組隊」隊長回報的隊伍代碼
+    async function waitRunCode(job, leaderId, seconds) {
+      for (let i = 0; i < seconds / 3; i++) {
+        try { const r = await hub('GET', `/api/party/code?run=${encodeURIComponent(job.partyRun)}&charId=${encodeURIComponent(leaderId)}`); if (r && r.code) return r.code; if (r && r.cancelled) return null; } catch (_) {}
+        await sleepP(3000);
+      }
+      return null;
     }
     const partyCodeOf = {};
 
@@ -543,13 +575,13 @@ function agentMain(ctx) {
       const targets = ((job.batches[0] && job.batches[0].targets) || []).slice().sort((a, b) => (a.action === 'switch') - (b.action === 'switch'));
       for (const t of targets) {
         if (t.action && t.action.startsWith('party')) {
-          try { done.push(await partyStep(t)); } catch (e) { failed.push(`${t.name} ${IDLE_LABEL[t.action] || t.action}（${e.message}）`); if (t.stopOnFail) break; }
+          try { done.push(await partyStep(t, job)); } catch (e) { failed.push(`${t.name} ${IDLE_LABEL[t.action] || t.action}（${e.message}）`); if (t.stopOnFail) break; }
           continue;
         }
         if (t.action === 'map') {
           try {
             setBadge(null, `${t.name}：前往 ${t.mapName || t.map}…`);
-            await game({ type: 'map', map: t.map, characterId: t.charId });
+            await gameRetry({ type: 'map', map: t.map, characterId: t.charId });
             done.push(`${t.name} 前往 ${t.mapName || t.map}`);
           } catch (e) { failed.push(`${t.name} 前往 ${t.mapName || t.map}（${e.message}）`); }
           continue;
