@@ -8,6 +8,7 @@ const path = require('path');
 const crypto = require('crypto');
 const updater = require('./update');
 const makeMarket = require('./market');
+const makeExtDb = require('./extdb');
 
 const PORT = Number(process.env.PORT) || 8787;
 // 只接受本機連線
@@ -73,6 +74,8 @@ const qnorm = s => String(s || '').replace(/[\s　]+/g, '').replace(/[「」『�
 function quizStore() { return db.quiz || (db.quiz = { learned: {}, unknown: {}, log: [] }); }
 function quizBank() {
   const bank = {};
+  // 優先順序：冒險資料庫 < 內建題庫 < 你自己學到／更正的
+  try { for (const x of extdb.quizList()) bank[qnorm(x.q)] = { q: x.q, options: x.options, answer: x.answer, src: 'ext' }; } catch (_) {}
   try {
     for (const x of JSON.parse(fs.readFileSync(QUIZ_FILE, 'utf8')).questions || []) if (x.q && x.answer) bank[qnorm(x.q)] = { q: x.q, options: x.options || [], answer: x.answer, src: 'bank' };
   } catch (_) {}
@@ -100,6 +103,9 @@ function save() {
   }, 1000);
 }
 market = makeMarket(() => db, save, id => charName(id));
+// 冒險資料庫（外部）：題庫、道具／怪物資料與圖示
+const extdb = makeExtDb(DATA_DIR, () => db.settings || {}, msg => { console.log('[資料庫] ' + msg); quizLog(msg); save(); });
+extdb.schedule();
 // 組隊功能已移除：之前留下的組隊工作一律取消
 for (const j of db.jobs) if (j.partyRun && ['approved', 'running', 'pending'].includes(j.status)) j.status = 'cancelled';
 
@@ -342,6 +348,13 @@ const server = http.createServer(async (req, res) => {
     }
 
 
+    // ---- 冒險資料庫 ----
+    if (req.method === 'GET' && url.pathname === '/api/extdb') return send(res, 200, extdb.forDashboard());
+    if (req.method === 'GET' && url.pathname === '/api/extdb/status') return send(res, 200, { ...extdb.status(), auto: db.settings.extDbAuto !== false });
+    if (req.method === 'POST' && url.pathname === '/api/extdb/refresh') {
+      try { return send(res, 200, await extdb.refresh('手動')); } catch (e) { return send(res, 502, { error: e.message }); }
+    }
+
     // ---- 自動更新 ----
     if (req.method === 'POST' && url.pathname === '/api/update/check') {
       await checkUpdate();
@@ -449,8 +462,9 @@ const server = http.createServer(async (req, res) => {
       for (const [k, x] of Object.entries(bank)) answers[k] = x.answer;
       const st = quizStore();
       // 等你作答的題目：超過 12 小時沒再出現的（那輪已經結束）自動清掉
-      for (const [k, u] of Object.entries(st.unknown)) if (Date.now() - (u.at || 0) > 12 * 3600e3) delete st.unknown[k];
-      return send(res, 200, { auto: !!db.settings.quizAuto, answers, count: Object.keys(bank).length,
+      for (const [k, u] of Object.entries(st.unknown)) if (Date.now() - (u.at || 0) > 12 * 3600e3 || bank[k]) delete st.unknown[k];
+      const srcCount = {}; for (const x of Object.values(bank)) srcCount[x.src] = (srcCount[x.src] || 0) + 1;
+      return send(res, 200, { auto: !!db.settings.quizAuto, answers, count: Object.keys(bank).length, srcCount, extdb: extdb.status(),
         unknown: Object.values(st.unknown).sort((a, b) => b.at - a.at).slice(0, 40), learned: Object.values(st.learned).slice(-100), log: st.log.slice(-50) });
     }
     if (req.method === 'GET' && url.pathname === '/api/quiz/export') {

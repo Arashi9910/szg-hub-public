@@ -6,6 +6,10 @@
 <title>上漲谷中控</title>
 <link rel="icon" href="data:,">
 <style>
+  img.ico { width: 22px; height: 22px; object-fit: contain; vertical-align: middle; margin-right: 4px; image-rendering: pixelated; }
+  img.mico { max-width: 44px; max-height: 40px; object-fit: contain; vertical-align: middle; margin-right: 6px; image-rendering: pixelated; }
+  .cell-gear img.ico { width: 26px; height: 26px; float: left; margin: 2px 6px 0 0; }
+  .qbank td { vertical-align: top; }
   :root {
     --bg: #0f1520; --panel: #182131; --panel2: #1e2a3d; --line: #2b3a52; --text: #dbe3ef; --dim: #8a99b0;
     --accent: #4f7fd1; --good: #3fae6a; --warn: #d9a441; --bad: #d65c5c; --main: #f0c75e;
@@ -336,6 +340,17 @@
       <div class="dim">開啟後，每個帳號的遊戲分頁會每 45 秒檢查一次：今天還有次數就開始答題，題庫有的直接答。遇到題庫沒有的題目會停在那題（遊戲作答不限時），題目會出現在下面，你選好答案後會自動接著答。不論自動或手動作答，答完看到的正確答案都會自動收進題庫。</div>
     </div>
     <div class="card"><h3>等你作答的題目</h3><div id="quizUnknown"></div></div>
+    <div class="card">
+      <h3>外部資料庫</h3>
+      <div class="bar"><span id="extStatus" class="dim"></span><button class="btn" id="extRefresh">立即更新</button></div>
+      <div class="dim">題庫、道具／怪物圖示與說明來自 <a href="https://dong811205.github.io/szg-database/" target="_blank" rel="noopener">上漲谷｜冒險資料庫</a>（感謝作者整理）。中控每天自動下載一次；題目答案以你自己學到／更正的為優先，其次是內建題庫，最後才是這份資料庫。</div>
+    </div>
+    <div class="card">
+      <details id="qbDetails"><summary>瀏覽題庫</summary>
+        <div class="bar" style="margin:6px 0"><input id="qbSearch" placeholder="搜尋題目或答案" style="width:260px"><select id="qbSrc"><option value="">全部來源</option><option value="learned">自己學到的</option><option value="bank">內建題庫</option><option value="ext">冒險資料庫</option></select><span class="dim" id="qbCount"></span></div>
+        <div id="qbOut" style="max-height:520px;overflow:auto"></div>
+      </details>
+    </div>
     <div class="card"><h3>各帳號今日狀態</h3><div id="quizStatus"></div></div>
     <div class="card">
       <details><summary>最近學到的題目</summary><div id="quizLearned"></div></details>
@@ -587,7 +602,7 @@ function renderMatrix() {
       if (!g) { h += '<td class="dim">—</td>'; continue; }
       const line = statLine(g[mode] || {}, slotStats(g.slot));
       const clean = mode === 'cleanStats';
-      h += `<td class="cell-gear"><div class="n">${esc(g.name)} ${!clean && g.plus ? `<span class="plus">+${g.plus}</span>` : ''}</div><div class="s">${esc(line) || '—'}</div>${clean ? (g.maxSlots ? `<div class="s">可衝 ${g.maxSlots} 次</div>` : '') : (g.slotsLeft ? `<div class="s">可衝 ${g.slotsLeft} 次</div>` : '')}</td>`;
+      h += `<td class="cell-gear">${itemImg(g.itemId) ? `<img class="ico" src="${esc(itemImg(g.itemId))}" loading="lazy" alt="" onerror="this.remove()">` : ''}<div class="n" title="${esc(itemTip(g.itemId))}">${esc(g.name)} ${!clean && g.plus ? `<span class="plus">+${g.plus}</span>` : ''}</div><div class="s">${esc(line) || '—'}</div>${clean ? (g.maxSlots ? `<div class="s">可衝 ${g.maxSlots} 次</div>` : '') : (g.slotsLeft ? `<div class="s">可衝 ${g.slotsLeft} 次</div>` : '')}</td>`;
     }
     h += '</tr>';
   }
@@ -699,7 +714,7 @@ function renderList() {
     const req = [g.reqSTR && `力${g.reqSTR}`, g.reqDEX && `敏${g.reqDEX}`, g.reqINT && `智${g.reqINT}`, g.reqLUK && `幸${g.reqLUK}`].filter(Boolean).join(' ');
     const jobs = g.reqJob === 0 ? '全職' : JOBS.filter(([, b]) => b && (g.reqJob & b)).map(([n]) => n).join('/');
     const w = g._w.map(s => s.char.name);
-    h += `<tr><td>${g.loc === '背包' ? `<input type="checkbox" data-gsel="${esc(g.uid)}" ${ui.gearSel.has(g.uid) ? 'checked' : ''}>` : ''}</td><td>${esc(g.charName)}</td><td class="dim">${g.loc}</td><td>${slotLabel(g.slot)}</td><td>${esc(g.name)}${g.locked ? ' 🔒' : ''}</td>
+    h += `<tr><td>${g.loc === '背包' ? `<input type="checkbox" data-gsel="${esc(g.uid)}" ${ui.gearSel.has(g.uid) ? 'checked' : ''}>` : ''}</td><td>${esc(g.charName)}</td><td class="dim">${g.loc}</td><td>${slotLabel(g.slot)}</td><td>${iname(g.itemId, g.name, g.locked ? ' 🔒' : '')}</td>
       ${mode === 'cleanStats' ? `<td class="num dim" title="目前實際強化 ${g.plus} 次">0</td><td class="num dim" title="目前實際剩 ${g.slotsLeft} 次">${g.maxSlots}/${g.maxSlots}</td>`
         : `<td class="num">${g.plus ? `<span class="plus">+${g.plus}</span>` : '0'}</td><td class="num">${g.slotsLeft}/${g.maxSlots}</td>`}
       ${f.cols.map(c => `<td class="num">${st[c] || '<span class="dim">·</span>'}</td>`).join('')}
@@ -763,7 +778,7 @@ function renderRes() {
     for (const i of s.items || []) {
       kinds.add(i.kind);
       if (i.loc === '倉庫' && (!withWh || latest[s.accountId] !== s)) continue;
-      const a = agg[i.key] || (agg[i.key] = { name: i.name, kind: i.kind, total: 0, holders: [] });
+      const a = agg[i.key] || (agg[i.key] = { name: i.name, itemId: i.itemId, kind: i.kind, total: 0, holders: [] });
       a.total += i.qty;
       a.holders.push({ who: i.loc === '倉庫' ? accountLabel(s.accountId, s) + '倉庫' : s.char.name, qty: i.qty, main: s.char.id === main });
     }
@@ -777,7 +792,7 @@ function renderRes() {
   let h = `<table class="sticky"><thead><tr>${th('name','道具')}${th('kind','類別')}${th('total','總數','num')}<th class="nosort">分布（由多到少）</th></tr></thead><tbody>`;
   for (const a of rows) {
     a.holders.sort((x, y) => y.qty - x.qty);
-    h += `<tr><td>${esc(a.name)}</td><td class="dim">${esc(a.kind)}</td><td class="num">${fmt(a.total)}</td><td class="wrap">${a.holders.map(x => `<span class="tag ${x.main ? 'main' : ''}">${esc(x.who)} ${fmt(x.qty)}</span>`).join('')}</td></tr>`;
+    h += `<tr><td>${iname(a.itemId, a.name)}</td><td class="dim">${esc(a.kind)}</td><td class="num">${fmt(a.total)}</td><td class="wrap">${a.holders.map(x => `<span class="tag ${x.main ? 'main' : ''}">${esc(x.who)} ${fmt(x.qty)}</span>`).join('')}</td></tr>`;
   }
   if (!rows.length) h += '<tr><td colspan="4" class="empty">沒有符合的道具</td></tr>';
   $('#itemOut').innerHTML = h + '</tbody></table>';
@@ -1006,10 +1021,10 @@ function renderGivePick() {
   const { items, gear } = giveLists(s);
   const nSel = Object.values(giveDraft.items).filter(q => q > 0).length + giveDraft.gear.size;
   let h = `<div class="dim" style="margin-bottom:4px">已選 ${nSel} 格（${Math.max(1, Math.ceil(nSel / 20))} 次交易）</div><table><thead><tr><th class="nosort">道具</th><th class="nosort">類別</th><th class="nosort num">可交易</th><th class="nosort">數量</th></tr></thead><tbody>`;
-  for (const i of items) h += `<tr><td>${esc(i.name)}${i.supply ? ' <span class="tag">補給中</span>' : ''}</td><td class="dim">${esc(i.kind)}</td><td class="num">${fmt(i.tradableQty ?? i.qty)}</td><td><input type="number" min="0" max="${i.tradableQty ?? i.qty}" data-gitem="${esc(i.key)}" value="${giveDraft.items[i.key] || ''}" style="width:90px"></td></tr>`;
+  for (const i of items) h += `<tr><td>${iname(i.itemId, i.name)}${i.supply ? ' <span class="tag">補給中</span>' : ''}</td><td class="dim">${esc(i.kind)}</td><td class="num">${fmt(i.tradableQty ?? i.qty)}</td><td><input type="number" min="0" max="${i.tradableQty ?? i.qty}" data-gitem="${esc(i.key)}" value="${giveDraft.items[i.key] || ''}" style="width:90px"></td></tr>`;
   if (!items.length) h += '<tr><td colspan="4" class="dim">沒有符合條件的道具</td></tr>';
   h += `</tbody></table><table style="margin-top:8px"><thead><tr><th class="nosort"></th><th class="nosort">裝備</th><th class="nosort">部位</th><th class="nosort num">強化</th><th class="nosort num">可衝</th><th class="nosort">素質</th><th class="nosort num">需求Lv</th></tr></thead><tbody>`;
-  for (const g of gear) h += `<tr><td><input type="checkbox" data-ggear="${esc(g.uid)}" ${giveDraft.gear.has(g.uid) ? 'checked' : ''}></td><td>${esc(g.name)}</td><td>${slotLabel(g.slot)}</td><td class="num">${g.plus ? `<span class="plus">+${g.plus}</span>` : 0}</td><td class="num">${g.slotsLeft}/${g.maxSlots}</td><td class="dim">${esc(statLine(g.stats || {}, STAT_ORDER))}</td><td class="num">${g.reqLevel}</td></tr>`;
+  for (const g of gear) h += `<tr><td><input type="checkbox" data-ggear="${esc(g.uid)}" ${giveDraft.gear.has(g.uid) ? 'checked' : ''}></td><td>${iname(g.itemId, g.name)}</td><td>${slotLabel(g.slot)}</td><td class="num">${g.plus ? `<span class="plus">+${g.plus}</span>` : 0}</td><td class="num">${g.slotsLeft}/${g.maxSlots}</td><td class="dim">${esc(statLine(g.stats || {}, STAT_ORDER))}</td><td class="num">${g.reqLevel}</td></tr>`;
   if (!gear.length) h += '<tr><td colspan="7" class="dim">沒有符合條件的背包裝備</td></tr>';
   $('#givePick').innerHTML = h + '</tbody></table>';
 }
@@ -1043,11 +1058,11 @@ function renderBagList() {
   for (const r of rows) {
     if (r.t === 'i') {
       const i = r.i;
-      h += `<tr><td><input type="checkbox" data-bsel="${esc(r.id)}" ${ui.bagSel.has(r.id) ? 'checked' : ''}></td><td>${esc(i.name)}</td><td class="dim">${esc(i.kind)}</td><td class="num">${fmt(i.qty)}</td>
+      h += `<tr><td><input type="checkbox" data-bsel="${esc(r.id)}" ${ui.bagSel.has(r.id) ? 'checked' : ''}></td><td>${iname(i.itemId, i.name)}</td><td class="dim">${esc(i.kind)}</td><td class="num">${fmt(i.qty)}</td>
         <td>${i.lockedQty ? (i.lockedQty >= i.qty ? '🔒' : `🔒 ${fmt(i.lockedQty)}`) : ''}</td><td class="num">${i.sellPrice ? fmt(i.sellPrice) : '<span class="dim">不可賣</span>'}</td><td class="dim">${i.supply ? '<span class="tag">補給中</span>' : ''}</td></tr>`;
     } else {
       const g = r.g;
-      h += `<tr><td><input type="checkbox" data-bsel="${esc(r.id)}" ${ui.bagSel.has(r.id) ? 'checked' : ''}></td><td>${esc(g.name)} ${g.plus ? `<span class="plus">+${g.plus}</span>` : ''}</td><td class="dim">裝備・${slotLabel(g.slot)}</td><td class="num">1</td>
+      h += `<tr><td><input type="checkbox" data-bsel="${esc(r.id)}" ${ui.bagSel.has(r.id) ? 'checked' : ''}></td><td>${iname(g.itemId, g.name, g.plus ? ` <span class="plus">+${g.plus}</span>` : '')}</td><td class="dim">裝備・${slotLabel(g.slot)}</td><td class="num">1</td>
         <td>${g.locked ? '🔒' : ''}</td><td class="num dim">—</td><td class="dim">${esc(statLine(g.stats || {}, STAT_ORDER))}　可衝 ${g.slotsLeft}/${g.maxSlots}</td></tr>`;
     }
   }
@@ -1250,7 +1265,12 @@ async function loadQuiz() { try { QUIZ = await (await fetch('/api/quiz')).json()
 function renderQuiz() {
   if (!QUIZ) { loadQuiz().then(() => QUIZ && renderQuiz()); return; }
   $('#quizAuto').checked = !!QUIZ.auto;
-  $('#quizCount').textContent = `題庫共 ${QUIZ.count} 題`;
+  const sc = QUIZ.srcCount || {};
+  $('#quizCount').textContent = `題庫共 ${QUIZ.count} 題（自己學到 ${sc.learned || 0}・內建 ${sc.bank || 0}・冒險資料庫 ${sc.ext || 0}）`;
+  const ex = QUIZ.extdb || {};
+  $('#extStatus').innerHTML = ex.ok ? `已下載：道具 ${fmt(ex.items)}、怪物 ${fmt(ex.mobs)}、題目 ${fmt(ex.quiz)}　<span class="dim">資料日期 ${esc(ex.dataDate || '—')}・下載於 ${clock(ex.fetchedAt)}</span>`
+    : '<span class="warn">還沒下載（伺服器啟動 15 秒後會自動下載，或按「立即更新」）</span>';
+  if ($('#qbDetails').open) renderQBank();
   const unk = QUIZ.unknown || [];
   $('#quizUnknown').innerHTML = unk.length ? unk.map(u => `<div style="margin:8px 0"><div><b>${esc(u.q)}</b> <span class="dim">${esc(u.by || '')}</span></div><div class="bar">${
     u.options.map(o => `<button class="btn" data-quizans="${esc(JSON.stringify({ q: u.q, options: u.options, answer: o }))}">${esc(o)}</button>`).join('')}</div></div>`).join('')
@@ -1364,7 +1384,7 @@ function renderASPreview() {
   const pv = asPreviewRows();
   $('#asPreview').innerHTML = pv.length ? `<div class="bar">目前背包裡有 ${pv.length} 件不符合保留條件（只列未鎖定、未強化、未衝卷的）<button class="btn warn" id="asSellNow">把這些建立成賣出工作</button></div>
     <table><thead><tr><th class="nosort">角色</th><th class="nosort">部位</th><th class="nosort">名稱</th><th class="nosort">素質</th><th class="nosort">規則</th></tr></thead><tbody>${pv.map(({ g, r }) =>
-      `<tr><td>${esc(g.charName)}</td><td>${slotLabel(g.slot)}</td><td>${esc(g.name)}</td><td class="dim">${esc(statLine(g.stats || {}, STAT_ORDER))}</td><td class="dim">${esc(r.name || '未命名')}</td></tr>`).join('')}</tbody></table>`
+      `<tr><td>${esc(g.charName)}</td><td>${slotLabel(g.slot)}</td><td>${iname(g.itemId, g.name)}</td><td class="dim">${esc(statLine(g.stats || {}, STAT_ORDER))}</td><td class="dim">${esc(r.name || '未命名')}</td></tr>`).join('')}</tbody></table>`
     : '<div class="dim">目前背包裡沒有會被賣掉的裝備。</div>';
 }
 function renderAS(force) {
@@ -1453,7 +1473,7 @@ function renderMarket() {
   let h = `<table class="sticky"><thead><tr>${th('name', '物品')}${th('kind', '類別')}${th('own', '持有', 'num')}${th('min', '市場最低', 'num')}${th('med', '中位數', 'num')}${th('n', '掛單', 'num')}${th('min7', '7日最低', 'num')}${th('avg7', '7日均', 'num')}${th('max7', '7日最高', 'num')}${th('change', '漲跌', 'num')}<th class="nosort">走勢</th>${th('npc', '商店價', 'num')}${th('value', '持有估值', 'num')}${th('at', '更新')}</tr></thead><tbody>`;
   for (const r of rows.slice(0, 400)) {
     const open = ui.mkOpen.has(r.id);
-    h += `<tr data-mkrow="${esc(r.id)}" style="cursor:pointer"><td>${open ? '▾' : '▸'} ${esc(r.name)}</td><td class="dim">${esc(r.kind)}</td><td class="num">${r.own ? fmt(r.own) : '<span class="dim">0</span>'}</td>
+    h += `<tr data-mkrow="${esc(r.id)}" style="cursor:pointer"><td>${open ? '▾' : '▸'} ${iname(r.itemId, r.name)}</td><td class="dim">${esc(r.kind)}</td><td class="num">${r.own ? fmt(r.own) : '<span class="dim">0</span>'}</td>
       <td class="num">${r.min != null ? fmt(r.min) : '<span class="dim">無人賣</span>'}</td><td class="num">${fmt(r.med)}</td><td class="num">${r.n ? `${r.n}<span class="dim">／${short(r.q)}</span>` : '<span class="dim">0</span>'}</td>
       <td class="num">${fmt(r.min7)}</td><td class="num">${fmt(r.avg7)}</td><td class="num">${fmt(r.max7)}</td><td class="num">${pct(r.change)}</td><td>${spark(r.daily)}</td>
       <td class="num dim">${r.npc ? fmt(r.npc) : '—'}</td><td class="num">${r.value ? short(r.value) : '<span class="dim">—</span>'}</td><td class="dim">${r.at ? ago(Date.now() - r.at) : '未掃描'}</td></tr>`;
@@ -1659,8 +1679,8 @@ function mapDetail(m) {
   return m.mobs.map(x => {
     const rows = dropsFor(m, x).slice().sort((a, b) => b[3] - a[3]);
     const money = Array.isArray(x.money) ? x.money.join('~') : (x.money || '—');
-    return `<div style="margin:6px 0"><b>${esc(x.name)}</b>${x.isBoss ? ' <span class="warn">王</span>' : ''} <span class="dim">Lv${x.lv}・HP ${fmt(x.hp)}・經驗 ${fmt(x.xp)}・楓幣 ${esc(money)}</span>
-      <div class="chips" style="margin-top:4px">${rows.length ? rows.map(r => `<span class="tag" title="${esc(wKind(r[0]))}">${esc(wName(r[0]))}${r[2] > 1 ? ` ×${r[1]}~${r[2]}` : ''} <b>${chancePct(r[3])}</b>${r[4] ? ' <span class="dim">任務</span>' : ''}</span>`).join('') : '<span class="dim">沒有掉落資料</span>'}</div></div>`;
+    return `<div style="margin:6px 0">${mobImg(x)}<b>${esc(x.name)}</b>${x.isBoss ? ' <span class="warn">王</span>' : ''} <span class="dim">Lv${x.lv}・HP ${fmt(x.hp)}・經驗 ${fmt(x.xp)}・楓幣 ${esc(money)}</span>
+      <div class="chips" style="margin-top:4px">${rows.length ? rows.map(r => `<span class="tag" title="${esc(itemTip(r[0]) || wKind(r[0]))}">${itemImg(r[0]) ? `<img class="ico" src="${esc(itemImg(r[0]))}" loading="lazy" alt="" onerror="this.remove()">` : ''}${esc(wName(r[0]))}${r[2] > 1 ? ` ×${r[1]}~${r[2]}` : ''} <b>${chancePct(r[3])}</b>${r[4] ? ' <span class="dim">任務</span>' : ''}</span>`).join('') : '<span class="dim">沒有掉落資料</span>'}</div></div>`;
   }).join('') || '<span class="dim">沒有怪物資料</span>';
 }
 function renderWorldItem() {
@@ -1669,10 +1689,10 @@ function renderWorldItem() {
   const ids = Object.entries(WORLD.names).filter(([, n]) => n[0].includes(q)).map(([id]) => Number(id));
   if (q.includes('楓幣')) ids.push(0);
   const idSet = new Set(ids), out = [];
-  for (const m of WORLD.maps) for (const mob of m.mobs) for (const r of dropsFor(m, mob)) if (idSet.has(Number(r[0]))) out.push({ item: wName(r[0]), map: m, mob, r });
+  for (const m of WORLD.maps) for (const mob of m.mobs) for (const r of dropsFor(m, mob)) if (idSet.has(Number(r[0]))) out.push({ item: wName(r[0]), id: r[0], map: m, mob, r });
   out.sort((a, b) => b.r[3] - a.r[3]);
   $('#wItemOut').innerHTML = out.length ? `<table><thead><tr><th class="nosort">道具</th><th class="nosort num">機率</th><th class="nosort">數量</th><th class="nosort">怪物</th><th class="nosort">地圖</th><th class="nosort num">地圖最低等級</th></tr></thead><tbody>${out.slice(0, 200).map(o =>
-    `<tr><td>${esc(o.item)}</td><td class="num"><b>${chancePct(o.r[3])}</b></td><td>${o.r[1]}${o.r[2] > o.r[1] ? '~' + o.r[2] : ''}</td><td>${esc(o.mob.name)} <span class="dim">Lv${o.mob.lv}${o.mob.isBoss ? '・王' : ''}</span></td><td>${esc(o.map.name)} <span class="dim">${esc(o.map.region || '')}</span></td><td class="num">${o.map.minLevel}</td></tr>`).join('')}</tbody></table>${out.length > 200 ? '<div class="dim">只列前 200 筆</div>' : ''}`
+    `<tr><td>${iname(o.id, o.item)}</td><td class="num"><b>${chancePct(o.r[3])}</b></td><td>${o.r[1]}${o.r[2] > o.r[1] ? '~' + o.r[2] : ''}</td><td>${mobImg(o.mob)}${esc(o.mob.name)} <span class="dim">Lv${o.mob.lv}${o.mob.isBoss ? '・王' : ''}</span></td><td>${esc(o.map.name)} <span class="dim">${esc(o.map.region || '')}</span></td><td class="num">${o.map.minLevel}</td></tr>`).join('')}</tbody></table>${out.length > 200 ? '<div class="dim">只列前 200 筆</div>' : ''}`
     : `<div class="dim">找不到「${esc(q)}」的掉落資料（${ids.length ? '有這個道具，但沒有怪物掉' : '沒有這個名稱的道具'}）</div>`;
 }
 
@@ -1796,7 +1816,77 @@ document.addEventListener('input', e => {
 });
 
 // ================= 主流程 =================
+let QBANK = null;
+async function renderQBank(reload) {
+  if (!QBANK || reload) { try { QBANK = (await (await fetch('/api/quiz/export')).json()).questions || []; } catch (_) { QBANK = []; } }
+  const q = $('#qbSearch').value.trim(), src = $('#qbSrc').value;
+  const SRC = { learned: '自己學到', bank: '內建', ext: '冒險資料庫' };
+  const list = QBANK.filter(x => (!src || x.src === src) && (!q || x.q.includes(q) || String(x.answer).includes(q)));
+  $('#qbCount').textContent = `${list.length} 題`;
+  $('#qbOut').innerHTML = `<table class="qbank"><thead><tr><th class="nosort">題目</th><th class="nosort">答案</th><th class="nosort">其他選項</th><th class="nosort">來源</th></tr></thead><tbody>${list.slice(0, 300).map(x =>
+    `<tr><td class="wrap">${esc(x.q)}</td><td><b class="good">${esc(x.answer)}</b></td><td class="wrap dim">${esc((x.options || []).filter(o => o !== x.answer).join('、'))}</td><td class="dim">${SRC[x.src] || esc(x.src || '')}</td></tr>`).join('')}</tbody></table>${list.length > 300 ? '<div class="dim">只列前 300 題，請用搜尋縮小範圍</div>' : ''}`;
+}
+document.addEventListener('toggle', e => { if (e.target.id === 'qbDetails' && e.target.open) renderQBank(true); }, true);
+document.addEventListener('input', e => { if (e.target.id === 'qbSearch') renderQBank(); });
+document.addEventListener('change', e => { if (e.target.id === 'qbSrc') renderQBank(); });
+document.addEventListener('click', async e => {
+  if (e.target.id !== 'extRefresh') return;
+  const b = e.target; b.disabled = true; b.textContent = '下載中…';
+  try { const r = await (await fetch('/api/extdb/refresh', { method: 'POST' })).json(); if (r.error) alert('更新失敗：' + r.error); extLoading = null; EXT_BYNAME = {}; await loadExt(); QBANK = null; await loadQuiz(); renderQuiz(); }
+  finally { b.disabled = false; b.textContent = '立即更新'; }
+});
+
+// ================= 冒險資料庫（圖示、道具資料） =================
+let EXT = { items: {}, mobs: {} }, EXT_BYNAME = {}, extLoading = null;
+const GAME_URL = 'https://play.szg08.com/';
+function loadExt() {
+  if (extLoading) return extLoading;
+  extLoading = fetch('/api/extdb').then(r => r.json()).then(d => {
+    if (!d || !d.items) return;
+    EXT = d; EXT_BYNAME = {};
+    for (const [id, x] of Object.entries(d.items)) if (x.n && !(x.n in EXT_BYNAME)) EXT_BYNAME[x.n] = id;
+    if (Object.keys(d.items).length) renderAll();
+  }).catch(() => {});
+  return extLoading;
+}
+const fullImg = u => /^(data:|https?:)/.test(u) ? u : GAME_URL + u;
+function itemImg(id) {
+  if (id == null || id === '' || Number(id) === 0) return '';
+  const x = EXT.items[id];
+  if (x && x.noimg) return '';
+  return x && x.img ? fullImg(x.img) : `${GAME_URL}game/drops/${id}.png`;
+}
+// 道具說明（滑鼠移上去顯示）
+const REQ_NAME = { Level: '等級', STR: '力量', DEX: '敏捷', INT: '智力', LUK: '幸運', Fame: '名聲' };
+function itemTip(id) {
+  const x = EXT.items[id]; if (!x) return '';
+  const lines = [x.n + (x.c ? `（${x.c}）` : x.t ? `（${x.t}）` : '')];
+  if (x.d) lines.push(x.d);
+  if (x.req) lines.push('需求：' + Object.entries(x.req).map(([k, v]) => `${REQ_NAME[k] || k} ${v}`).join('、'));
+  if (x.job) lines.push('職業：' + x.job);
+  if (x.g) lines.push(x.g);
+  if (x.sl) lines.push(`可衝 ${x.sl} 次`);
+  if (x.r) lines.push('成功率 ' + x.r + (String(x.r).includes('%') ? '' : '%'));
+  if (x.desc) lines.push(x.desc);
+  return lines.join('\n');
+}
+// 圖示＋名稱；沒有 id 時用名稱去對照
+function iname(id, name, extra = '') {
+  if ((id == null || id === '') && name) id = EXT_BYNAME[name];
+  const u = itemImg(id), tip = itemTip(id);
+  return `<span${tip ? ` title="${esc(tip)}"` : ''}>${u ? `<img class="ico" src="${esc(u)}" loading="lazy" alt="" onerror="this.remove()">` : ''}${esc(name)}${extra}</span>`;
+}
+function mobImg(mob) {
+  const id = mob && (mob.msId != null ? mob.msId : mob.id);
+  if (id == null) return '';
+  const x = EXT.mobs[id];
+  if (x && x.noimg) return '';
+  const u = x && x.img ? fullImg(x.img) : `${GAME_URL}legacy/assets/world/mob_${id}.png`;
+  return `<img class="mico" src="${esc(u)}" loading="lazy" alt="" onerror="this.remove()">`;
+}
+
 function renderAll() {
+  loadExt();
   const active = document.querySelector('nav button.on').dataset.tab;
   if (active === 'overview') { renderOverview(); renderIdleCard(); }
   if (active === 'gear') { renderGear(); renderAS(); }
