@@ -174,7 +174,7 @@
       <div class="bar">
         <div class="seg" id="ovMode"><button data-ovmode="all">全部角色</button><button data-ovmode="active">只看目前角色</button></div>
         <input id="ovSearch" placeholder="搜尋角色、帳號、地圖" style="width:180px" autocomplete="off">
-        <label><input type="checkbox" id="ovMore"> 顯示更多欄位（裝備欄、道具、交易ID）</label>
+        <label><input type="checkbox" id="ovMore"> 顯示更多欄位（藥水、裝備欄、道具、交易ID）</label>
       </div>
       <details class="ov-rules" id="idleCard"><summary><b>⚙ 掛機自動規則</b>　<span id="ipSummary" class="dim"></span></summary>
         <div class="rules-body">
@@ -565,8 +565,6 @@ function renderAttention(rows) {
   if (offline.length) items.push({ lv: 'warn', icon: '⏏', text: `<b>${offline.length}</b> 個帳號進入離線掛機（畫面暫停更新）：${nm(offline)}`, btn: idleBtn('wake', offline, '⏏ 全部領取') });
   const notOpen = rows.filter(r => r.active && r.stale && !(r.s && r.s.idleOffline));
   if (notOpen.length) items.push({ lv: 'warn', icon: '📴', text: `<b>${notOpen.length}</b> 個帳號超過 5 分鐘沒回報（那個設定檔的遊戲分頁可能沒開）：${notOpen.map(r => `${esc(r.c.name)} <span class="dim">${ago(Date.now() - (r.s.receivedAt || r.s.at))}</span>`).join('、')}` });
-  const pot = rows.filter(r => !r.missing && r.active && potLow(r.c));
-  if (pot.length) items.push({ lv: 'warn', icon: '🧪', text: `<b>${pot.length}</b> 隻藥水偏少：${pot.map(r => `${esc(r.c.name)} <span class="dim">HP ${r.c.hpQty ?? '—'}・MP ${r.c.mpQty ?? '—'}</span>`).join('、')}`, btn: `<button class="btn" data-goto="trade">去分發藥水</button>` });
   const js = (DATA.jobs || []).filter(j => j.kind !== 'idle');
   const pend = js.filter(j => j.status === 'pending').length, fail = js.filter(j => j.status === 'failed').length;
   if (pend) items.push({ lv: 'warn', icon: '📋', text: `<b>${pend}</b> 個工作等你確認執行`, btn: `<button class="btn primary" data-openjobs>開啟工作</button>` });
@@ -618,8 +616,8 @@ function renderOverview() {
   list.sort((a, b) => cmp(val(a), val(b)) * d || cmp(a.account, b.account) || (b.active - a.active) || cmp(a.c.name, b.c.name));
   const more = ui.ovMore;
   const th = (key, label, cls = '') => `<th data-ovsort="${key}" class="${cls}">${label}${ui.ovSort.key === key ? (ui.ovSort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
-  const ncol = more ? 15 : 12;
-  let h = `<table class="sticky ov"><thead><tr><th class="nosort"><input type="checkbox" id="ovAll" title="全選"></th><th class="nosort"></th>${th('account', '帳號')}${th('name', '角色')}${th('lv', '等級')}${th('hourly', '每小時經驗', 'num')}${th('map', '地圖')}${th('idle', '掛機')}${th('money', '楓幣', 'num')}${th('points', '點數', 'num')}${th('pot', '藥水 HP／MP', 'num')}${more ? '<th class="nosort num">裝備欄</th><th class="nosort num">道具</th><th class="nosort">交易ID</th>' : ''}${th('upd', '更新')}</tr></thead><tbody>`;
+  const ncol = more ? 15 : 11;
+  let h = `<table class="sticky ov"><thead><tr><th class="nosort"><input type="checkbox" id="ovAll" title="全選"></th><th class="nosort"></th>${th('account', '帳號')}${th('name', '角色')}${th('lv', '等級')}${th('hourly', '每小時經驗', 'num')}${th('map', '地圖')}${th('idle', '掛機')}${th('money', '楓幣', 'num')}${th('points', '點數', 'num')}${more ? `${th('pot', '藥水 HP／MP', 'num')}<th class="nosort num">裝備欄</th>` + '<th class="nosort num">道具</th><th class="nosort">交易ID</th>' : ''}${th('upd', '更新')}</tr></thead><tbody>`;
   if (!rows.length) h += `<tr><td colspan="${ncol}" class="empty">還沒有資料。打開任一個設定檔的遊戲分頁，右下角出現「中控：已連線」就代表在回報了。</td></tr>`;
   else if (!list.length) h += `<tr><td colspan="${ncol}" class="empty">沒有符合的角色</td></tr>`;
   let lastAcc = null;
@@ -636,7 +634,7 @@ function renderOverview() {
     const isMain = S.mainCharId === c.id, st = idleState(r);
     const idle = st === 'off' ? `<span class="bad">● 未掛機</span>` : st === 'expired' ? `<span class="bad">● 已到期</span>` : r.remain == null ? `<span class="good">● 掛機中</span>`
       : `<span class="${st === 'soon' ? 'warn' : 'good'}" title="至 ${clock(c.until)}">● 剩 ${hm(r.remain)}</span>`;
-    const pot = (q, lim) => q == null ? '<span class="dim">—</span>' : `<span class="${q < lim ? 'bad' : ''}">${fmt(q)}</span>`;
+    const pot = q => q == null ? '<span class="dim">—</span>' : fmt(q);
     const exp = c.expPct == null ? null : Math.max(0, Math.min(100, c.expPct));
     h += `<tr class="${cls}">
       <td><input type="checkbox" data-isel="${c.id}" ${sel ? 'checked' : ''}></td>
@@ -649,8 +647,7 @@ function renderOverview() {
       <td>${idle} <span class="sm">${autoToggle(c.id)}</span></td>
       <td class="num">${short(c.money)}</td>
       <td class="num" title="點數是整個帳號共用">${typeof r.s.points === 'number' ? (r.active ? fmt(r.s.points) : `<span class="dim">${fmt(r.s.points)}</span>`) : '<span class="dim">—</span>'}</td>
-      <td class="num" title="${esc((c.hpItem || '') + ' / ' + (c.mpItem || ''))}">${pot(c.hpQty, 50)} <span class="dim">/</span> ${pot(c.mpQty, 20)}</td>
-      ${more ? `<td class="num">${c.gearBagCount ?? '—'}</td><td class="num">${c.itemStackCount ?? '—'}</td><td class="dim">${esc(c.tradeId || '—')}</td>` : ''}
+      ${more ? `<td class="num" title="${esc((c.hpItem || '') + ' / ' + (c.mpItem || ''))}">${pot(c.hpQty)} <span class="dim">/</span> ${pot(c.mpQty)}</td><td class="num">${c.gearBagCount ?? '—'}</td><td class="num">${c.itemStackCount ?? '—'}</td><td class="dim">${esc(c.tradeId || '—')}</td>` : ''}
       <td class="dim">${r.s.idleOffline ? `<span class="warn" title="遊戲已進入離線掛機，畫面暫停更新">離線掛機中</span><div class="sm">資料停在 ${clock(r.s.idleOffline.since)}</div><button class="btn" data-wake="${c.id}" style="padding:1px 6px">⏏ 領取</button>` : ago(Date.now() - (r.s.receivedAt || r.s.at))}</td></tr>`;
   }
   h += '</tbody></table>';
