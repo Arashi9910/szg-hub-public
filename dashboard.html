@@ -1713,8 +1713,16 @@ function runPlanner() {
   const KCAP = 2400;
   for (const c of pick) {
     const m = mapOf(c.map); c.cur = c.hourly || 0; c.curMap = m; c.kcap = KCAP;
-    c.power = c.hourly && m && m.xpHp ? c.hourly / (m.xpHp * hitFactor(c.lv, m)) : null;
-    if (c.hourly && m && m.avgXp) c.kcap = Math.max(KCAP, (c.hourly / m.avgXp) * 1.2);
+    // 目前若已在隊伍裡、同圖有隊友（或祭司），每小時經驗已含加成，要先扣掉才是本身的能力
+    const pt = DATA.chars[c.id] && DATA.chars[c.id].party && DATA.chars[c.id].party.party;
+    const mates = pt && pt.members ? pt.members.filter(x => x.map === c.map && x.auto !== false) : [];
+    const hsList = (WORLD.skills || []).filter(b => b.kind === 'holySymbol');
+    const hasHs = mates.some(x => { const line = new Set(jobLine(x.job)); return hsList.some(b => line.has(b.job)); });
+    const hsMult = hasHs ? Math.max(...hsList.map(b => { const p = Number(b.top.expPercent) || 0; return p > 100 ? p / 100 : 1 + p / 100; })) : 1;
+    c.curMult = (1 + 0.1 * Math.max(0, mates.length - 1)) * hsMult;
+    c.curParty = mates.length > 1 ? `目前同圖隊友 ${mates.length - 1} 人${hasHs ? '＋神聖祈禱' : ''}` : '';
+    c.power = c.hourly && m && m.xpHp ? c.hourly / (m.xpHp * hitFactor(c.lv, m) * c.curMult) : null;
+    if (c.hourly && m && m.avgXp) c.kcap = Math.max(KCAP, (c.hourly / c.curMult / m.avgXp) * 1.2);
   }
   const known = pick.filter(c => c.power);
   for (const c of pick) if (!c.power) {
@@ -1749,7 +1757,7 @@ function runPlanner() {
       ${b.buffs.length ? `<div class="dim">隊伍增益：${esc(b.buffs.join('、'))}</div>` : '<div class="dim">隊伍增益：無（加一位祭司可大幅提升經驗）</div>'}
       <table><thead><tr><th class="nosort">角色</th><th class="nosort">職業</th><th class="nosort num">Lv</th><th class="nosort">目前地圖</th><th class="nosort num">目前每小時</th><th class="nosort num">估計每小時</th><th class="nosort">備註</th></tr></thead><tbody>
       ${b.per.map(x => `<tr><td>${esc(x.c.name)}</td><td class="dim">${esc(x.c.jobName || x.c.job)}</td><td class="num">${x.c.lv}</td><td class="dim">${esc(x.c.curMap ? x.c.curMap.name : '—')}</td><td class="num">${x.c.cur ? short(x.c.cur) : '—'}</td><td class="num">${short(x.exp)}</td>
-        <td class="dim">${[!x.eligible && '<span class="bad">等級太低，分不到經驗</span>', x.hf < 1 && x.eligible && `命中約 ${(x.hf * 100).toFixed(0)}%`, x.c.guess && '能力用推估'].filter(Boolean).join('、')}</td></tr>`).join('')}</tbody></table>
+        <td class="dim">${[!x.eligible && '<span class="bad">等級太低，分不到經驗</span>', x.hf < 1 && x.eligible && `命中約 ${(x.hf * 100).toFixed(0)}%`, x.c.guess && '能力用推估', x.c.curParty].filter(Boolean).join('、')}</td></tr>`).join('')}</tbody></table>
       ${r.alt.length ? `<div class="dim">其他選擇：${r.alt.map(a => `${esc(a.map.name)}（${short(a.total)}/小時）`).join('、')}</div>` : ''}</div>`;
   }).join('');
 }
