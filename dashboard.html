@@ -100,6 +100,7 @@
         <button class="btn primary" data-idle="start">▶ 開始掛機</button>
         <button class="btn" data-idle="stop">Ⅱ 暫停掛機</button>
         <button class="btn" data-idle="restart" title="先暫停再開始，掛機時間重新從 24 小時算起">↻ 重新開始</button>
+        <button class="btn" data-idle="switch" title="把勾選的角色切成該帳號的目前角色（同帳號勾兩隻時以後面那隻為準）">⇄ 切換為目前角色</button>
         <span class="dim" id="idleMsg"></span>
       </div>
       <div class="bar">
@@ -407,6 +408,14 @@ function saveIdlePolicy() {
   return saveSettings({ idlePolicy: policy });
 }
 
+function activeCharOf(accountId) {
+  const s = latestByAccount()[accountId];
+  return s ? (s.activeCharId || s.char.id) : null;
+}
+function switchBtn(charId, accountId) {
+  return activeCharOf(accountId) === charId ? ' <span class="tag" title="這個帳號目前操作的角色">目前</span>'
+    : ` <button class="btn" data-switch="${charId}" title="切換成這個帳號的目前角色（遊戲分頁會自動重新整理）" style="padding:1px 6px">⇄ 切換</button>`;
+}
 // ================= 總覽 =================
 function renderOverview() {
   const now = Date.now();
@@ -457,7 +466,7 @@ function renderOverview() {
   for (const r of rows) {
     const c = r.c;
     if (r.missing) {
-      h += `<tr class="stale"><td><input type="checkbox" data-isel="${c.id}" ${ui.idleSel.has(c.id) ? 'checked' : ''}></td><td></td><td>${esc(r.account)}</td><td>${esc(c.name)}</td><td class="dim">${esc(c.job)}</td><td class="num">${c.lv}</td><td colspan="3" class="dim">未同步詳細資料（切到這隻角色一次就會出現）</td>
+      h += `<tr class="stale"><td><input type="checkbox" data-isel="${c.id}" ${ui.idleSel.has(c.id) ? 'checked' : ''}></td><td></td><td>${esc(r.account)}</td><td>${esc(c.name)}${switchBtn(c.id, c.accountId)}</td><td class="dim">${esc(c.job)}</td><td class="num">${c.lv}</td><td colspan="3" class="dim">未同步詳細資料（按「⇄ 切換」一次就會出現）</td>
         <td>${c.auto ? '<span class="good">● 掛機中</span>' : '<span class="bad">● 未掛機</span>'} ${autoToggle(c.id)}</td><td colspan="7"></td></tr>`;
       continue;
     }
@@ -472,7 +481,7 @@ function renderOverview() {
       <td><input type="checkbox" data-isel="${c.id}" ${ui.idleSel.has(c.id) ? 'checked' : ''}></td>
       <td><span class="star ${isMain ? 'on' : ''}" data-main="${c.id}" title="設為本尊">★</span></td>
       <td><input class="label-edit" data-acc="${esc(r.s.accountId)}" value="${esc(r.account)}"></td>
-      <td>${esc(c.name)}${isMain ? ' <span class="tag main">本尊</span>' : ''}</td>
+      <td>${esc(c.name)}${isMain ? ' <span class="tag main">本尊</span>' : ''}${switchBtn(c.id, r.s.accountId)}</td>
       <td>${esc(c.jobName)}</td>
       <td class="num">${c.lv}</td>
       <td class="num">${c.expPct == null ? '<span class="dim">—</span>' : c.expPct.toFixed(2) + '%'}</td>
@@ -1071,6 +1080,12 @@ document.addEventListener('click', async e => {
     if (t.id === 'idleSelAll') { idleTargets().forEach(r => ui.idleSel.add(r.id)); renderOverview(); renderIdleCard(); }
     if (t.id === 'idleSelStopped') { ui.idleSel.clear(); idleTargets().filter(r => !r.auto).forEach(r => ui.idleSel.add(r.id)); renderOverview(); renderIdleCard(); }
     if (t.id === 'idleSelNone') { ui.idleSel.clear(); renderOverview(); renderIdleCard(); }
+    if (t.dataset && t.dataset.switch) {
+      t.disabled = true; t.textContent = '切換中…';
+      await api('/api/idle', { targets: [{ charId: t.dataset.switch, action: 'switch' }] });
+      $('#idleMsg').textContent = '已送出切換，該帳號的遊戲分頁會自動重新整理（約 10 秒）';
+      await poll(true);
+    }
     if (t.dataset && t.dataset.idle) {
       if (!ui.idleSel.size) { $('#idleMsg').textContent = '請先勾選角色'; return; }
       const action = t.dataset.idle;

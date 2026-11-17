@@ -143,7 +143,7 @@ const BAG_KINDS = new Set(['sell', 'lock', 'unlock', 'idle']);
 // ================= 掛機控制 =================
 // 指令（開始／暫停／重新開始）依帳號分組，交給那個帳號目前在線的遊戲頁面執行；
 // 同帳號的第二隻角色也可以直接控制（遊戲允許用 characterId 指定）。
-const IDLE_ACTIONS = new Set(['start', 'stop', 'restart']);
+const IDLE_ACTIONS = new Set(['start', 'stop', 'restart', 'switch']);
 function accountOfChar(charId) {
   const own = db.chars[charId];
   if (own) return own.accountId;
@@ -169,6 +169,12 @@ function createIdleJobs(body) {
   for (const t of targets) {
     const acc = accountOfChar(t.charId);
     if (!acc) continue;
+    if (t.action === 'switch') {
+      // 切換角色：每個帳號只能有一隻是目前角色，同帳號勾了兩隻就以最後一隻為準
+      byAcc[acc] = (byAcc[acc] || []).filter(x => x.action !== 'switch');
+      byAcc[acc].push({ charId: t.charId, name: charName(t.charId), action: 'switch' });
+      continue;
+    }
     (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: t.action });
     db.settings.idleLast = { ...(db.settings.idleLast || {}), [t.charId]: { action: t.action, at: Date.now(), by: 'panel' } };
   }
@@ -176,13 +182,16 @@ function createIdleJobs(body) {
   for (const [acc, list] of Object.entries(byAcc)) {
     const route = routeForAccount(acc);
     if (!route) continue;
+    if (list.some(t => t.action === 'switch') && db.jobs.some(j => j.kind !== 'idle' && ACTIVE.has(j.status) && (j.fromCode === route.playerCode || j.toCode === route.playerCode))) {
+      throw new Error(`${route.char.name} 的帳號有交易／背包工作還沒完成，先不要切換角色`);
+    }
     const job = {
       id: crypto.randomBytes(6).toString('hex'), kind: 'idle', status: 'approved', createdAt: Date.now(), approvedAt: Date.now(),
       fromCharId: route.char.id, fromName: route.char.name, fromCode: route.playerCode,
       toCharId: route.char.id, toName: route.char.name, toCode: route.playerCode,
       batches: [{ targets: list, items: [], gear: [], money: 0 }], batchIndex: 0, log: [], lastMsg: '',
     };
-    jobLog(job, '已送出：' + list.map(t => `${t.name} ${({ start: '開始', stop: '暫停', restart: '重新開始' })[t.action]}`).join('、'));
+    jobLog(job, '已送出：' + list.map(t => `${t.name} ${({ start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換為目前角色' })[t.action]}`).join('、'));
     db.jobs.push(job);
     jobs.push(job);
   }

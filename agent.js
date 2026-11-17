@@ -405,7 +405,7 @@ function agentMain(ctx) {
       return null;
     }
     // ---------- 掛機控制 ----------
-    const IDLE_LABEL = { start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機' };
+    const IDLE_LABEL = { start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換角色' };
     async function idleAction(charId, action) {
       if (action === 'restart') {
         await game({ type: 'stop', characterId: charId });
@@ -417,7 +417,20 @@ function agentMain(ctx) {
     }
     async function runIdleJob(job) {
       const done = [], failed = [];
-      for (const t of (job.batches[0] && job.batches[0].targets) || []) {
+      let switchTo = null;
+      // 掛機指令先做，切換角色放最後（切換後頁面要重新整理）
+      const targets = ((job.batches[0] && job.batches[0].targets) || []).slice().sort((a, b) => (a.action === 'switch') - (b.action === 'switch'));
+      for (const t of targets) {
+        if (t.action === 'switch') {
+          try {
+            if (sessionStorage.getItem('mapleCharacter') === t.charId) { done.push(`${t.name} 已經是目前角色`); continue; }
+            setBadge(null, `切換到 ${t.name}…`);
+            await game({ type: 'switch', characterId: t.charId });
+            switchTo = t.charId;
+            done.push(`已切換到 ${t.name}`);
+          } catch (e) { failed.push(`切換到 ${t.name}（${e.message}）`); }
+          continue;
+        }
         try {
           setBadge(null, `${t.name}：${IDLE_LABEL[t.action]}…`);
           await idleAction(t.charId, t.action);
@@ -425,8 +438,14 @@ function agentMain(ctx) {
         } catch (e) { failed.push(`${t.name}（${e.message}）`); }
       }
       if (done.length) await report(job, { event: 'log', msg: '完成：' + done.join('、') });
-      if (failed.length) return report(job, { event: 'error', msg: '失敗：' + failed.join('、') });
-      return report(job, { event: 'batchDone' });
+      if (failed.length) await report(job, { event: 'error', msg: '失敗：' + failed.join('、') });
+      else await report(job, { event: 'batchDone' });
+      if (switchTo) {
+        // 讓遊戲頁面以新角色重新載入（跟遊戲內「切換」一樣的結果）
+        try { sessionStorage.setItem('mapleCharacter', switchTo); sessionStorage.removeItem('mapleSessionView'); } catch (_) {}
+        setBadge(null, '已切換角色，重新整理頁面…');
+        setTimeout(() => location.reload(), 800);
+      }
     }
 
     // 自動規則（每 30 秒）：
