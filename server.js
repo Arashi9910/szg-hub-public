@@ -100,6 +100,8 @@ function save() {
   }, 1000);
 }
 market = makeMarket(() => db, save, id => charName(id));
+// 組隊功能已移除：之前留下的組隊工作一律取消
+for (const j of db.jobs) if (j.partyRun && ['approved', 'running', 'pending'].includes(j.status)) j.status = 'cancelled';
 
 
 // ================= 交易工作 =================
@@ -163,65 +165,6 @@ function routeForAccount(accountId) {
     .sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0));
   return list.find(s => s.activeCharId === s.char.id) || list[0];
 }
-// 組隊：隊長的帳號負責（離開舊隊伍→）建立隊伍→讓同帳號的角色加入→邀請其他帳號；其他帳號（離開舊隊伍→）等邀請並接受；最後可一起換圖
-function createPartyJobs(body) {
-  const ids = [...new Set((body.members || []).filter(Boolean))];
-  if (ids.length < 2) throw new Error('至少要選 2 隻角色');
-  if (ids.length > 6) throw new Error('每隊最多 6 人');
-  const leaderId = body.leaderId && ids.includes(body.leaderId) ? body.leaderId : ids[0];
-  const leaderAcc = accountOfChar(leaderId);
-  if (!leaderAcc) throw new Error('找不到隊長的帳號');
-  const byAcc = {};
-  for (const id of ids) { const acc = accountOfChar(id); if (!acc) throw new Error(`找不到 ${charName(id)} 的帳號`); (byAcc[acc] || (byAcc[acc] = [])).push(id); }
-  if (Object.values(byAcc).some(l => l.length > 2)) throw new Error('同一個帳號最多 2 隻角色');
-  const codeOf = acc => { const r = routeForAccount(acc); return r && r.playerCode; };
-  const leaderName = charName(leaderId);
-  // 上一次組隊還沒結束就不要再開一次（兩次同時跑會互相把人踢出去）
-  const running = db.jobs.filter(j => j.partyRun && ACTIVE.has(j.status));
-  if (running.length && !body.force) {
-    const e = new Error('上一次組隊還在進行中（' + [...new Set(running.map(j => j.fromName))].join('、') + '），請等它完成，或按「取消進行中的組隊」後再試');
-    e.busy = true; throw e;
-  }
-  if (body.force) for (const j of running) { j.status = 'cancelled'; jobLog(j, '已取消（重新組隊）'); }
-  const partyRun = crypto.randomBytes(5).toString('hex');
-  const map = body.map ? { map: String(body.map), mapName: String(body.mapName || body.map).slice(0, 40) } : null;
-  const plans = {};
-  for (const [acc, list] of Object.entries(byAcc)) {
-    const steps = [];
-    const leave = id => body.leaveOld !== false && steps.push({ charId: id, name: charName(id), action: 'partyLeave' });
-    if (acc === leaderAcc) {
-      leave(leaderId);
-      steps.push({ charId: leaderId, name: leaderName, action: 'partyCreate', stopOnFail: true });
-      for (const id of list.filter(x => x !== leaderId)) steps.push({ charId: id, name: charName(id), action: 'partyJoin', leaderId });
-      const others = Object.keys(byAcc).filter(a => a !== leaderAcc);
-      const codes = others.map(codeOf).filter(Boolean);
-      const namesByCode = {}; for (const a of others) { const c = codeOf(a); if (c) namesByCode[c] = byAcc[a].map(charName); }
-      if (codes.length) steps.push({ charId: leaderId, name: leaderName, action: 'partyInvite', codes, namesByCode });
-    } else {
-      // 其他帳號：第一隻接受邀請；同帳號的第二隻用「加入我的角色隊伍」跟進
-      // 不先離隊：接受邀請時才離開原本的隊伍，避免邀請還沒到就先散隊
-      list.forEach((id, i) => { steps.push(i === 0 ? { charId: id, name: charName(id), action: 'partyAccept', leaderName, leaderId, stopOnFail: true } : { charId: id, name: charName(id), action: 'partyJoin', leaderId: list[0] }); });
-    }
-    if (map) for (const id of list) steps.push({ charId: id, name: charName(id), action: 'map', ...map });
-    plans[acc] = steps;
-  }
-  const missing = Object.keys(plans).filter(acc => !routeForAccount(acc));
-  if (missing.length) throw new Error('有帳號的遊戲分頁沒開：' + missing.map(a => (byAcc[a] || []).map(charName).join('、')).join('；'));
-  const jobs = [];
-  for (const [acc, steps] of Object.entries(plans)) {
-    const route = routeForAccount(acc);
-    const job = {
-      id: crypto.randomBytes(6).toString('hex'), kind: 'idle', status: 'approved', createdAt: Date.now(), approvedAt: Date.now(),
-      fromCharId: route.char.id, fromName: route.char.name, fromCode: route.playerCode, toCharId: route.char.id, toName: route.char.name, toCode: route.playerCode,
-      batches: [{ targets: steps, items: [], gear: [], money: 0 }], batchIndex: 0, log: [], lastMsg: '', partyRun,
-    };
-    jobLog(job, `組隊（隊長 ${leaderName}）：` + steps.map(t => `${t.name} ${({ partyLeave: '離隊', partyCreate: '建隊', partyJoin: '加入', partyInvite: '邀請', partyAccept: '接受邀請', map: '前往 ' + (t.mapName || '') })[t.action]}`).join('、'));
-    db.jobs.push(job); jobs.push(job);
-  }
-  save();
-  return jobs;
-}
-
 function createIdleJobs(body) {
   const targets = (body.targets || []).filter(t => t && t.charId && IDLE_ACTIONS.has(t.action));
   if (!targets.length) throw new Error('沒有選擇角色');
@@ -436,33 +379,6 @@ const server = http.createServer(async (req, res) => {
       for (const j of db.jobs) if (j.status === 'pending') { j.status = 'approved'; j.approvedAt = Date.now(); jobLog(j, '已確認，排隊等待執行'); }
       save();
       return send(res, 200, { ok: true });
-    }
-
-    // ---- 組隊 ----
-    if (req.method === 'POST' && url.pathname === '/api/party') {
-      const jobs = createPartyJobs(JSON.parse(await readBody(req)));
-      return send(res, 200, { ok: true, jobs });
-    }
-    if (req.method === 'POST' && url.pathname === '/api/party/code') {
-      const { run, charId, code } = JSON.parse(await readBody(req));
-      if (run && charId && code) { db.partyRuns = db.partyRuns || {}; db.partyRuns[run + '|' + charId] = { code: String(code), at: Date.now() }; save(); }
-      return send(res, 200, { ok: true });
-    }
-    if (req.method === 'GET' && url.pathname === '/api/party/code') {
-      const run = url.searchParams.get('run'), charId = url.searchParams.get('charId');
-      const r = (db.partyRuns || {})[run + '|' + charId];
-      const alive = db.jobs.some(j => j.partyRun === run && ACTIVE.has(j.status));
-      return send(res, 200, { code: r ? r.code : null, cancelled: !alive });
-    }
-    if (req.method === 'POST' && url.pathname === '/api/party/cancel') {
-      let n = 0;
-      for (const j of db.jobs) if (j.partyRun && ACTIVE.has(j.status)) { j.status = 'cancelled'; jobLog(j, '已取消（從面板）'); n++; }
-      save();
-      return send(res, 200, { ok: true, cancelled: n });
-    }
-    if (req.method === 'GET' && url.pathname === '/api/job-status') {
-      const j = db.jobs.find(x => x.id === url.searchParams.get('id'));
-      return send(res, 200, { status: j ? j.status : 'missing' });
     }
 
     // ---- 地圖／怪物／掉落資料 ----
