@@ -42,6 +42,8 @@
   .tile.sup { outline: 1px dashed var(--good); outline-offset: -3px; }
   .action-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 14px; z-index: 30; background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; padding: 9px 14px; box-shadow: 0 8px 30px rgba(0,0,0,.55); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; max-width: calc(100% - 40px); }
   .action-bar .sum b { font-size: 15px; }
+  nav button, .jobs-btn, header .btn { white-space: nowrap; }
+  header h1 { white-space: nowrap; }
   .jobs-btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; cursor: pointer; font: inherit; display: inline-flex; gap: 6px; align-items: center; }
   .jobs-btn.hot { border-color: var(--warn); }
   .badge { border-radius: 10px; padding: 0 7px; font-size: 11px; font-weight: 600; }
@@ -54,6 +56,24 @@
   .help-pop { display: none; position: absolute; left: -8px; top: 24px; width: min(460px, 80vw); z-index: 60; background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; padding: 10px 12px; color: var(--text); font-weight: 400; font-size: 12.5px; line-height: 1.65; white-space: normal; box-shadow: 0 8px 24px rgba(0,0,0,.5); cursor: default; }
   .help-pop > div + div { margin-top: 6px; }
   .help:hover .help-pop, .help:focus .help-pop, .help:focus-within .help-pop { display: block; }
+  .attn { border-left: 4px solid var(--good); }
+  .attn.warn { border-left-color: var(--warn); } .attn.bad { border-left-color: var(--bad); }
+  .attn h3 { color: var(--text); font-size: 14px; }
+  .attn-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .attn-row:first-of-type { border-top: 0; }
+  .attn-row .ic { width: 22px; text-align: center; } .attn-row .tx { flex: 1; line-height: 1.6; }
+  .attn-row.bad .tx b { color: var(--bad); } .attn-row.warn .tx b { color: var(--warn); }
+  .attn-ok { color: var(--good); font-weight: 600; }
+  table.ov td { vertical-align: middle; }
+  table.ov tr.alt td { opacity: .62; } table.ov tr.alt td .cn { font-weight: 400; }
+  table.ov tr.alt:hover td { opacity: 1; }
+  table.ov tr.accstart td { border-top: 2px solid var(--line); }
+  table.ov tr.picked td { background: #1d2c47; }
+  .sm { font-size: 11px; }
+  .expbar { width: 70px; height: 4px; background: var(--line); border-radius: 2px; margin-top: 3px; overflow: hidden; }
+  .expbar i { display: block; height: 100%; background: var(--accent); }
+  .ov-rules { margin: 0 0 10px; border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; background: var(--panel2); }
+  .ov-rules summary { cursor: pointer; } .ov-rules .rules-body { margin-top: 8px; }
   img.ico { width: 22px; height: 22px; object-fit: contain; vertical-align: middle; margin-right: 4px; image-rendering: pixelated; }
   img.mico { max-width: 44px; max-height: 40px; object-fit: contain; vertical-align: middle; margin-right: 6px; image-rendering: pixelated; }
   .cell-gear img.ico { width: 26px; height: 26px; float: left; margin: 2px 6px 0 0; }
@@ -144,39 +164,28 @@
 <main>
   <!-- 總覽 -->
   <section id="overview" class="on">
-    <div class="card warn" id="verWarn" style="display:none"></div>
+    <div class="card attn" id="ovAttn"></div>
     <div class="card"><div class="stats-row" id="ovSummary"></div></div>
-    <div class="bar dim">★ 設定本尊　·　帳號名稱可直接點擊修改　·　灰色列＝超過 5 分鐘沒更新（那個設定檔的遊戲分頁可能沒開）</div>
-    <div class="card" id="idleCard">
-      <h3>掛機控制</h3>
+    <div class="card">
+      <h3>所有角色</h3>
+      <div class="dim help-src">★ 設定本尊（收集、分發的目的地）。帳號名稱可以直接點擊修改。「目前」是那個帳號遊戲分頁正在操作的角色，另一隻顯示較淡，按「⇄ 切換」可以換過去。灰色列＝超過 5 分鐘沒更新（那個設定檔的遊戲分頁可能沒開，或進入離線掛機）。勾選左邊的方塊後，畫面底部會出現批次操作列。</div>
       <div class="bar">
-        <span class="dim" id="idleSelInfo">先在下表左邊勾選角色</span>
-        <button class="btn" id="idleSelAll">全選</button>
-        <button class="btn" id="idleSelStopped">選未掛機的</button>
-        <button class="btn" id="idleSelNone">清除</button>
-        <span style="margin-left:12px"></span>
-        <button class="btn primary" data-idle="start">▶ 開始掛機</button>
-        <button class="btn" data-idle="stop">Ⅱ 暫停掛機</button>
-        <button class="btn" data-idle="restart" title="先暫停再開始，掛機時間重新從 24 小時算起">↻ 重新開始</button>
-        <button class="btn" data-idle="wake" title="幫勾選的帳號按遊戲的「點一下繼續」，領回離線掛機期間累積的經驗、楓幣與掉落">⏏ 領取離線收益</button>
-        <button class="btn" data-idle="switch" title="把勾選的角色切成該帳號的目前角色（同帳號勾兩隻時以後面那隻為準）">⇄ 切換為目前角色</button>
-        <span class="dim" id="idleMsg"></span>
+        <div class="seg" id="ovMode"><button data-ovmode="all">全部角色</button><button data-ovmode="active">只看目前角色</button></div>
+        <input id="ovSearch" placeholder="搜尋角色、帳號、地圖" style="width:180px" autocomplete="off">
+        <label><input type="checkbox" id="ovMore"> 顯示更多欄位（裝備欄、道具、交易ID）</label>
       </div>
-      <div class="bar">
-        <label><input type="checkbox" id="ipRenew"> 自動續掛：到期前</label><input type="number" id="ipRenewMin" min="5" max="600" style="width:64px"><span>分鐘自動重新開始；已到期停掉的也會自動開始</span>
-      </div>
-      <div class="bar">
-        <label><input type="checkbox" id="ipStop"> 掛滿</label><input type="number" id="ipStopH" min="1" max="24" step="0.5" style="width:64px"><span>小時後自動暫停</span>
-        <span class="dim">（開啟後不會自動續掛）</span>
-      </div>
-      <div class="bar">
-        <label><input type="checkbox" id="ipWake"> 離線掛機每滿</label><input type="number" id="ipWakeH" min="1" max="23" style="width:64px"><span>小時自動按「繼續」領取一次</span>
-        <span class="dim">（遊戲閒置 60 分鐘會進入離線掛機、暫停更新，累積上限 24 小時；交易、背包、自動上架執行前也會自動領取）</span>
-      </div>
-      <div class="dim">自動規則套用在表格「自動」有勾的角色。從這裡按「暫停掛機」的角色不會被自動續掛重新開始。需要那個帳號的遊戲分頁開著才會執行。</div>
-      <details style="margin-top:6px"><summary class="dim">自動處理紀錄</summary><div id="idleLogOut"></div></details>
+      <details class="ov-rules" id="idleCard"><summary><b>⚙ 掛機自動規則</b>　<span id="ipSummary" class="dim"></span></summary>
+        <div class="rules-body">
+          <div class="bar"><label><input type="checkbox" id="ipRenew"> 自動續掛：到期前</label><input type="number" id="ipRenewMin" min="5" max="600" style="width:64px"><span>分鐘自動重新開始；已到期停掉的也會自動開始</span></div>
+          <div class="bar"><label><input type="checkbox" id="ipStop"> 掛滿</label><input type="number" id="ipStopH" min="1" max="24" step="0.5" style="width:64px"><span>小時後自動暫停</span><span class="dim">（開啟後不會自動續掛）</span></div>
+          <div class="bar"><label><input type="checkbox" id="ipWake"> 離線掛機每滿</label><input type="number" id="ipWakeH" min="1" max="23" style="width:64px"><span>小時自動按「繼續」領取一次</span><span class="dim">（遊戲閒置 60 分鐘會進入離線掛機、暫停更新，累積上限 24 小時；交易、背包、自動上架執行前也會自動領取）</span></div>
+          <div class="dim">自動規則套用在表格「自動」有勾的角色。從這裡按「暫停」的角色不會被自動續掛重新開始。需要那個帳號的遊戲分頁開著才會執行。</div>
+          <details style="margin-top:6px"><summary class="dim">自動處理紀錄</summary><div id="idleLogOut"></div></details>
+        </div>
+      </details>
+      <div id="ovTable"></div>
     </div>
-    <div id="ovTable"></div>
+    <div id="ovBar" class="action-bar"></div>
   </section>
 
   <!-- 裝備 -->
@@ -500,7 +509,8 @@ function renderIdleCard() {
   $('#ipStop').checked = !!p.stopAfterHours;
   if (document.activeElement !== $('#ipWakeH')) $('#ipWakeH').value = p.wakeHours || 12;
   $('#ipWake').checked = !!p.wakeHours;
-  $('#idleSelInfo').textContent = ui.idleSel.size ? `已選 ${ui.idleSel.size} 隻` : '先在下表左邊勾選角色';
+  $('#ipSummary').textContent = [p.autoRenew ? `自動續掛：到期前 ${p.renewBeforeMin || 30} 分` : '自動續掛：關', p.stopAfterHours ? `掛滿 ${p.stopAfterHours} 小時暫停` : '', p.wakeHours ? `離線每 ${p.wakeHours} 小時領取` : ''].filter(Boolean).join('・');
+  renderOvBar();
   const logs = (DATA.idleLog || []).slice().reverse().slice(0, 30);
   $('#idleLogOut').innerHTML = logs.length ? logs.map(l => `<div><span class="dim">${clock(l.at)}</span> ${esc(l.name)}：${esc(l.msg)}</div>`).join('') : '<span class="dim">還沒有紀錄</span>';
 }
@@ -520,95 +530,158 @@ function switchBtn(charId, accountId) {
     : ` <button class="btn" data-switch="${charId}" title="切換成這個帳號的目前角色（遊戲分頁會自動重新整理）" style="padding:1px 6px">⇄ 切換</button>`;
 }
 // ================= 總覽 =================
-function renderOverview() {
+ui.ovOnlyActive = (() => { try { return localStorage.getItem('ovOnlyActive') === '1'; } catch (_) { return false; } })();
+ui.ovMore = (() => { try { return localStorage.getItem('ovMore') === '1'; } catch (_) { return false; } })();
+ui.ovQ = '';
+function ovRows() {
   const now = Date.now();
   const rows = snaps().map(s => {
     const c = s.char;
     const skew = (s.serverTime || s.at) - s.at;
     const remain = c.until ? c.until - (now + skew) : null;
-    return { s, c, account: accountLabel(s.accountId, s), remain, stale: now - (s.receivedAt || s.at) > STALE_MS };
+    return { s, c, account: accountLabel(s.accountId, s), remain, active: activeCharOf(s.accountId) === c.id, stale: now - (s.receivedAt || s.at) > STALE_MS };
   });
-  for (const m of missingChars()) rows.push({ missing: true, c: m, account: accountLabel(m.accountId, m.refSnap) });
-
-  const k = ui.ovSort.key, d = ui.ovSort.dir;
-  const val = r => ({ account: r.account, name: r.c.name, job: r.c.jobName || r.c.job, lv: r.c.lv, exp: r.c.expPct, hourly: r.c.hourlyExp, map: r.c.mapName, idle: r.missing ? null : (r.c.auto ? r.remain : -1), money: r.c.money, points: r.s && r.s.points, hp: r.c.hpQty, mp: r.c.mpQty, upd: r.s ? -r.s.receivedAt : null }[k]);
-  rows.sort((a, b) => cmp(val(a), val(b)) * d || cmp(a.account, b.account) || cmp(a.c.name, b.c.name));
-
-  // 腳本版本檢查
+  for (const m of missingChars()) rows.push({ missing: true, c: m, account: accountLabel(m.accountId, m.refSnap), active: false });
+  return rows;
+}
+const idleState = r => r.missing ? (r.c.auto ? 'on' : 'off') : !r.c.auto ? 'off' : r.remain == null ? 'on' : r.remain <= 0 ? 'expired' : r.remain < 3600e3 ? 'soon' : 'on';
+const potLow = c => (c.hpQty != null && c.hpQty < 50) || (c.mpQty != null && c.mpQty < 20);
+// 需要處理：每一項都盡量附上一鍵處理的按鈕
+function renderAttention(rows) {
+  const items = [];
+  const nm = list => list.map(r => esc(r.c.name)).join('、');
+  const idleBtn = (action, list, label) => `<button class="btn ${action === 'start' ? 'primary' : ''}" data-attn="${action}" data-ids="${list.map(r => r.c.id).join(',')}">${label}</button>`;
+  // 你自己從中控按「暫停」的不算異常，另外列一行
+  const manual = id => { const l = (S.idleLast || {})[id]; return l && l.action === 'stop' && l.by !== 'auto'; };
+  const stopped = rows.filter(r => ['off', 'expired'].includes(idleState(r)));
+  const off = stopped.filter(r => !manual(r.c.id)), paused = stopped.filter(r => manual(r.c.id));
+  if (off.length) items.push({ lv: 'bad', icon: '⏹', text: `<b>${off.length}</b> 隻沒在掛機：${nm(off)}`, btn: idleBtn('start', off, '▶ 全部開始掛機') });
+  if (paused.length) items.push({ lv: 'info', icon: 'Ⅱ', text: `${paused.length} 隻是你從中控暫停的：${nm(paused)}`, btn: idleBtn('start', paused, '▶ 恢復掛機') });
+  const soon = rows.filter(r => idleState(r) === 'soon');
+  if (soon.length) items.push({ lv: 'warn', icon: '⏳', text: `<b>${soon.length}</b> 隻 1 小時內掛機結束：${soon.map(r => `${esc(r.c.name)} <span class="dim">剩 ${hm(r.remain)}</span>`).join('、')}`, btn: idleBtn('restart', soon, '↻ 全部重新開始') });
+  const offline = rows.filter(r => r.s && r.s.idleOffline && r.active);
+  if (offline.length) items.push({ lv: 'warn', icon: '⏏', text: `<b>${offline.length}</b> 個帳號進入離線掛機（畫面暫停更新）：${nm(offline)}`, btn: idleBtn('wake', offline, '⏏ 全部領取') });
+  const notOpen = rows.filter(r => r.active && r.stale && !(r.s && r.s.idleOffline));
+  if (notOpen.length) items.push({ lv: 'warn', icon: '📴', text: `<b>${notOpen.length}</b> 個帳號超過 5 分鐘沒回報（那個設定檔的遊戲分頁可能沒開）：${notOpen.map(r => `${esc(r.c.name)} <span class="dim">${ago(Date.now() - (r.s.receivedAt || r.s.at))}</span>`).join('、')}` });
+  const pot = rows.filter(r => !r.missing && r.active && potLow(r.c));
+  if (pot.length) items.push({ lv: 'warn', icon: '🧪', text: `<b>${pot.length}</b> 隻藥水偏少：${pot.map(r => `${esc(r.c.name)} <span class="dim">HP ${r.c.hpQty ?? '—'}・MP ${r.c.mpQty ?? '—'}</span>`).join('、')}`, btn: `<button class="btn" data-goto="trade">去分發藥水</button>` });
+  const js = (DATA.jobs || []).filter(j => j.kind !== 'idle');
+  const pend = js.filter(j => j.status === 'pending').length, fail = js.filter(j => j.status === 'failed').length;
+  if (pend) items.push({ lv: 'warn', icon: '📋', text: `<b>${pend}</b> 個工作等你確認執行`, btn: `<button class="btn primary" data-openjobs>開啟工作</button>` });
+  if (fail) items.push({ lv: 'bad', icon: '⚠', text: `<b>${fail}</b> 個工作失敗`, btn: `<button class="btn" data-openjobs>查看</button>` });
+  // 腳本版本
   const want = DATA.scriptVersion;
   const old = snaps().filter(s => isOnline(s) && want && s.scriptVersion !== want);
   const names = list => list.map(s => esc(s.char.name)).join('、');
   const INSTALL = '打開 <b>http://127.0.0.1:8787/szg-hub.user.js</b> 按「更新」';
   const ALWAYS = 'Tampermonkey 圖示 →「控制台」→「設定」→ 設定模式改「進階」→ 找到「Externals」→「Update Interval」改成「Always」→ 存檔';
   const reinstall = old.filter(s => !s.scriptMode || s.scriptMode === 'blocked' || s.scriptMode === 'bundled' || s.scriptMode === 'live');
-  const stale = old.filter(s => s.scriptMode === 'stale');
-  const pending = old.filter(s => s.scriptMode === 'require');
-  const msgs = [];
-  if (reinstall.length) msgs.push(`⚠ ${names(reinstall)} 還在用舊的載入方式，請在那個設定檔：① ${INSTALL}；② ${ALWAYS}。每個設定檔只要做一次。`);
-  if (stale.length) msgs.push(`⚠ ${names(stale)} 重新整理後還是舊版，代表 Tampermonkey 還在用快取。請在那個設定檔：${ALWAYS}，然後重新整理遊戲頁面。`);
-  if (pending.length) msgs.push(`${names(pending)} 會在 2 分鐘內自動重新整理到 v${esc(want)}（有工作在跑時會等工作結束）。`);
-  $('#verWarn').style.display = msgs.length ? '' : 'none';
-  $('#verWarn').innerHTML = msgs.join('<br>');
+  const staleV = old.filter(s => s.scriptMode === 'stale');
+  const pendingV = old.filter(s => s.scriptMode === 'require');
+  if (reinstall.length) items.push({ lv: 'bad', icon: '🧩', text: `${names(reinstall)} 還在用舊的載入方式，請在那個設定檔：① ${INSTALL}；② ${ALWAYS}。每個設定檔只要做一次。` });
+  if (staleV.length) items.push({ lv: 'warn', icon: '🧩', text: `${names(staleV)} 重新整理後還是舊版（Tampermonkey 快取）。請在那個設定檔：${ALWAYS}，再重新整理遊戲頁面。` });
+  if (pendingV.length) items.push({ lv: 'info', icon: '🔄', text: `${names(pendingV)} 會在 2 分鐘內自動重新整理到 v${esc(want)}（有工作在跑時會等工作結束）。` });
+  $('#ovAttn').className = 'card attn' + (items.some(i => i.lv === 'bad') ? ' bad' : items.some(i => i.lv === 'warn') ? ' warn' : ' ok');
+  $('#ovAttn').innerHTML = items.length
+    ? `<h3>需要處理（${items.length}）</h3>${items.map(i => `<div class="attn-row ${i.lv}"><span class="ic">${i.icon}</span><span class="tx">${i.text}</span>${i.btn ? `<span class="act">${i.btn}</span>` : ''}</div>`).join('')}`
+    : `<div class="attn-ok">✓ 一切正常：所有角色都在掛機、遊戲分頁都有回報、沒有待確認的工作</div>`;
+}
+function renderOverview() {
+  const rows = ovRows();
+  renderAttention(rows);
 
   // 摘要
   const live = rows.filter(r => !r.missing);
   const totalMoney = live.reduce((a, r) => a + (r.c.money || 0), 0) + Object.values(latestByAccount()).reduce((a, s) => a + (s.char.warehouseMesos || 0), 0);
-  const idleOn = live.filter(r => r.c.auto && (r.remain == null || r.remain > 0)).length;
-  const soon = live.filter(r => r.c.auto && r.remain != null && r.remain > 0 && r.remain < 3600e3).length;
-  const offN = Object.values(latestByAccount()).filter(s => s.idleOffline).length;
+  const idleOn = live.filter(r => ['on', 'soon'].includes(idleState(r))).length;
   const accLatest = Object.values(latestByAccount());
   const ptsKnown = accLatest.filter(s => typeof s.points === 'number');
   const totalPts = ptsKnown.reduce((a, s) => a + s.points, 0);
-  const lowPot = live.filter(r => (r.c.hpQty != null && r.c.hpQty < 50) || (r.c.mpQty != null && r.c.mpQty < 20)).length;
+  const hourly = live.filter(r => r.active).reduce((a, r) => a + (r.c.hourlyExp || 0), 0);
   $('#ovSummary').innerHTML = `
-    <div class="stat"><b>${live.length}<span class="dim" style="font-size:13px"> / ${rows.length}</span></b><span>已同步角色</span></div>
-    <div class="stat"><b class="${idleOn < live.length ? 'warn' : 'good'}">${idleOn}</b><span>掛機中</span></div>
-    <div class="stat"><b class="${soon ? 'warn' : ''}">${soon}</b><span>1 小時內結束</span></div>
-    <div class="stat"><b class="${lowPot ? 'bad' : ''}">${lowPot}</b><span>藥水偏少</span></div>
-    <div class="stat"><b class="${offN ? 'warn' : ''}">${offN}</b><span>離線掛機中（資料暫停）</span></div>
+    <div class="stat"><b>${accLatest.length}</b><span>帳號（${live.length} 隻角色有資料）</span></div>
+    <div class="stat"><b class="${idleOn < live.length ? 'warn' : 'good'}">${idleOn}<span class="dim" style="font-size:13px"> / ${live.length}</span></b><span>掛機中</span></div>
+    <div class="stat"><b>${short(hourly)}</b><span>每小時經驗合計（目前角色）</span></div>
     <div class="stat"><b>${short(totalMoney)}</b><span>楓幣總和（含倉庫）</span></div>
-    <div class="stat"><b>${fmt(totalPts)}</b><span>點數總和（${ptsKnown.length} / ${accLatest.length} 個帳號有回報）</span></div>`;
+    <div class="stat"><b>${fmt(totalPts)}</b><span>點數總和${ptsKnown.length < accLatest.length ? `（${ptsKnown.length}/${accLatest.length} 帳號有回報）` : ''}</span></div>`;
 
+  // 表格
+  document.querySelectorAll('#ovMode button').forEach(b => b.classList.toggle('on', (b.dataset.ovmode === 'active') === ui.ovOnlyActive));
+  $('#ovMore').checked = ui.ovMore;
+  const q = ui.ovQ.trim();
+  let list = rows.filter(r => (!ui.ovOnlyActive || r.active) && (!q || [r.c.name, r.account, r.c.mapName, r.c.jobName].some(x => String(x || '').includes(q))));
+  const k = ui.ovSort.key, d = ui.ovSort.dir;
+  const val = r => ({ account: r.account, name: r.c.name, lv: (r.c.lv || 0) * 1000 + (r.c.expPct || 0), hourly: r.c.hourlyExp, map: r.c.mapName, idle: r.missing ? null : (r.c.auto ? r.remain : -1), money: r.c.money, points: r.s && r.s.points, pot: r.missing ? null : Math.min(r.c.hpQty ?? 1e9, (r.c.mpQty ?? 1e9) * 2.5), upd: r.s ? -r.s.receivedAt : null }[k]);
+  // 依帳號排序時，目前角色排前面
+  list.sort((a, b) => cmp(val(a), val(b)) * d || cmp(a.account, b.account) || (b.active - a.active) || cmp(a.c.name, b.c.name));
+  const more = ui.ovMore;
   const th = (key, label, cls = '') => `<th data-ovsort="${key}" class="${cls}">${label}${ui.ovSort.key === key ? (ui.ovSort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
-  let h = `<table class="sticky"><thead><tr><th class="nosort"><input type="checkbox" id="ovAll" title="全選"></th><th class="nosort"></th>${th('account','帳號')}${th('name','角色')}${th('job','職業')}${th('lv','Lv','num')}${th('exp','EXP%','num')}${th('hourly','每小時經驗','num')}${th('map','地圖')}${th('idle','掛機')}${th('money','楓幣','num')}${th('points','點數','num')}${th('hp','HP藥','num')}${th('mp','MP藥','num')}<th class="nosort num">裝備欄</th><th class="nosort num">道具</th><th class="nosort">交易ID</th>${th('upd','更新')}</tr></thead><tbody>`;
-  if (!rows.length) h += `<tr><td colspan="18" class="empty">還沒有資料。打開任一個設定檔的遊戲分頁，右下角出現「中控：已連線」就代表在回報了。</td></tr>`;
-  for (const r of rows) {
-    const c = r.c;
+  const ncol = more ? 15 : 12;
+  let h = `<table class="sticky ov"><thead><tr><th class="nosort"><input type="checkbox" id="ovAll" title="全選"></th><th class="nosort"></th>${th('account', '帳號')}${th('name', '角色')}${th('lv', '等級')}${th('hourly', '每小時經驗', 'num')}${th('map', '地圖')}${th('idle', '掛機')}${th('money', '楓幣', 'num')}${th('points', '點數', 'num')}${th('pot', '藥水 HP／MP', 'num')}${more ? '<th class="nosort num">裝備欄</th><th class="nosort num">道具</th><th class="nosort">交易ID</th>' : ''}${th('upd', '更新')}</tr></thead><tbody>`;
+  if (!rows.length) h += `<tr><td colspan="${ncol}" class="empty">還沒有資料。打開任一個設定檔的遊戲分頁，右下角出現「中控：已連線」就代表在回報了。</td></tr>`;
+  else if (!list.length) h += `<tr><td colspan="${ncol}" class="empty">沒有符合的角色</td></tr>`;
+  let lastAcc = null;
+  for (const r of list) {
+    const c = r.c, sel = ui.idleSel.has(c.id);
+    const newAcc = k === 'account' && r.account !== lastAcc; lastAcc = r.account;
+    const cls = [r.active ? '' : 'alt', newAcc ? 'accstart' : '', r.stale || (r.s && r.s.idleOffline) ? 'stale' : '', sel ? 'picked' : ''].join(' ');
+    const accCell = k !== 'account' || newAcc ? `<input class="label-edit" data-acc="${esc(r.missing ? c.accountId : r.s.accountId)}" value="${esc(r.account)}">` : '';
     if (r.missing) {
-      h += `<tr class="stale"><td><input type="checkbox" data-isel="${c.id}" ${ui.idleSel.has(c.id) ? 'checked' : ''}></td><td></td><td>${esc(r.account)}</td><td>${esc(c.name)}${switchBtn(c.id, c.accountId)}</td><td class="dim">${esc(c.job)}</td><td class="num">${c.lv}</td><td colspan="3" class="dim">未同步詳細資料（按「⇄ 切換」一次就會出現）</td>
-        <td>${c.auto ? '<span class="good">● 掛機中</span>' : '<span class="bad">● 未掛機</span>'} ${autoToggle(c.id)}</td><td colspan="8"></td></tr>`;
+      h += `<tr class="${cls}"><td><input type="checkbox" data-isel="${c.id}" ${sel ? 'checked' : ''}></td><td></td><td>${accCell}</td><td><div>${esc(c.name)}${switchBtn(c.id, c.accountId)}</div><div class="dim sm">${esc(c.job || '')}</div></td><td>Lv${c.lv}</td>
+        <td colspan="2" class="dim">尚未同步（按「⇄ 切換」一次就會出現）</td><td>${c.auto ? '<span class="good">● 掛機中</span>' : '<span class="bad">● 未掛機</span>'} ${autoToggle(c.id)}</td><td colspan="${ncol - 8}"></td></tr>`;
       continue;
     }
-    const isMain = S.mainCharId === c.id;
-    let idle;
-    if (!c.auto) idle = `<span class="bad">● 未掛機</span>`;
-    else if (r.remain == null) idle = `<span class="good">● 掛機中</span>`;
-    else if (r.remain <= 0) idle = `<span class="bad">● 已到期</span> <span class="dim">${clock(c.until)}</span>`;
-    else idle = `<span class="${r.remain < 3600e3 ? 'warn' : 'good'}">● 剩 ${hm(r.remain)}</span> <span class="dim">至 ${clock(c.until)}</span>`;
-    const pot = (q, lim) => q == null ? '—' : `<span class="${q < lim ? 'bad' : ''}">${fmt(q)}</span>`;
-    h += `<tr class="${r.stale || r.s.idleOffline ? 'stale' : ''}">
-      <td><input type="checkbox" data-isel="${c.id}" ${ui.idleSel.has(c.id) ? 'checked' : ''}></td>
+    const isMain = S.mainCharId === c.id, st = idleState(r);
+    const idle = st === 'off' ? `<span class="bad">● 未掛機</span>` : st === 'expired' ? `<span class="bad">● 已到期</span>` : r.remain == null ? `<span class="good">● 掛機中</span>`
+      : `<span class="${st === 'soon' ? 'warn' : 'good'}">● 剩 ${hm(r.remain)}</span><div class="dim sm">至 ${clock(c.until)}</div>`;
+    const pot = (q, lim) => q == null ? '<span class="dim">—</span>' : `<span class="${q < lim ? 'bad' : ''}">${fmt(q)}</span>`;
+    const exp = c.expPct == null ? null : Math.max(0, Math.min(100, c.expPct));
+    h += `<tr class="${cls}">
+      <td><input type="checkbox" data-isel="${c.id}" ${sel ? 'checked' : ''}></td>
       <td><span class="star ${isMain ? 'on' : ''}" data-main="${c.id}" title="設為本尊">★</span></td>
-      <td><input class="label-edit" data-acc="${esc(r.s.accountId)}" value="${esc(r.account)}"></td>
-      <td>${esc(c.name)}${isMain ? ' <span class="tag main">本尊</span>' : ''}${switchBtn(c.id, r.s.accountId)}</td>
-      <td>${esc(c.jobName)}</td>
-      <td class="num">${c.lv}</td>
-      <td class="num">${c.expPct == null ? '<span class="dim">—</span>' : c.expPct.toFixed(2) + '%'}</td>
+      <td>${accCell}</td>
+      <td><div><b class="cn">${esc(c.name)}</b>${isMain ? ' <span class="tag main">本尊</span>' : ''}${switchBtn(c.id, r.s.accountId)}</div><div class="dim sm">${esc(c.jobName || '')}</div></td>
+      <td><div>Lv <b>${c.lv}</b></div>${exp == null ? '' : `<div class="expbar" title="${exp.toFixed(2)}%"><i style="width:${exp}%"></i></div><div class="dim sm">${exp.toFixed(1)}%</div>`}</td>
       <td class="num">${c.hourlyExp ? short(c.hourlyExp) : '<span class="dim">—</span>'}</td>
       <td>${esc(c.mapName)}</td>
-      <td>${idle} ${autoToggle(c.id)}</td>
+      <td>${idle}<div class="sm">${autoToggle(c.id)}</div></td>
       <td class="num">${short(c.money)}</td>
-      <td class="num" title="點數是整個帳號共用">${typeof r.s.points === 'number' ? fmt(r.s.points) : '<span class="dim">—</span>'}</td>
-      <td class="num" title="${esc(c.hpItem || '')}">${pot(c.hpQty, 50)}</td>
-      <td class="num" title="${esc(c.mpItem || '')}">${pot(c.mpQty, 20)}</td>
-      <td class="num">${c.gearBagCount ?? '—'}</td>
-      <td class="num">${c.itemStackCount ?? '—'}</td>
-      <td class="dim">${esc(c.tradeId || '—')}</td>
-      <td class="dim">${r.s.idleOffline ? `<span class="warn" title="遊戲已進入離線掛機，畫面暫停更新">離線掛機中</span><div>資料停在 ${clock(r.s.idleOffline.since)}</div><button class="btn" data-wake="${c.id}" style="padding:1px 6px">⏏ 領取</button>` : ago(Date.now() - (r.s.receivedAt || r.s.at))}</td></tr>`;
+      <td class="num" title="點數是整個帳號共用">${typeof r.s.points === 'number' ? (r.active ? fmt(r.s.points) : `<span class="dim">${fmt(r.s.points)}</span>`) : '<span class="dim">—</span>'}</td>
+      <td class="num" title="${esc((c.hpItem || '') + ' / ' + (c.mpItem || ''))}">${pot(c.hpQty, 50)} <span class="dim">/</span> ${pot(c.mpQty, 20)}</td>
+      ${more ? `<td class="num">${c.gearBagCount ?? '—'}</td><td class="num">${c.itemStackCount ?? '—'}</td><td class="dim">${esc(c.tradeId || '—')}</td>` : ''}
+      <td class="dim">${r.s.idleOffline ? `<span class="warn" title="遊戲已進入離線掛機，畫面暫停更新">離線掛機中</span><div class="sm">資料停在 ${clock(r.s.idleOffline.since)}</div><button class="btn" data-wake="${c.id}" style="padding:1px 6px">⏏ 領取</button>` : ago(Date.now() - (r.s.receivedAt || r.s.at))}</td></tr>`;
   }
   h += '</tbody></table>';
   $('#ovTable').innerHTML = h;
+  renderOvBar();
 }
+// 勾選角色後出現在底部的動作列
+function renderOvBar() {
+  const bar = $('#ovBar'); if (!bar) return;
+  const n = ui.idleSel.size;
+  bar.style.display = '';
+  bar.innerHTML = n
+    ? `<span class="sum">已選 <b>${n}</b> 隻</span><button class="btn primary" data-idle="start">▶ 開始掛機</button><button class="btn" data-idle="stop">Ⅱ 暫停</button><button class="btn" data-idle="restart" title="先暫停再開始，掛機時間重新從 24 小時算起">↻ 重新開始</button><button class="btn" data-idle="wake" title="幫勾選的帳號按遊戲的「點一下繼續」，領回離線掛機期間累積的收益">⏏ 領取離線收益</button><button class="btn" data-idle="switch" title="把勾選的角色切成該帳號的目前角色（同帳號勾兩隻時以後面那隻為準）">⇄ 切換為目前角色</button><button class="btn" id="idleSelNone">清除</button><span class="dim" id="idleMsg"></span>`
+    : `<span class="dim">勾選角色可以批次操作，或</span><button class="btn" id="idleSelStopped">選未掛機的</button><button class="btn" id="idleSelAll">全選</button><span class="dim" id="idleMsg"></span>`;
+}
+document.addEventListener('click', async e => {
+  const t = e.target.closest('[data-attn],[data-openjobs],[data-goto],[data-ovmode]');
+  if (!t) return;
+  try {
+    if (t.dataset.ovmode) { ui.ovOnlyActive = t.dataset.ovmode === 'active'; try { localStorage.setItem('ovOnlyActive', ui.ovOnlyActive ? '1' : '0'); } catch (_) {} renderOverview(); return; }
+    if (t.hasAttribute('data-openjobs')) { openJobs(); return; }
+    if (t.dataset.goto) { document.querySelector(`nav button[data-tab="${t.dataset.goto}"]`).click(); return; }
+    if (t.dataset.attn) {
+      const ids = t.dataset.ids.split(',').filter(Boolean);
+      t.disabled = true; t.textContent = '送出中…';
+      const r = await api('/api/idle', { targets: ids.map(charId => ({ charId, action: t.dataset.attn })) });
+      t.textContent = `已送出（${r.jobs.length} 個帳號）`;
+      setTimeout(() => poll(true), 1500);
+    }
+  } catch (err) { alert('失敗：' + err.message); }
+});
+document.addEventListener('change', e => { if (e.target.id === 'ovMore') { ui.ovMore = e.target.checked; try { localStorage.setItem('ovMore', ui.ovMore ? '1' : '0'); } catch (_) {} renderOverview(); } });
+document.addEventListener('input', e => { if (e.target.id === 'ovSearch') { ui.ovQ = e.target.value; renderOverview(); } });
 
 // ================= 裝備 =================
 function statMode() { return document.querySelector('input[name=gmode]:checked').value; }
@@ -1405,7 +1478,7 @@ document.addEventListener('change', e => {
     return;
   }
   if (t.id === 'autoUpd') { saveSettings({ autoUpdate: t.checked }); return; }
-  if (t.dataset && t.dataset.isel) { if (t.checked) ui.idleSel.add(t.dataset.isel); else ui.idleSel.delete(t.dataset.isel); renderIdleCard(); return; }
+  if (t.dataset && t.dataset.isel) { if (t.checked) ui.idleSel.add(t.dataset.isel); else ui.idleSel.delete(t.dataset.isel); renderOverview(); renderIdleCard(); return; }
   if (t.dataset && t.dataset.iexcl) { saveSettings({ idleExcluded: { ...(S.idleExcluded || {}), [t.dataset.iexcl]: !t.checked } }); return; }
   if (['ipRenew', 'ipStop', 'ipRenewMin', 'ipStopH', 'ipWake', 'ipWakeH'].includes(t.id)) { saveIdlePolicy().then(() => poll(true)); return; }
   if (t.id === 'cMoney') renderTrade();
