@@ -139,8 +139,36 @@ function agentMain(ctx) {
         if (m && m.msId != null) mapsById[String(m.msId)] = m.name;
       }
       catalog = { equipment: cat.equipment || {}, items: cat.items || {}, scrolls: cat.scrolls || {}, jobs: cat.jobs || {}, statNames: cat.statNames || {}, mapsById };
+      setTimeout(() => uploadWorld(cat).catch(e => console.warn('[szg-hub world]', e)), 5000);
       return catalog;
     }
+    // 把地圖、怪物、掉落表整理後交給中控（面板的「地圖」分頁用）；同一版本只傳一次
+    async function uploadWorld(cat) {
+      const ver = String(cat.version || '') + ':' + Object.keys(cat.maps || {}).length + ':' + (cat.mobs || []).length;
+      const have = await hub('GET', '/api/world/version');
+      if (have && have.version === ver) return;
+      const names = {};
+      for (const [k, it] of Object.entries(cat.items || {})) { const id = it.id || Number(String(k).replace(/\D/g, '')); if (id) names[id] = [it.name, it.type || '道具']; }
+      for (const [k, e] of Object.entries(cat.equipment || {})) { const id = e.itemId || e.id || Number(String(k).replace(/\D/g, '')); if (id && !names[id]) names[id] = [e.name || (e.meta && e.meta.name) || k, '裝備']; }
+      for (const [k, sc] of Object.entries(cat.scrolls || {})) { const id = sc.id || sc.itemId || Number(String(k).replace(/\D/g, '')); if (id && !names[id]) names[id] = [sc.name, '卷軸']; }
+      const drops = {};
+      for (const [mapId, byMob] of Object.entries(cat.mapDrops || {})) {
+        const o = drops[mapId] = {};
+        for (const [mob, rows] of Object.entries(byMob || {})) o[mob] = (rows || []).map(r => [r.itemId, r.min, r.max, r.chance, r.questId || 0]);
+      }
+      const skills = (Array.isArray(cat.skills) ? cat.skills : Object.values(cat.skills || {})).filter(s => s.effect && s.effect.party === true)
+        .map(s => ({ name: s.name, job: s.job, tier: s.tier, kind: s.effect.kind, text: s.effect.text, top: (s.levels || [])[(s.levels || []).length - 1] || {} }));
+      const jobs = {};
+      for (const [k, j] of Object.entries(cat.jobs || {})) jobs[k] = { name: j.name, tier: j.tier, parent: j.parent || j.base || j.from || null, branch: j.branch || null };
+      const world = {
+        version: ver, at: Date.now(), dropScale: cat.dropScale || 1000000, partyExpNotice: cat.partyExpNotice || '',
+        maps: Object.values(cat.maps || {}).map(m => ({ id: m.id, msId: m.msId, name: m.name, region: m.region, minLevel: m.minLevel || 0, mobIds: m.mobIds || [], boss: (m.bossSpawns || []).map(b => b.mobId) })),
+        mobs: (cat.mobs || []).map(m => ({ id: m.id, msId: m.msId, name: m.name, lv: m.lv, hp: m.hp, xp: m.xp, money: m.money, isBoss: !!m.isBoss, acc: m.meta && m.meta.accuracy, eva: m.meta && m.meta.evasion, def: m.defense })),
+        drops, names, skills, jobs,
+      };
+      await hub('POST', '/api/world', world);
+    }
+
     function jobBranch(jobKey) {
       let j = catalog.jobs[jobKey], guard = 0;
       while (j && j.parent && j.tier > 1 && guard++ < 6) j = catalog.jobs[j.parent];
@@ -281,6 +309,7 @@ function agentMain(ctx) {
           itemStackCount: (c.inventoryStacks || []).length,
         },
         idleOffline: trackOffline() ? { since: offlineSince } : undefined,
+        party: (() => { try { const t = JSON.stringify({ party: state.party || null, invites: state.partyInvites || null, accountParty: state.accountParty || null }); return t.length < 8000 ? JSON.parse(t) : { truncated: true }; } catch (_) { return undefined; } })(),
         knowledge: (() => { const k = lastKnowledge || state.knowledge; return k ? { ready: !!k.ready, remaining: k.remaining,
           round: k.round ? { index: k.round.index, done: !!k.round.done, correct: k.round.correct } : null, dbg: `${quizDbg.step}｜${quizDbg.why}｜${quizDbg.ticks}次｜${quizDbg.at ? Math.round((Date.now() - quizDbg.at) / 1000) + '秒前' : ''}${quizDbg.err ? '｜' + quizDbg.err : ''}` } : undefined; })(),
         gear, items,
@@ -310,7 +339,7 @@ function agentMain(ctx) {
         await loadCatalog();
         try { await loadAccount(); } catch (_) {}
         const snap = buildSnapshot(state);
-        const hash = JSON.stringify([snap.char, snap.playerCode, snap.eligibleKnown, snap.knowledge, snap.idleOffline, snap.gear.map(g => g.uid + g.plus + g.loc + g.locked).join('|'), snap.items.map(i => i.key + i.qty + i.loc + i.tradableQty + i.lockedQty).join('|')]);
+        const hash = JSON.stringify([snap.char, snap.playerCode, snap.eligibleKnown, snap.knowledge, snap.idleOffline, snap.party, snap.gear.map(g => g.uid + g.plus + g.loc + g.locked).join('|'), snap.items.map(i => i.key + i.qty + i.loc + i.tradableQty + i.lockedQty).join('|')]);
         const now = Date.now();
         if (hash !== lastHash || now - lastSent > HEARTBEAT_MS) {
           lastHash = hash; lastSent = now;
@@ -431,7 +460,7 @@ function agentMain(ctx) {
     }
 
     // ---------- 掛機控制 ----------
-    const IDLE_LABEL = { start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換角色', wake: '領取離線收益' };
+    const IDLE_LABEL = { start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換角色', wake: '領取離線收益', map: '換地圖' };
     async function idleAction(charId, action) {
       if (action === 'restart') {
         await game({ type: 'stop', characterId: charId });
@@ -447,6 +476,14 @@ function agentMain(ctx) {
       // 掛機指令先做，切換角色放最後（切換後頁面要重新整理）
       const targets = ((job.batches[0] && job.batches[0].targets) || []).slice().sort((a, b) => (a.action === 'switch') - (b.action === 'switch'));
       for (const t of targets) {
+        if (t.action === 'map') {
+          try {
+            setBadge(null, `${t.name}：前往 ${t.mapName || t.map}…`);
+            await game({ type: 'map', map: t.map, characterId: t.charId });
+            done.push(`${t.name} 前往 ${t.mapName || t.map}`);
+          } catch (e) { failed.push(`${t.name} 前往 ${t.mapName || t.map}（${e.message}）`); }
+          continue;
+        }
         if (t.action === 'wake') {
           try { done.push((await wakePage('從面板要求')) ? `${t.name} 已領取離線收益` : `${t.name} 不在離線掛機狀態`); } catch (e) { failed.push(`${t.name} 領取（${e.message}）`); }
           continue;

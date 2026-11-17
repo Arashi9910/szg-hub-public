@@ -77,6 +77,7 @@
     <button data-tab="res">資源</button>
     <button data-tab="trade">交易</button>
     <button data-tab="bag">背包</button>
+    <button data-tab="maps">地圖</button>
     <button data-tab="market">市場</button>
     <button data-tab="quiz">知識王</button>
   </nav>
@@ -252,6 +253,41 @@
       <div id="bagOut" style="max-height:620px;overflow:auto"></div>
     </div>
   </section>
+  <!-- 地圖 -->
+  <section id="maps">
+    <div class="card" id="wMissing" style="display:none"><span class="warn">還沒有地圖資料：打開任一個遊戲分頁（腳本 v0.14 以上），約 10 秒後會自動上傳。</span></div>
+    <div class="card">
+      <h3>選角色</h3>
+      <div class="bar"><button class="btn" id="mpAll">全選</button><button class="btn" id="mpNone">清除</button><button class="btn" id="mpActive">只選各帳號目前角色</button><span class="dim" id="mpSelInfo"></span></div>
+      <div id="mpChars"></div>
+    </div>
+    <div class="card">
+      <h3>批次換圖</h3>
+      <div class="bar"><span>把勾選的角色送到</span><select id="mpTarget" style="min-width:260px"></select><button class="btn primary" id="mpGo">換圖</button><span class="dim" id="mpMsg"></span></div>
+      <div class="dim">遊戲標示「換圖只移動目前角色」：不是目前角色的，中控會嘗試直接指定；若被遊戲拒絕，紀錄會顯示失敗，請先「⇄ 切換」再換。等級低於地圖最低等級的會略過。</div>
+    </div>
+    <div class="card">
+      <h3>組隊效率試算（經驗）</h3>
+      <div class="bar"><span>每隊最多</span><input type="number" id="ppSize" min="1" max="6" value="6" style="width:56px"><span>人</span>
+        <label><input type="checkbox" id="ppKeepMap"> 只考慮角色目前所在的地圖</label>
+        <button class="btn primary" id="ppRun">計算勾選角色的建議分組</button></div>
+      <div class="dim">分組方式：依等級由高到低，每組最多設定人數，和組內最高等級差 15 級以上的另成一組，祭司盡量平均分到各組。估算方式：先用每隻角色面板上的「每小時經驗」反推牠的輸出能力（每小時傷害），再依遊戲規則估算新組合：怪物太弱時會被出手速度卡住（假設每隻每小時最多約 2,400 隻，實測更高的用實測值），同圖每多 1 位合格隊友經驗 +10%（6 人 +50%）、隊伍增益技能（祭司「神聖祈禱」加經驗，激勵／精神強力／楓葉祝福加輸出）、怪物比角色高太多時命中下降、等級低於怪物 5 級以上而且打不太到的不算經驗。經驗按傷害 60%、等級 40% 分配。<b>這是估算，實際請以換圖後的每小時經驗為準。</b>沒有「每小時經驗」的角色（打開過主控台一次就會有）會用同等級的角色推估。</div>
+      <div id="ppOut"></div>
+    </div>
+    <div class="card">
+      <h3>地圖查詢</h3>
+      <div class="bar"><select id="wRegion"><option value="">全部區域</option></select>
+        <span>角色等級</span><input type="number" id="wLv" placeholder="例如 45" style="width:80px">
+        <input id="wSearch" placeholder="搜尋地圖或怪物" style="width:160px"><label><input type="checkbox" id="wBoss"> 只看有王的</label></div>
+      <div id="wMaps"></div>
+    </div>
+    <div class="card">
+      <h3>掉落物查詢</h3>
+      <div class="bar"><input id="wItem" placeholder="輸入道具名稱，例如：藍色藥水、攻擊卷軸" style="width:280px"></div>
+      <div id="wItemOut"></div>
+    </div>
+  </section>
+
   <!-- 自由市場 -->
   <section id="market">
     <div class="card">
@@ -1537,6 +1573,206 @@ document.addEventListener('change', async e => {
 });
 document.addEventListener('input', e => { if (e.target.id === 'mkSearch') renderMarket(); });
 
+
+// ================= 地圖／怪物／掉落／組隊 =================
+let WORLD = null;
+ui.mpSel = new Set(); ui.wOpen = new Set(); ui.wSort = { key: 'minLevel', dir: 1 };
+async function loadWorld() { try { const w = await (await fetch('/api/world')).json(); if (w && w.maps) { WORLD = w; indexWorld(); } } catch (_) {} }
+function indexWorld() {
+  const W = WORLD; W.mapIdx = {}; W.mobIdx = {}; W.mobByMs = {};
+  for (const m of W.maps) { W.mapIdx[String(m.id)] = m; if (m.msId != null) W.mapIdx[String(m.msId)] = m; }
+  for (const m of W.mobs) { W.mobIdx[m.id] = m; if (m.msId != null) W.mobByMs[String(m.msId)] = m; }
+  for (const m of W.maps) {
+    m.mobs = m.mobIds.map(id => W.mobIdx[id]).filter(Boolean);
+    const normal = m.mobs.filter(x => !x.isBoss);
+    m.lvMin = normal.length ? Math.min(...normal.map(x => x.lv)) : 0;
+    m.lvMax = normal.length ? Math.max(...normal.map(x => x.lv)) : 0;
+    m.xpHp = normal.length ? normal.reduce((a, x) => a + (x.xp || 0) / Math.max(1, x.hp || 1), 0) / normal.length : 0;
+    m.avgXp = normal.length ? normal.reduce((a, x) => a + (x.xp || 0), 0) / normal.length : 0;
+    m.avgHp = normal.length ? normal.reduce((a, x) => a + (x.hp || 1), 0) / normal.length : 1;
+    m.hasBoss = m.mobs.some(x => x.isBoss);
+  }
+}
+const wName = id => { if (!id) return '楓幣'; const n = WORLD && WORLD.names[id]; return n ? n[0] : '物品 ' + id; };
+const wKind = id => { if (!id) return '楓幣'; const n = WORLD && WORLD.names[id]; return n ? n[1] : ''; };
+const chancePct = c => { const p = (Number(c) || 0) / 1e4; return p >= 1 ? p.toFixed(p >= 10 ? 0 : 1) + '%' : p >= 0.01 ? p.toFixed(2) + '%' : '<0.01%'; };
+function mapOf(id) { return WORLD && WORLD.mapIdx[String(id)]; }
+function mapCandidates() {
+  // 選角色列表：所有已同步角色＋同帳號未同步的角色
+  const rows = snaps().map(s => ({ id: s.char.id, name: s.char.name, lv: s.char.lv, job: s.char.job, jobName: s.char.jobName, map: s.char.map, hourly: s.char.hourlyExp, accountId: s.accountId, synced: true }));
+  for (const m of missingChars()) rows.push({ id: m.id, name: m.name, lv: m.lv, job: m.job, jobName: m.job, map: null, hourly: null, accountId: m.accountId, synced: false });
+  return rows.sort((a, b) => cmp(accountLabel(a.accountId, DATA.chars[a.id]), accountLabel(b.accountId, DATA.chars[b.id])) || cmp(a.name, b.name));
+}
+function renderMaps() {
+  if (!WORLD) { loadWorld().then(() => { $('#wMissing').style.display = WORLD ? 'none' : ''; if (WORLD) renderMaps(); }); return; }
+  $('#wMissing').style.display = 'none';
+  // 角色勾選
+  const cs = mapCandidates();
+  $('#mpChars').innerHTML = `<div class="chips">${cs.map(c => { const m = mapOf(c.map); return `<label title="${esc(m ? m.name : '')}"><input type="checkbox" data-mpsel="${c.id}" ${ui.mpSel.has(c.id) ? 'checked' : ''}>${esc(c.name)} <span class="dim">Lv${c.lv}${m ? '・' + esc(m.name) : ''}${activeCharOf(c.accountId) === c.id ? '' : '（非目前）'}</span></label>`; }).join('')}</div>`;
+  $('#mpSelInfo').textContent = `已選 ${ui.mpSel.size} 隻`;
+  if (!$('#mpTarget').options.length) {
+    const byR = {}; for (const m of WORLD.maps) (byR[m.region || '其他'] || (byR[m.region || '其他'] = [])).push(m);
+    $('#mpTarget').innerHTML = Object.entries(byR).map(([r, ms]) => `<optgroup label="${esc(r)}">${ms.sort((a, b) => a.minLevel - b.minLevel || a.lvMin - b.lvMin).map(m => `<option value="${esc(m.id)}">${esc(m.name)}（Lv${m.minLevel}＋，怪 ${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}）</option>`).join('')}</optgroup>`).join('');
+    $('#wRegion').innerHTML = '<option value="">全部區域</option>' + Object.keys(byR).map(r => `<option>${esc(r)}</option>`).join('');
+  }
+  renderWorldMaps(); renderWorldItem();
+}
+function renderWorldMaps() {
+  const reg = $('#wRegion').value, lv = Number($('#wLv').value) || 0, q = $('#wSearch').value.trim(), boss = $('#wBoss').checked;
+  const here = {}; for (const s of snaps()) { const m = mapOf(s.char.map); if (m) (here[m.id] || (here[m.id] = [])).push(s.char.name); }
+  let ms = WORLD.maps.filter(m => (!reg || m.region === reg) && (!boss || m.hasBoss) && (!q || m.name.includes(q) || m.mobs.some(x => x.name.includes(q))) && (!lv || (m.minLevel <= lv && m.lvMax >= lv - 15 && m.lvMin <= lv + 10)));
+  const k = ui.wSort.key, d = ui.wSort.dir;
+  ms.sort((a, b) => cmp(a[k], b[k]) * d || cmp(a.lvMin, b.lvMin));
+  const th = (key, label, cls = '') => `<th data-wsort="${key}" class="${cls}">${label}${k === key ? (d > 0 ? ' ▲' : ' ▼') : ''}</th>`;
+  let h = `<table class="sticky"><thead><tr>${th('name', '地圖')}${th('region', '區域')}${th('minLevel', '最低等級', 'num')}${th('lvMin', '怪物等級', 'num')}<th class="nosort">怪物</th>${th('xpHp', '經驗/血量', 'num')}<th class="nosort">在這裡的角色</th></tr></thead><tbody>`;
+  for (const m of ms) {
+    const open = ui.wOpen.has(m.id);
+    h += `<tr data-wmap="${esc(m.id)}" style="cursor:pointer"><td>${open ? '▾' : '▸'} ${esc(m.name)}</td><td class="dim">${esc(m.region || '')}</td><td class="num">${m.minLevel}</td><td class="num">${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}</td>
+      <td class="wrap">${m.mobs.map(x => `${esc(x.name)}${x.isBoss ? '<span class="warn">（王）</span>' : ''}`).join('、')}</td><td class="num">${m.xpHp ? m.xpHp.toFixed(3) : '—'}</td><td class="wrap dim">${esc((here[m.id] || []).join('、'))}</td></tr>`;
+    if (open) h += `<tr><td colspan="7" style="background:var(--panel2)">${mapDetail(m)}</td></tr>`;
+  }
+  if (!ms.length) h += '<tr><td colspan="7" class="empty">沒有符合的地圖</td></tr>';
+  $('#wMaps').innerHTML = h + '</tbody></table>';
+}
+function mapDetail(m) {
+  const drops = (WORLD.drops[m.id] || WORLD.drops[String(m.msId)] || {});
+  return m.mobs.map(x => {
+    const rows = (drops[String(x.msId)] || drops[x.id] || []).slice().sort((a, b) => b[3] - a[3]);
+    const money = Array.isArray(x.money) ? x.money.join('~') : (x.money || '—');
+    return `<div style="margin:6px 0"><b>${esc(x.name)}</b>${x.isBoss ? ' <span class="warn">王</span>' : ''} <span class="dim">Lv${x.lv}・HP ${fmt(x.hp)}・經驗 ${fmt(x.xp)}・楓幣 ${esc(money)}</span>
+      <div class="chips" style="margin-top:4px">${rows.length ? rows.map(r => `<span class="tag" title="${esc(wKind(r[0]))}">${esc(wName(r[0]))}${r[2] > 1 ? ` ×${r[1]}~${r[2]}` : ''} <b>${chancePct(r[3])}</b>${r[4] ? ' <span class="dim">任務</span>' : ''}</span>`).join('') : '<span class="dim">沒有掉落資料</span>'}</div></div>`;
+  }).join('') || '<span class="dim">沒有怪物資料</span>';
+}
+function renderWorldItem() {
+  const q = $('#wItem').value.trim();
+  if (!q) { $('#wItemOut').innerHTML = '<div class="dim">輸入名稱後會列出哪張地圖、哪隻怪會掉，依機率排序。</div>'; return; }
+  const ids = Object.entries(WORLD.names).filter(([, n]) => n[0].includes(q)).map(([id]) => Number(id));
+  if (q.includes('楓幣')) ids.push(0);
+  const idSet = new Set(ids), out = [];
+  for (const m of WORLD.maps) {
+    const drops = WORLD.drops[m.id] || WORLD.drops[String(m.msId)] || {};
+    for (const [mobMs, rows] of Object.entries(drops)) for (const r of rows) if (idSet.has(Number(r[0]))) {
+      const mob = WORLD.mobByMs[mobMs] || WORLD.mobIdx[mobMs] || { name: mobMs, lv: '?' };
+      out.push({ item: wName(r[0]), map: m, mob, r });
+    }
+  }
+  out.sort((a, b) => b.r[3] - a.r[3]);
+  $('#wItemOut').innerHTML = out.length ? `<table><thead><tr><th class="nosort">道具</th><th class="nosort num">機率</th><th class="nosort">數量</th><th class="nosort">怪物</th><th class="nosort">地圖</th><th class="nosort num">地圖最低等級</th></tr></thead><tbody>${out.slice(0, 200).map(o =>
+    `<tr><td>${esc(o.item)}</td><td class="num"><b>${chancePct(o.r[3])}</b></td><td>${o.r[1]}${o.r[2] > o.r[1] ? '~' + o.r[2] : ''}</td><td>${esc(o.mob.name)} <span class="dim">Lv${o.mob.lv}${o.mob.isBoss ? '・王' : ''}</span></td><td>${esc(o.map.name)} <span class="dim">${esc(o.map.region || '')}</span></td><td class="num">${o.map.minLevel}</td></tr>`).join('')}</tbody></table>${out.length > 200 ? '<div class="dim">只列前 200 筆</div>' : ''}`
+    : `<div class="dim">找不到「${esc(q)}」的掉落資料（${ids.length ? '有這個道具，但沒有怪物掉' : '沒有這個名稱的道具'}）</div>`;
+}
+
+// ---- 組隊效率試算 ----
+function jobLine(jobKey) { const out = []; let j = jobKey, g = 0; while (j && g++ < 8) { out.push(j); const x = WORLD.jobs[j]; j = x && x.parent; } return out; }
+function partyBuffsOf(c) {
+  const line = new Set(jobLine(c.job));
+  return (WORLD.skills || []).filter(s => line.has(s.job));
+}
+const isMagic = c => jobLine(c.job).some(j => /magic|mage|wizard|fire|ice|cleric|priest|bishop|fp|il|arch/i.test(j));
+function hitFactor(lv, map) { const d = (map.lvMax || 0) - lv; return d <= 0 ? 1 : Math.max(0.15, 1 - 0.06 * d); }
+function groupEstimate(members, map) {
+  const buffs = members.flatMap(partyBuffsOf);
+  const holy = buffs.filter(b => b.kind === 'holySymbol').map(b => Number(b.top.expPercent) || 0);
+  const holyMult = holy.length ? Math.max(...holy.map(p => p > 100 ? p / 100 : 1 + p / 100)) : 1;
+  const padBuff = buffs.some(b => b.kind === 'stats' && b.top.pad > 0), madBuff = buffs.some(b => b.kind === 'stats' && b.top.mad > 0);
+  const mw = buffs.filter(b => b.kind === 'mapleWarrior').map(b => Number(b.top.x) || 0);
+  const mwMult = mw.length ? 1 + Math.max(...mw) / 200 : 1;
+  const dmg = members.map(c => {
+    const hf = hitFactor(c.lv, map);
+    const atk = (isMagic(c) ? (madBuff ? 1.08 : 1) : (padBuff ? 1.08 : 1)) * mwMult;
+    const d = c.power * hf * atk;                                  // 每小時傷害
+    const kills = Math.min(c.kcap, d / Math.max(1, map.avgHp));    // 每小時擊殺（怪太弱時被出手速度卡住，多的傷害浪費）
+    return { c, hf, d, kills, eligible: c.lv >= (map.lvMax || 0) - 5 || hf >= 0.5 };
+  });
+  const elig = dmg.filter(x => x.eligible);
+  const partyMult = 1 + 0.1 * Math.max(0, elig.length - 1);
+  const totalD = dmg.reduce((a, x) => a + x.d, 0);
+  const totalExp = dmg.reduce((a, x) => a + x.kills, 0) * map.avgXp * partyMult * holyMult;
+  const eD = elig.reduce((a, x) => a + x.d, 0) || 1, eL = elig.reduce((a, x) => a + x.c.lv, 0) || 1;
+  const per = dmg.map(x => ({ ...x, exp: x.eligible ? totalExp * (0.6 * x.d / eD + 0.4 * x.c.lv / eL) : 0 }));
+  return { map, per, total: per.reduce((a, x) => a + x.exp, 0), partyMult, holyMult, buffs: [...new Set(buffs.map(b => b.name))] };
+}
+function runPlanner() {
+  const pick = mapCandidates().filter(c => ui.mpSel.has(c.id));
+  if (!pick.length) { $('#ppOut').innerHTML = '<div class="warn">先在上方勾選角色</div>'; return; }
+  const size = Math.min(6, Math.max(1, Number($('#ppSize').value) || 6)), keepMap = $('#ppKeepMap').checked;
+  // 1) 反推輸出能力：每小時經驗 ÷ 目前地圖的經驗/血量（以單人估）
+  // 出手速度上限：每隻每小時最多約 2,400 隻（約 1.5 秒一隻）；目前實測擊殺數更高的就用實測值
+  const KCAP = 2400;
+  for (const c of pick) {
+    const m = mapOf(c.map); c.cur = c.hourly || 0; c.curMap = m; c.kcap = KCAP;
+    c.power = c.hourly && m && m.xpHp ? c.hourly / (m.xpHp * hitFactor(c.lv, m)) : null;
+    if (c.hourly && m && m.avgXp) c.kcap = Math.max(KCAP, (c.hourly / m.avgXp) * 1.2);
+  }
+  const known = pick.filter(c => c.power);
+  for (const c of pick) if (!c.power) {
+    const ref = known.slice().sort((a, b) => Math.abs(a.lv - c.lv) - Math.abs(b.lv - c.lv))[0];
+    c.power = ref ? ref.power * Math.pow(c.lv / ref.lv, 1.8) : Math.pow(c.lv, 2) * 5; c.guess = true;
+  }
+  // 2) 分組：依等級排序，每 size 人一組；祭司平均分到各組
+  const sorted = pick.slice().sort((a, b) => b.lv - a.lv);
+  // 等級差太多（和組內最高差 15 級以上）的另外成一組，免得低等的分不到經驗
+  const groups = [];
+  for (const c of sorted) { const g = groups[groups.length - 1]; if (!g || g.length >= size || g[0].lv - c.lv > 15) groups.push([c]); else g.push(c); }
+  const isPriest = c => partyBuffsOf(c).some(b => b.kind === 'holySymbol');
+  for (const g of groups) if (!g.some(isPriest)) {
+    const donor = groups.find(o => o !== g && o.filter(isPriest).length > 1);
+    if (donor) { const p = donor.find(isPriest); const swap = g.slice().sort((a, b) => Math.abs(a.lv - p.lv) - Math.abs(b.lv - p.lv))[0]; donor.splice(donor.indexOf(p), 1, swap); g.splice(g.indexOf(swap), 1, p); }
+  }
+  // 3) 每組挑最好的地圖
+  const res = groups.map(g => {
+    const minLv = Math.min(...g.map(c => c.lv));
+    const maps = keepMap ? [...new Set(g.map(c => c.curMap).filter(Boolean))] : WORLD.maps.filter(m => m.xpHp > 0 && m.minLevel <= minLv);
+    const ranked = maps.map(m => groupEstimate(g, m)).sort((a, b) => b.total - a.total);
+    return { g, best: ranked[0], alt: ranked.slice(1, 3), cur: g.reduce((a, c) => a + c.cur, 0) };
+  });
+  ui.ppRes = res;
+  $('#ppOut').innerHTML = res.map((r, i) => {
+    if (!r.best) return `<div class="card"><b>第 ${i + 1} 組</b>：找不到所有人都能進的地圖</div>`;
+    const b = r.best, gain = r.cur ? (b.total / r.cur - 1) : null;
+    return `<div class="card" style="margin:8px 0"><div class="bar"><b>第 ${i + 1} 組</b>　建議地圖 <b>${esc(b.map.name)}</b> <span class="dim">${esc(b.map.region || '')}・怪 Lv${b.map.lvMin}~${b.map.lvMax}</span>
+      <span>組隊加成 ×${b.partyMult.toFixed(1)}${b.holyMult > 1 ? `・神聖祈禱 ×${b.holyMult.toFixed(2)}` : ''}</span>
+      <span>估計合計 <b>${short(b.total)}</b>/小時${r.cur ? `（目前合計 ${short(r.cur)}，${gain >= 0 ? '+' : ''}${(gain * 100).toFixed(0)}%）` : ''}</span>
+      <button class="btn primary" data-ppgo="${i}">這組全部換到這張圖</button></div>
+      ${b.buffs.length ? `<div class="dim">隊伍增益：${esc(b.buffs.join('、'))}</div>` : '<div class="dim">隊伍增益：無（加一位祭司可大幅提升經驗）</div>'}
+      <table><thead><tr><th class="nosort">角色</th><th class="nosort">職業</th><th class="nosort num">Lv</th><th class="nosort">目前地圖</th><th class="nosort num">目前每小時</th><th class="nosort num">估計每小時</th><th class="nosort">備註</th></tr></thead><tbody>
+      ${b.per.map(x => `<tr><td>${esc(x.c.name)}</td><td class="dim">${esc(x.c.jobName || x.c.job)}</td><td class="num">${x.c.lv}</td><td class="dim">${esc(x.c.curMap ? x.c.curMap.name : '—')}</td><td class="num">${x.c.cur ? short(x.c.cur) : '—'}</td><td class="num">${short(x.exp)}</td>
+        <td class="dim">${[!x.eligible && '<span class="bad">等級太低，分不到經驗</span>', x.hf < 1 && x.eligible && `命中約 ${(x.hf * 100).toFixed(0)}%`, x.c.guess && '能力用推估'].filter(Boolean).join('、')}</td></tr>`).join('')}</tbody></table>
+      ${r.alt.length ? `<div class="dim">其他選擇：${r.alt.map(a => `${esc(a.map.name)}（${short(a.total)}/小時）`).join('、')}</div>` : ''}</div>`;
+  }).join('') + '<div class="dim">組隊功能（從中控建隊、邀請、同圖）下一版提供；目前請先換圖，再於遊戲內組隊。</div>';
+}
+document.addEventListener('click', async e => {
+  const t = e.target;
+  const row = t.closest && t.closest('[data-wmap]');
+  if (row) { const id = row.dataset.wmap; if (ui.wOpen.has(id)) ui.wOpen.delete(id); else ui.wOpen.add(id); renderWorldMaps(); return; }
+  if (t.dataset && t.dataset.wsort) { const k = t.dataset.wsort; ui.wSort = { key: k, dir: ui.wSort.key === k ? -ui.wSort.dir : 1 }; renderWorldMaps(); return; }
+  if (t.id === 'mpAll') { mapCandidates().forEach(c => ui.mpSel.add(c.id)); renderMaps(); }
+  if (t.id === 'mpNone') { ui.mpSel.clear(); renderMaps(); }
+  if (t.id === 'mpActive') { ui.mpSel.clear(); mapCandidates().filter(c => activeCharOf(c.accountId) === c.id).forEach(c => ui.mpSel.add(c.id)); renderMaps(); }
+  if (t.id === 'ppRun') runPlanner();
+  const sendMoves = async (list, map) => {
+    const ok = list.filter(c => c.lv >= map.minLevel), low = list.filter(c => c.lv < map.minLevel);
+    if (!ok.length) { $('#mpMsg').textContent = '勾選的角色等級都不夠'; return; }
+    if (!confirm(`把 ${ok.length} 隻角色送到「${map.name}」？${low.length ? `\n略過等級不足：${low.map(c => c.name).join('、')}` : ''}`)) return;
+    const r = await api('/api/idle', { targets: ok.map(c => ({ charId: c.id, action: 'map', map: map.id, mapName: map.name })) });
+    $('#mpMsg').textContent = `已送出 ${ok.length} 隻（${r.jobs.length} 個帳號），結果請看總覽的「自動處理紀錄」或工作紀錄`;
+    await poll(true);
+  };
+  try {
+    if (t.id === 'mpGo') { const map = mapOf($('#mpTarget').value); const list = mapCandidates().filter(c => ui.mpSel.has(c.id)); if (!list.length) { $('#mpMsg').textContent = '先勾選角色'; return; } await sendMoves(list, map); }
+    if (t.dataset && t.dataset.ppgo !== undefined) { const r = ui.ppRes[Number(t.dataset.ppgo)]; await sendMoves(r.g, r.best.map); }
+  } catch (err) { alert('失敗：' + err.message); }
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset && t.dataset.mpsel) { if (t.checked) ui.mpSel.add(t.dataset.mpsel); else ui.mpSel.delete(t.dataset.mpsel); $('#mpSelInfo').textContent = `已選 ${ui.mpSel.size} 隻`; return; }
+  if (['wRegion', 'wBoss'].includes(t.id)) renderWorldMaps();
+});
+document.addEventListener('input', e => {
+  if (['wSearch', 'wLv'].includes(e.target.id)) renderWorldMaps();
+  if (e.target.id === 'wItem') renderWorldItem();
+});
+
 // ================= 主流程 =================
 function renderAll() {
   const active = document.querySelector('nav button.on').dataset.tab;
@@ -1547,6 +1783,7 @@ function renderAll() {
   if (active === 'bag') renderBag();
   if (active === 'quiz') loadQuiz().then(renderQuiz);
   if (active === 'market') loadMarket().then(renderMarket);
+  if (active === 'maps') renderMaps();
 }
 
 async function poll(force) {

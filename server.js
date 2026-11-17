@@ -17,6 +17,7 @@ const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const DASHBOARD = path.join(__dirname, 'dashboard.html');
 const USERSCRIPT = path.join(__dirname, 'szg-hub.user.js');
 const AGENT_FILE = path.join(__dirname, 'agent.js');
+const WORLD_FILE = path.join(__dirname, 'data', 'world.json'); // 遊戲的地圖／怪物／掉落表（由遊戲頁面上傳）
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -143,7 +144,7 @@ const BAG_KINDS = new Set(['sell', 'lock', 'unlock', 'idle']);
 // ================= 掛機控制 =================
 // 指令（開始／暫停／重新開始）依帳號分組，交給那個帳號目前在線的遊戲頁面執行；
 // 同帳號的第二隻角色也可以直接控制（遊戲允許用 characterId 指定）。
-const IDLE_ACTIONS = new Set(['start', 'stop', 'restart', 'switch', 'wake']);
+const IDLE_ACTIONS = new Set(['start', 'stop', 'restart', 'switch', 'wake', 'map']);
 function accountOfChar(charId) {
   const own = db.chars[charId];
   if (own) return own.accountId;
@@ -180,6 +181,11 @@ function createIdleJobs(body) {
       if (!(byAcc[acc] || []).some(x => x.action === 'wake')) (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'wake' });
       continue;
     }
+    if (t.action === 'map') {
+      if (!t.map) continue;
+      (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'map', map: String(t.map), mapName: String(t.mapName || t.map).slice(0, 40) });
+      continue;
+    }
     (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: t.action });
     db.settings.idleLast = { ...(db.settings.idleLast || {}), [t.charId]: { action: t.action, at: Date.now(), by: 'panel' } };
   }
@@ -196,7 +202,7 @@ function createIdleJobs(body) {
       toCharId: route.char.id, toName: route.char.name, toCode: route.playerCode,
       batches: [{ targets: list, items: [], gear: [], money: 0 }], batchIndex: 0, log: [], lastMsg: '',
     };
-    jobLog(job, '已送出：' + list.map(t => `${t.name} ${({ start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換為目前角色', wake: '領取離線掛機收益' })[t.action]}`).join('、'));
+    jobLog(job, '已送出：' + list.map(t => `${t.name} ${({ start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換為目前角色', wake: '領取離線掛機收益', map: '前往 ' + (t.mapName || '') })[t.action]}`).join('、'));
     db.jobs.push(job);
     jobs.push(job);
   }
@@ -370,6 +376,23 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/jobs/approve-all') {
       for (const j of db.jobs) if (j.status === 'pending') { j.status = 'approved'; j.approvedAt = Date.now(); jobLog(j, '已確認，排隊等待執行'); }
       save();
+      return send(res, 200, { ok: true });
+    }
+
+    // ---- 地圖／怪物／掉落資料 ----
+    if (req.method === 'GET' && url.pathname === '/api/world/version') {
+      let v = ''; try { v = JSON.parse(fs.readFileSync(WORLD_FILE, 'utf8')).version; } catch (_) {}
+      return send(res, 200, { version: v });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/world') {
+      let txt = '{}'; try { txt = fs.readFileSync(WORLD_FILE, 'utf8'); } catch (_) {}
+      return send(res, 200, txt);
+    }
+    if (req.method === 'POST' && url.pathname === '/api/world') {
+      const body = await readBody(req, 30 * 1024 * 1024);
+      const w = JSON.parse(body);
+      if (!w || !Array.isArray(w.maps)) return send(res, 400, { error: 'bad world' });
+      try { fs.writeFileSync(WORLD_FILE + '.tmp', body); fs.renameSync(WORLD_FILE + '.tmp', WORLD_FILE); } catch (e) { return send(res, 500, { error: e.message }); }
       return send(res, 200, { ok: true });
     }
 
