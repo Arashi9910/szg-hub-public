@@ -1,6 +1,6 @@
 {
-  "version": "0.25.0",
-  "notes": "裝備資料多回報「標準值」（之後用來算掉落浮動）",
+  "version": "0.25.1",
+  "notes": "內部修正",
   "files": [
     "server.js",
     "market.js",
