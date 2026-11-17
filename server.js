@@ -152,7 +152,9 @@ const BAG_KINDS = new Set(['sell', 'lock', 'unlock', 'idle']);
 // ================= 掛機控制 =================
 // 指令（開始／暫停／重新開始）依帳號分組，交給那個帳號目前在線的遊戲頁面執行；
 // 同帳號的第二隻角色也可以直接控制（遊戲允許用 characterId 指定）。
-const IDLE_ACTIONS = new Set(['start', 'stop', 'restart', 'switch', 'wake', 'map']);
+const IDLE_ACTIONS = new Set(['start', 'stop', 'restart', 'switch', 'wake', 'map', 'autosell']);
+// 遊戲的地圖自動販售設定：{ enabled, itemIds }（遊戲只接受角色「目前所在地圖」的設定）
+const cleanSell = x => x && typeof x === 'object' ? { enabled: !!x.enabled, itemIds: [...new Set((x.itemIds || []).map(Number).filter(n => Number.isFinite(n) && n > 0))].slice(0, 400) } : undefined;
 function accountOfChar(charId) {
   const own = db.chars[charId];
   if (own) return own.accountId;
@@ -191,7 +193,12 @@ function createIdleJobs(body) {
     }
     if (t.action === 'map') {
       if (!t.map) continue;
-      (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'map', map: String(t.map), mapName: String(t.mapName || t.map).slice(0, 40) });
+      (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'map', map: String(t.map), mapName: String(t.mapName || t.map).slice(0, 40), sell: cleanSell(t.sell) });
+      continue;
+    }
+    if (t.action === 'autosell') {
+      if (!t.map || !t.sell) continue;
+      (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'autosell', map: String(t.map), mapName: String(t.mapName || t.map).slice(0, 40), sell: cleanSell(t.sell) });
       continue;
     }
     (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: t.action });
@@ -210,7 +217,7 @@ function createIdleJobs(body) {
       toCharId: route.char.id, toName: route.char.name, toCode: route.playerCode,
       batches: [{ targets: list, items: [], gear: [], money: 0 }], batchIndex: 0, log: [], lastMsg: '',
     };
-    jobLog(job, '已送出：' + list.map(t => `${t.name} ${({ start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換為目前角色', wake: '領取離線掛機收益', map: '前往 ' + (t.mapName || '') })[t.action]}`).join('、'));
+    jobLog(job, '已送出：' + list.map(t => `${t.name} ${({ start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換為目前角色', wake: '領取離線掛機收益', map: '前往 ' + (t.mapName || '') + (t.sell ? '（套用自動販售）' : ''), autosell: '套用 ' + (t.mapName || '') + ' 的自動販售' })[t.action]}`).join('、'));
     db.jobs.push(job);
     jobs.push(job);
   }

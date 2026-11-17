@@ -148,7 +148,7 @@ function agentMain(ctx) {
     }
     // 把地圖、怪物、掉落表整理後交給中控（面板的「地圖」分頁用）；同一版本只傳一次
     async function uploadWorld(cat) {
-      const ver = 'w2:' + String(cat.version || '') + ':' + Object.keys(cat.maps || {}).length + ':' + (cat.mobs || []).length + ':' + Object.keys(cat.drops || {}).length;
+      const ver = 'w3:' + String(cat.version || '') + ':' + Object.keys(cat.maps || {}).length + ':' + (cat.mobs || []).length + ':' + Object.keys(cat.drops || {}).length;
       const have = await hub('GET', '/api/world/version');
       if (have && have.version === ver) return;
       const names = {};
@@ -172,6 +172,8 @@ function agentMain(ctx) {
         maps: Object.values(cat.maps || {}).map(m => ({ id: m.id, msId: m.msId, name: m.name, region: m.region, minLevel: m.minLevel || 0, mobIds: m.mobIds || [], boss: (m.bossSpawns || []).map(b => b.mobId) })),
         mobs: (cat.mobs || []).map(m => ({ id: m.id, msId: m.msId, name: m.name, lv: m.lv, hp: m.hp, xp: m.xp, money: m.money, isBoss: !!m.isBoss, acc: m.meta && m.meta.accuracy, eva: m.meta && m.meta.evasion, def: m.defense })),
         drops, mobDrops, names, skills, jobs,
+        // 每張地圖可設定自動販售的掉落物：[itemId, 種類, 名稱, 商店價, 可賣, 分類, 掉落的怪物 id]
+        autoSellDrops: Object.fromEntries(Object.entries(cat.autoSellDrops || {}).map(([mapId, rows]) => [mapId, (rows || []).filter(r => r && r.itemId).map(r => [r.itemId, r.kind, r.name, r.price || 0, r.sellable ? 1 : 0, r.category || '', (r.monsters || []).map(m => m.id)])])),
       };
       await hub('POST', '/api/world', world);
     }
@@ -315,6 +317,7 @@ function agentMain(ctx) {
           gearBagCount: (c.equipmentBag || []).length,
           itemStackCount: (c.inventoryStacks || []).length,
         },
+        autoSell: (() => { const a = c.autoSell && c.autoSell.maps; const x = a && a[c.map]; return x ? { map: c.map, enabled: !!x.enabled, itemIds: (x.itemIds || []).slice(0, 400) } : { map: c.map, enabled: false, itemIds: [] }; })(),
         points: (() => { const v = state.cashPoints != null ? state.cashPoints : (c.cashPoints != null ? c.cashPoints : c.points); return typeof v === 'number' ? v : (v && typeof v.balance === 'number' ? v.balance : undefined); })(),
         idleOffline: trackOffline() ? { since: offlineSince } : undefined,
         party: (() => { try { const t = JSON.stringify({ party: state.party || null, invites: state.partyInvites || null, accountParty: state.accountParty || null }); return t.length < 8000 ? JSON.parse(t) : { truncated: true }; } catch (_) { return undefined; } })(),
@@ -347,7 +350,7 @@ function agentMain(ctx) {
         await loadCatalog();
         try { await loadAccount(); } catch (_) {}
         const snap = buildSnapshot(state);
-        const hash = JSON.stringify([snap.char, snap.playerCode, snap.eligibleKnown, snap.knowledge, snap.idleOffline, snap.party, snap.points, snap.gear.map(g => g.uid + g.plus + g.loc + g.locked).join('|'), snap.items.map(i => i.key + i.qty + i.loc + i.tradableQty + i.lockedQty).join('|')]);
+        const hash = JSON.stringify([snap.char, snap.playerCode, snap.eligibleKnown, snap.knowledge, snap.idleOffline, snap.party, snap.points, snap.autoSell, snap.gear.map(g => g.uid + g.plus + g.loc + g.locked).join('|'), snap.items.map(i => i.key + i.qty + i.loc + i.tradableQty + i.lockedQty).join('|')]);
         const now = Date.now();
         if (hash !== lastHash || now - lastSent > HEARTBEAT_MS) {
           lastHash = hash; lastSent = now;
@@ -477,7 +480,7 @@ function agentMain(ctx) {
     }
 
     // ---------- 掛機控制 ----------
-    const IDLE_LABEL = { start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換角色', wake: '領取離線收益', map: '換地圖' };
+    const IDLE_LABEL = { start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換角色', wake: '領取離線收益', map: '換地圖', autosell: '套用自動販售' };
     async function idleAction(charId, action) {
       if (action === 'restart') {
         await game({ type: 'stop', characterId: charId });
@@ -498,7 +501,20 @@ function agentMain(ctx) {
             setBadge(null, `${t.name}：前往 ${t.mapName || t.map}…`);
             await gameRetry({ type: 'map', map: t.map, characterId: t.charId });
             done.push(`${t.name} 前往 ${t.mapName || t.map}`);
+            if (t.sell) {
+              await new Promise(r => setTimeout(r, 1200));
+              try { await gameRetry({ type: 'autoSell', characterId: t.charId, map: t.map, config: t.sell }); done.push(`${t.name} 套用自動販售（${t.sell.enabled ? t.sell.itemIds.length + ' 項' : '關閉'}）`); }
+              catch (e) { failed.push(`${t.name} 套用自動販售（${e.message}）`); }
+            }
           } catch (e) { failed.push(`${t.name} 前往 ${t.mapName || t.map}（${e.message}）`); }
+          continue;
+        }
+        if (t.action === 'autosell') {
+          try {
+            setBadge(null, `${t.name}：套用自動販售…`);
+            await gameRetry({ type: 'autoSell', characterId: t.charId, map: t.map, config: t.sell });
+            done.push(`${t.name} 在 ${t.mapName || t.map} 的自動販售已更新（${t.sell.enabled ? t.sell.itemIds.length + ' 項' : '關閉'}）`);
+          } catch (e) { failed.push(`${t.name} 自動販售（${/所在地/.test(e.message) ? '角色已不在這張地圖' : e.message}）`); }
           continue;
         }
         if (t.action === 'wake') {
