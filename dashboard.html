@@ -548,7 +548,7 @@ const dpsOf = id => { const d = (DATA.dps || {})[id]; return d && d.w60 && d.w60
 const dpsStale = d => Date.now() - (d.receivedAt || d.at) > 3 * 60 * 1000;
 function dpsCell(id) {
   const d = dpsOf(id);
-  if (!d) return '<span class="dim" title="遊戲分頁開著、角色在打怪時，約 1 分鐘後會出現">—</span>';
+  if (!d) return '<span class="dim" title="遊戲分頁開著、角色在打怪時，約 1 分鐘後會出現（只補血、放輔助技能的角色沒有傷害）">—</span>';
   const open = ui.ovOpen.has(id), old = dpsStale(d);
   return `<span class="dpslink ${old ? 'dim' : ''}" data-dpsopen="${id}" title="最近 5 分鐘 ${fmt(d.w5.dps)}・最近 1 小時 ${fmt(d.w60.dps)}${old ? '\n（' + ago(Date.now() - d.receivedAt) + '的資料）' : ''}\n點一下看明細">${open ? '▾' : '▸'} <b>${short(d.w5.dps || d.w60.dps)}</b></span>`;
 }
@@ -654,7 +654,7 @@ function renderOverview() {
   const q = ui.ovQ.trim();
   let list = rows.filter(r => (!ui.ovOnlyActive || r.active) && (!q || [r.c.name, r.account, r.c.mapName, r.c.jobName].some(x => String(x || '').includes(q))));
   const k = ui.ovSort.key, d = ui.ovSort.dir;
-  const val = r => ({ account: r.account, name: r.c.name, lv: (r.c.lv || 0) * 1000 + (r.c.expPct || 0), hourly: r.c.hourlyExp, dps: (dpsOf(r.c.id) || {}).w5 ? dpsOf(r.c.id).w5.dps || dpsOf(r.c.id).w60.dps : null, map: r.c.mapName, idle: r.missing ? null : (r.c.auto ? r.remain : -1), money: r.c.money, points: r.s && r.s.points, pot: r.missing ? null : Math.min(r.c.hpQty ?? 1e9, (r.c.mpQty ?? 1e9) * 2.5), upd: r.s ? -r.s.receivedAt : null }[k]);
+  const val = r => ({ account: r.account, name: r.c.name, lv: (r.c.lv || 0) * 1000 + (r.c.expPct || 0), hourly: r.c.hourlyExp, dps: (dpsOf(r.c.id) || {}).w5 ? dpsOf(r.c.id).w5.dps || dpsOf(r.c.id).w60.dps : -1, map: r.c.mapName, idle: r.missing ? null : (r.c.auto ? r.remain : -1), money: r.c.money, points: r.s && r.s.points, pot: r.missing ? null : Math.min(r.c.hpQty ?? 1e9, (r.c.mpQty ?? 1e9) * 2.5), upd: r.s ? -r.s.receivedAt : null }[k]);
   // 依帳號排序時，目前角色排前面
   list.sort((a, b) => cmp(val(a), val(b)) * d || cmp(a.account, b.account) || (b.active - a.active) || cmp(a.c.name, b.c.name));
   const more = ui.ovMore;
