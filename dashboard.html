@@ -2508,7 +2508,7 @@ function facDefaults(cfg, chars) {
   const pos = {}, laneOrder = ['train', 'scroll', 'gear'];
   chars.forEach((c, i) => pos['c:' + c.id] = [30, 30 + i * 84]);
   let y = 30;
-  for (const lane of laneOrder) for (const id of cfg.lanes[lane]) { pos['m:' + id] = [330, y]; y += 170; }
+  for (const lane of laneOrder) for (const id of cfg.lanes[lane]) { pos['m:' + id] = [330, y]; const g = lane === 'train' ? 0 : Math.min(5, (cfg.goals[id] || []).length || 1); y += 130 + g * 20; }
   pos.exp = [700, 30]; pos.shop = [700, 200]; pos.bag = [700, 370]; pos.forge = [990, 370]; pos.out = [1270, 300];
   return pos;
 }
@@ -2545,7 +2545,7 @@ function renderFactory() {
     const x = est[id]; if (!x) continue;
     const sell = cfg.sell[id];
     const stat = x.lane === 'train' ? (x.e ? `<div>經驗 <b>${short(x.e.total)}</b>/時</div>` : '<div class="dim">沒有角色</div>')
-      : (x.goals.length ? x.goals.map(g => `<div class="fgoal">${iname(g.id, wName(g.id))} <b>${rate(g.r)}</b></div>`).join('') : `<div class="dim">還沒選目標 → 🎯</div>`);
+      : (x.goals.length ? x.goals.slice().sort((a, b) => b.r - a.r).slice(0, 4).map(g => `<div class="fgoal">${iname(g.id, wName(g.id))} <b>${rate(g.r)}</b></div>`).join('') + (x.goals.length > 4 ? `<div class="dim">…還有 ${x.goals.length - 4} 種目標（🎯 看全部）</div>` : '') : `<div class="dim">還沒選目標 → 🎯</div>`);
     html += node('m:' + id, 'fmap', FN_W.m, `<div class="fn-hd" data-fdrag style="border-color:${LANE_COLOR[x.lane]}"><span class="lane-dot" style="background:${LANE_COLOR[x.lane]}"></span><b>${esc(x.m.name)}</b>
         <select class="flane" data-flane="${esc(id)}" title="這張圖的用途">${Object.entries(LANE_NAME).map(([k, n]) => `<option value="${k}" ${k === x.lane ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
       <div class="fn-bd sm"><div class="dim">Lv${x.m.minLevel}＋・怪 ${x.m.lvMin}${x.m.lvMax !== x.m.lvMin ? '~' + x.m.lvMax : ''}・${x.here.length} 隻</div>${stat}
