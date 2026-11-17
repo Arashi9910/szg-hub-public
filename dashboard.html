@@ -488,7 +488,8 @@ function renderMatrix() {
       const g = bySlot[col];
       if (!g) { h += '<td class="dim">—</td>'; continue; }
       const line = statLine(g[mode] || {}, slotStats(g.slot));
-      h += `<td class="cell-gear"><div class="n">${esc(g.name)} ${g.plus ? `<span class="plus">+${g.plus}</span>` : ''}</div><div class="s">${esc(line) || '—'}</div>${g.slotsLeft ? `<div class="s">可衝 ${g.slotsLeft} 次</div>` : ''}</td>`;
+      const clean = mode === 'cleanStats';
+      h += `<td class="cell-gear"><div class="n">${esc(g.name)} ${!clean && g.plus ? `<span class="plus">+${g.plus}</span>` : ''}</div><div class="s">${esc(line) || '—'}</div>${clean ? (g.maxSlots ? `<div class="s">可衝 ${g.maxSlots} 次</div>` : '') : (g.slotsLeft ? `<div class="s">可衝 ${g.slotsLeft} 次</div>` : '')}</td>`;
     }
     h += '</tr>';
   }
@@ -589,7 +590,7 @@ function renderList() {
   const th = (key, label, cls = '') => `<th data-gsort="${key}" class="${cls}">${label}${ui.gearSort.key === key ? (ui.gearSort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
   const bagRowsN = rows.filter(g => g.loc === '背包');
   for (const id of [...ui.gearSel]) if (!rows.some(g => g.uid === id)) ui.gearSel.delete(id);
-  let h = `<div class="bar"><span class="dim">共 ${rows.length} 件（背包 ${bagRowsN.length} 件）${rows.length > ui.gearLimit ? `，先顯示 ${ui.gearLimit} 件` : ''}</span>
+  let h = (mode === 'cleanStats' ? '<div class="bar warn">目前顯示「原始（未衝卷）」：素質、強化、可衝次數都是衝卷前的樣子（滑鼠移到強化／可衝欄可看實際值）。篩選條件裡的「強化次數、剩餘可衝」仍以實際值判斷。</div>' : '') + `<div class="bar"><span class="dim">共 ${rows.length} 件（背包 ${bagRowsN.length} 件）${rows.length > ui.gearLimit ? `，先顯示 ${ui.gearLimit} 件` : ''}</span>
       <span style="margin-left:12px">已勾選 <b>${ui.gearSel.size}</b> 件</span>
       <button class="btn" id="gSelAll">勾選篩選結果中背包的裝備</button><button class="btn" id="gSelNone">清除</button>
       <button class="btn" data-gact="lock">🔒 鎖定</button><button class="btn" data-gact="unlock">解鎖</button><button class="btn warn" data-gact="sell">賣出</button>
@@ -601,7 +602,8 @@ function renderList() {
     const jobs = g.reqJob === 0 ? '全職' : JOBS.filter(([, b]) => b && (g.reqJob & b)).map(([n]) => n).join('/');
     const w = g._w.map(s => s.char.name);
     h += `<tr><td>${g.loc === '背包' ? `<input type="checkbox" data-gsel="${esc(g.uid)}" ${ui.gearSel.has(g.uid) ? 'checked' : ''}>` : ''}</td><td>${esc(g.charName)}</td><td class="dim">${g.loc}</td><td>${slotLabel(g.slot)}</td><td>${esc(g.name)}${g.locked ? ' 🔒' : ''}</td>
-      <td class="num">${g.plus ? `<span class="plus">+${g.plus}</span>` : '0'}</td><td class="num">${g.slotsLeft}/${g.maxSlots}</td>
+      ${mode === 'cleanStats' ? `<td class="num dim" title="目前實際強化 ${g.plus} 次">0</td><td class="num dim" title="目前實際剩 ${g.slotsLeft} 次">${g.maxSlots}/${g.maxSlots}</td>`
+        : `<td class="num">${g.plus ? `<span class="plus">+${g.plus}</span>` : '0'}</td><td class="num">${g.slotsLeft}/${g.maxSlots}</td>`}
       ${f.cols.map(c => `<td class="num">${st[c] || '<span class="dim">·</span>'}</td>`).join('')}
       <td class="num">${g.reqLevel}</td><td class="dim">${jobs} ${req}</td>
       <td class="wrap" title="${esc(w.join('、'))}">${w.length ? esc(w.slice(0, 3).join('、')) + (w.length > 3 ? ` 等 ${w.length} 隻` : '') : '<span class="dim">無</span>'}</td></tr>`;
