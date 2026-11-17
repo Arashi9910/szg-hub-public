@@ -138,7 +138,11 @@ function agentMain(ctx) {
         if (m && m.id != null) mapsById[String(m.id)] = m.name;
         if (m && m.msId != null) mapsById[String(m.msId)] = m.name;
       }
-      catalog = { equipment: cat.equipment || {}, items: cat.items || {}, scrolls: cat.scrolls || {}, jobs: cat.jobs || {}, statNames: cat.statNames || {}, mapsById };
+      const skillNames = {};
+      for (const sk of (Array.isArray(cat.skills) ? cat.skills : Object.values(cat.skills || {}))) if (sk && sk.msId != null) skillNames[sk.msId] = sk.name;
+      const mobNames = {};
+      for (const m of cat.mobs || []) if (m && m.id) mobNames[m.id] = m.name;
+      catalog = { equipment: cat.equipment || {}, items: cat.items || {}, scrolls: cat.scrolls || {}, jobs: cat.jobs || {}, statNames: cat.statNames || {}, mapsById, skillNames, mobNames };
       setTimeout(() => uploadWorld(cat).catch(e => console.warn('[szg-hub world]', e)), 5000);
       return catalog;
     }
@@ -823,6 +827,101 @@ function agentMain(ctx) {
       } catch (e) { console.warn('[szg-hub] knowledge hook failed', e); }
     })();
 
+    // ---------- 實戰 DPS：旁聽頁面自己的同步回應，統計自己帳號角色打出的傷害（不額外發送任何請求） ----------
+    const DPS_BUCKET = 60 * 1000, DPS_KEEP = 60;          // 每分鐘一格，保留 60 分鐘
+    const dpsData = {};                                    // charId → { since, buckets: Map(minute → agg), seen: Set }
+    function dpsAgg() { return { dmg: 0, eff: 0, attacks: 0, lines: 0, crits: 0, maxLine: 0, kills: 0, dot: 0, skills: {}, mobs: {} }; }
+    function dpsIngest(json) {
+      const sum = json && json.summary;
+      const evs = sum && Array.isArray(sum.events) ? sum.events : null;
+      if (!evs || !evs.length) return;
+      const st = readState();
+      const mine = new Set((st && st.characters || []).map(c => c.id));
+      if (st && st.character) mine.add(st.character.id);
+      for (const e of evs) {
+        if (!e || !mine.has(e.actor)) continue;
+        if (e.kind && !['attack', 'burn', 'poison'].includes(e.kind)) continue;
+        const d = dpsData[e.actor] || (dpsData[e.actor] = { since: 0, buckets: new Map(), seen: new Set(), map: '' });
+        const id = e.eventId || (e.instanceId + ':' + e.order);
+        if (d.seen.has(id)) continue;
+        d.seen.add(id); if (d.seen.size > 5000) d.seen = new Set([...d.seen].slice(-2500));
+        const at = Number(e.at) || Date.now();
+        if (!d.since || at < d.since) d.since = at;
+        const k = Math.floor(at / DPS_BUCKET);
+        let b = d.buckets.get(k); if (!b) { b = dpsAgg(); d.buckets.set(k, b); }
+        const dmg = Number(e.damage) || 0, eff = Number(e.effectiveDamage != null ? e.effectiveDamage : e.damage) || 0;
+        b.dmg += dmg; b.eff += eff;
+        if (e.kind === 'burn' || e.kind === 'poison') b.dot += dmg;
+        else {
+          b.attacks++;
+          const lines = Array.isArray(e.lines) && e.lines.length ? e.lines : [{ damage: dmg, critical: false }];
+          b.lines += lines.length;
+          for (const l of lines) { if (l.critical) b.crits++; if ((Number(l.damage) || 0) > b.maxLine) b.maxLine = Number(l.damage) || 0; }
+        }
+        if (e.killed) b.kills++;
+        const sk = e.kind === 'burn' || e.kind === 'poison' ? 'dot:' + (e.skill || '') : String(e.skill || 0);
+        b.skills[sk] = (b.skills[sk] || 0) + dmg;
+        if (e.mob) b.mobs[e.mob] = (b.mobs[e.mob] || 0) + 1;
+        if (e.map) d.map = e.map;
+      }
+      const cut = Math.floor(Date.now() / DPS_BUCKET) - DPS_KEEP;
+      for (const d of Object.values(dpsData)) for (const k of d.buckets.keys()) if (k < cut) d.buckets.delete(k);
+    }
+    // 某段時間內的統計；時間長度只算有在記錄的部分（剛打開分頁時不會被低估）
+    function dpsWindow(d, ms) {
+      const now = Date.now(), from = Math.max(now - ms, d.since || now);
+      // 連續 3 分鐘以上完全沒有資料（分頁關掉、離線掛機暫停同步）不算進時間，避免 DPS 被低估
+      let span = 0, gap = 0;
+      for (let k = Math.floor(from / DPS_BUCKET); k <= Math.floor(now / DPS_BUCKET); k++) {
+        const start = Math.max(from, k * DPS_BUCKET), end = Math.min(now, (k + 1) * DPS_BUCKET), len = Math.max(0, end - start);
+        if (d.buckets.has(k)) { span += len + (gap < 3 * DPS_BUCKET ? gap : 0); gap = 0; } else gap += len;
+      }
+      if (gap < 3 * DPS_BUCKET) span += gap;
+      span = Math.max(1000, span);
+      const a = dpsAgg();
+      for (const [k, b] of d.buckets) {
+        if ((k + 1) * DPS_BUCKET <= from) continue;
+        a.dmg += b.dmg; a.eff += b.eff; a.attacks += b.attacks; a.lines += b.lines; a.crits += b.crits; a.kills += b.kills; a.dot += b.dot;
+        if (b.maxLine > a.maxLine) a.maxLine = b.maxLine;
+        for (const [s, v] of Object.entries(b.skills)) a.skills[s] = (a.skills[s] || 0) + v;
+        for (const [m, v] of Object.entries(b.mobs)) a.mobs[m] = (a.mobs[m] || 0) + v;
+      }
+      return { span, ...a };
+    }
+    async function dpsReport() {
+      const ids = Object.keys(dpsData);
+      if (!ids.length) return;
+      const cat = await loadCatalog().catch(() => null);
+      const sname = k => { if (k.startsWith('dot:')) { const n = cat && cat.skillNames[k.slice(4)]; return (n || '燃燒／中毒') + '（持續）'; } return k === '0' ? '普通攻擊' : (cat && cat.skillNames[k]) || ('技能 ' + k); };
+      const pack = w => ({ span: w.span, dps: Math.round(w.dmg / (w.span / 1000)), effDps: Math.round(w.eff / (w.span / 1000)), dmg: w.dmg, eff: w.eff, attacks: w.attacks, lines: w.lines, crits: w.crits, maxLine: w.maxLine, kills: w.kills, dot: w.dot });
+      for (const id of ids) {
+        const d = dpsData[id];
+        const w5 = dpsWindow(d, 5 * 60 * 1000), w60 = dpsWindow(d, 60 * 60 * 1000);
+        if (!w60.dmg) continue;
+        const skills = Object.entries(w60.skills).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => ({ name: sname(k), dmg: v }));
+        const mobs = Object.entries(w60.mobs).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => ({ name: (cat && cat.mobNames[k]) || k, n: v }));
+        const series = [];
+        const nowK = Math.floor(Date.now() / DPS_BUCKET);
+        for (let k = nowK - 59; k <= nowK; k++) { const b = d.buckets.get(k); if ((k + 1) * DPS_BUCKET > d.since) series.push(b ? Math.round(b.dmg / 60) : 0); }
+        await hub('POST', '/api/dps', { charId: id, at: Date.now(), since: d.since, map: d.map, w5: pack(w5), w60: pack(w60), skills, mobs, series }).catch(() => {});
+      }
+    }
+    (function hookDps() {
+      try {
+        if (!W || W.__szgDpsHook) return;
+        W.__szgDpsHook = true;
+        const orig = W.fetch;
+        W.fetch = function (input, init) {
+          const p = orig.apply(this, arguments);
+          try {
+            const url = typeof input === 'string' ? input : (input && input.url) || '';
+            if (url.indexOf('/api/game') >= 0) p.then(r => r.clone().json()).then(dpsIngest).catch(() => {});
+          } catch (_) {}
+          return p;
+        };
+      } catch (e) { console.warn('[szg-hub] dps hook failed', e); }
+    })();
+
     let quizRunning = false;
     let lastKnowledge = null, lastKnowledgeDay = '', lastKnowledgeChar = '', lastQuizSyncAt = 0, lastQuizErr = { msg: '', at: 0 }, waitingQ = null;
     const quizDbg = { step: '', at: 0, err: '', ticks: 0, why: '' }; let quizErrAt = 0;
@@ -1121,6 +1220,7 @@ function agentMain(ctx) {
       setInterval(autoListTick, 3 * 60 * 1000);
       setTimeout(autoSellTick, 20000);
       setInterval(autoSellTick, 20000);
+      setInterval(() => dpsReport().catch(() => {}), 30000);
       setTimeout(quizTick, 25000);
       setInterval(quizTick, 45000);
     }

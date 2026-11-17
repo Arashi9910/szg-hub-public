@@ -72,6 +72,14 @@
   table.ov tr.picked td { background: #1d2c47; }
   .sm { font-size: 11px; }
   .lvl { display: inline-block; min-width: 50px; }
+  .dpslink { cursor: pointer; } .dpslink:hover b { color: var(--accent); text-decoration: underline; }
+  tr.dps-detail td { background: var(--panel2); white-space: normal; }
+  .dpsbox { padding: 6px 4px; }
+  .dps-kpis { display: flex; flex-wrap: wrap; gap: 10px 28px; margin-bottom: 10px; }
+  .dps-kpis div { display: flex; flex-direction: column; } .dps-kpis span { color: var(--dim); font-size: 11px; } .dps-kpis b { font-size: 17px; } .dps-kpis i { font-style: normal; color: var(--dim); font-size: 11px; }
+  .dps-cols { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(260px, 1fr); gap: 24px; }
+  .skrow { display: grid; grid-template-columns: 130px 1fr 52px; gap: 8px; align-items: center; font-size: 12px; margin: 3px 0; }
+  .skbar { height: 7px; background: var(--line); border-radius: 4px; overflow: hidden; } .skbar i { display: block; height: 100%; background: var(--accent); }
   .expbar { display: inline-block; vertical-align: middle; width: 56px; height: 5px; background: var(--line); border-radius: 3px; margin: 0 6px; overflow: hidden; }
   .expbar i { display: block; height: 100%; background: var(--accent); }
   .ov-rules { margin: 0 0 10px; border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; background: var(--panel2); }
@@ -535,6 +543,41 @@ function switchBtn(charId, accountId) {
 ui.ovOnlyActive = (() => { try { return localStorage.getItem('ovOnlyActive') === '1'; } catch (_) { return false; } })();
 ui.ovMore = (() => { try { return localStorage.getItem('ovMore') === '1'; } catch (_) { return false; } })();
 ui.ovQ = '';
+ui.ovOpen = new Set();
+const dpsOf = id => { const d = (DATA.dps || {})[id]; return d && d.w60 && d.w60.dmg ? d : null; };
+const dpsStale = d => Date.now() - (d.receivedAt || d.at) > 3 * 60 * 1000;
+function dpsCell(id) {
+  const d = dpsOf(id);
+  if (!d) return '<span class="dim" title="遊戲分頁開著、角色在打怪時，約 1 分鐘後會出現">—</span>';
+  const open = ui.ovOpen.has(id), old = dpsStale(d);
+  return `<span class="dpslink ${old ? 'dim' : ''}" data-dpsopen="${id}" title="最近 5 分鐘 ${fmt(d.w5.dps)}・最近 1 小時 ${fmt(d.w60.dps)}${old ? '\n（' + ago(Date.now() - d.receivedAt) + '的資料）' : ''}\n點一下看明細">${open ? '▾' : '▸'} <b>${short(d.w5.dps || d.w60.dps)}</b></span>`;
+}
+function sparkSeries(arr, w = 240, h = 36) {
+  if (!arr || arr.length < 2) return '';
+  const max = Math.max(...arr, 1), step = w / (arr.length - 1);
+  const pts = arr.map((v, i) => `${(i * step).toFixed(1)},${(h - 2 - v / max * (h - 4)).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${h}" class="spark"><polyline fill="none" stroke="var(--accent)" stroke-width="1.5" points="${pts}"/></svg>`;
+}
+function dpsDetail(id, ncol) {
+  const d = dpsOf(id); if (!d) return '';
+  const w = d.w60, w5 = d.w5, mins = w.span < 60000 ? Math.round(w.span / 1000) + ' 秒' : Math.round(w.span / 60000) + ' 分';
+  const pct = (a, b) => b ? (a / b * 100).toFixed(1) + '%' : '—';
+  const totalSk = d.skills.reduce((a, x) => a + x.dmg, 0) || 1;
+  return `<tr class="dps-detail"><td colspan="${ncol}"><div class="dpsbox">
+    <div class="dps-kpis">
+      <div><span>最近 5 分鐘</span><b>${fmt(w5.dps)}</b></div>
+      <div><span>最近 1 小時（已統計 ${mins}）</span><b>${fmt(w.dps)}</b></div>
+      <div title="扣掉打超過怪物剩餘血量的部分（溢傷）"><span>有效 DPS</span><b>${fmt(w.effDps)}</b><i>效率 ${pct(w.eff, w.dmg)}</i></div>
+      <div><span>爆擊率</span><b>${pct(w.crits, w.lines)}</b><i>${fmt(w.lines)} 段</i></div>
+      <div><span>平均每次出手</span><b>${w.attacks ? fmt(Math.round((w.dmg - w.dot) / w.attacks)) : '—'}</b><i>單段最高 ${fmt(w.maxLine)}</i></div>
+      <div><span>每小時擊殺</span><b>${fmt(Math.round(w.kills / (w.span / 3600000)))}</b></div>
+    </div>
+    <div class="dps-cols">
+      <div><div class="dim sm">各技能傷害（1 小時）</div>${d.skills.map(x => `<div class="skrow"><span>${esc(x.name)}</span><span class="skbar"><i style="width:${(x.dmg / totalSk * 100).toFixed(1)}%"></i></span><span class="dim">${pct(x.dmg, totalSk)}</span></div>`).join('')}</div>
+      <div><div class="dim sm">每分鐘 DPS（最近 1 小時）</div>${sparkSeries(d.series)}<div class="dim sm" style="margin-top:6px">打的怪：${d.mobs.map(m => `${esc(m.name)} ×${fmt(m.n)}`).join('、') || '—'}</div>
+        <div class="dim sm">${dpsStale(d) ? '⚠ ' + ago(Date.now() - d.receivedAt) + '的資料（遊戲分頁可能沒開）' : '每 30 秒更新'}・實際在這張圖的輸出，會受怪物數量、走位空檔影響</div></div>
+    </div></div></td></tr>`;
+}
 function ovRows() {
   const now = Date.now();
   const rows = snaps().map(s => {
@@ -611,13 +654,13 @@ function renderOverview() {
   const q = ui.ovQ.trim();
   let list = rows.filter(r => (!ui.ovOnlyActive || r.active) && (!q || [r.c.name, r.account, r.c.mapName, r.c.jobName].some(x => String(x || '').includes(q))));
   const k = ui.ovSort.key, d = ui.ovSort.dir;
-  const val = r => ({ account: r.account, name: r.c.name, lv: (r.c.lv || 0) * 1000 + (r.c.expPct || 0), hourly: r.c.hourlyExp, map: r.c.mapName, idle: r.missing ? null : (r.c.auto ? r.remain : -1), money: r.c.money, points: r.s && r.s.points, pot: r.missing ? null : Math.min(r.c.hpQty ?? 1e9, (r.c.mpQty ?? 1e9) * 2.5), upd: r.s ? -r.s.receivedAt : null }[k]);
+  const val = r => ({ account: r.account, name: r.c.name, lv: (r.c.lv || 0) * 1000 + (r.c.expPct || 0), hourly: r.c.hourlyExp, dps: (dpsOf(r.c.id) || {}).w5 ? dpsOf(r.c.id).w5.dps || dpsOf(r.c.id).w60.dps : null, map: r.c.mapName, idle: r.missing ? null : (r.c.auto ? r.remain : -1), money: r.c.money, points: r.s && r.s.points, pot: r.missing ? null : Math.min(r.c.hpQty ?? 1e9, (r.c.mpQty ?? 1e9) * 2.5), upd: r.s ? -r.s.receivedAt : null }[k]);
   // 依帳號排序時，目前角色排前面
   list.sort((a, b) => cmp(val(a), val(b)) * d || cmp(a.account, b.account) || (b.active - a.active) || cmp(a.c.name, b.c.name));
   const more = ui.ovMore;
   const th = (key, label, cls = '') => `<th data-ovsort="${key}" class="${cls}">${label}${ui.ovSort.key === key ? (ui.ovSort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
-  const ncol = more ? 15 : 11;
-  let h = `<table class="sticky ov"><thead><tr><th class="nosort"><input type="checkbox" id="ovAll" title="全選"></th><th class="nosort"></th>${th('account', '帳號')}${th('name', '角色')}${th('lv', '等級')}${th('hourly', '每小時經驗', 'num')}${th('map', '地圖')}${th('idle', '掛機')}${th('money', '楓幣', 'num')}${th('points', '點數', 'num')}${more ? `${th('pot', '藥水 HP／MP', 'num')}<th class="nosort num">裝備欄</th>` + '<th class="nosort num">道具</th><th class="nosort">交易ID</th>' : ''}${th('upd', '更新')}</tr></thead><tbody>`;
+  const ncol = more ? 16 : 12;
+  let h = `<table class="sticky ov"><thead><tr><th class="nosort"><input type="checkbox" id="ovAll" title="全選"></th><th class="nosort"></th>${th('account', '帳號')}${th('name', '角色')}${th('lv', '等級')}${th('hourly', '每小時經驗', 'num')}${th('dps', '實戰 DPS', 'num')}${th('map', '地圖')}${th('idle', '掛機')}${th('money', '楓幣', 'num')}${th('points', '點數', 'num')}${more ? `${th('pot', '藥水 HP／MP', 'num')}<th class="nosort num">裝備欄</th>` + '<th class="nosort num">道具</th><th class="nosort">交易ID</th>' : ''}${th('upd', '更新')}</tr></thead><tbody>`;
   if (!rows.length) h += `<tr><td colspan="${ncol}" class="empty">還沒有資料。打開任一個設定檔的遊戲分頁，右下角出現「中控：已連線」就代表在回報了。</td></tr>`;
   else if (!list.length) h += `<tr><td colspan="${ncol}" class="empty">沒有符合的角色</td></tr>`;
   let lastAcc = null;
@@ -628,7 +671,7 @@ function renderOverview() {
     const accCell = k !== 'account' || newAcc ? `<input class="label-edit" data-acc="${esc(r.missing ? c.accountId : r.s.accountId)}" value="${esc(r.account)}">` : '';
     if (r.missing) {
       h += `<tr class="${cls}"><td><input type="checkbox" data-isel="${c.id}" ${sel ? 'checked' : ''}></td><td></td><td>${accCell}</td><td><div>${esc(c.name)}${switchBtn(c.id, c.accountId)}</div><div class="dim sm">${esc(c.job || '')}</div></td><td>Lv${c.lv}</td>
-        <td colspan="2" class="dim">尚未同步（按「⇄ 切換」一次就會出現）</td><td>${c.auto ? '<span class="good">● 掛機中</span>' : '<span class="bad">● 未掛機</span>'} ${autoToggle(c.id)}</td><td colspan="${ncol - 8}"></td></tr>`;
+        <td colspan="3" class="dim">尚未同步（按「⇄ 切換」一次就會出現）</td><td>${c.auto ? '<span class="good">● 掛機中</span>' : '<span class="bad">● 未掛機</span>'} ${autoToggle(c.id)}</td><td colspan="${ncol - 9}"></td></tr>`;
       continue;
     }
     const isMain = S.mainCharId === c.id, st = idleState(r);
@@ -643,12 +686,14 @@ function renderOverview() {
       <td><div><b class="cn">${esc(c.name)}</b>${isMain ? ' <span class="tag main">本尊</span>' : ''}${switchBtn(c.id, r.s.accountId)}</div><div class="dim sm">${esc(c.jobName || '')}</div></td>
       <td><span class="lvl">Lv <b>${c.lv}</b></span>${exp == null ? '' : `<span class="expbar" title="經驗 ${exp.toFixed(2)}%"><i style="width:${exp}%"></i></span><span class="dim sm">${exp.toFixed(1)}%</span>`}</td>
       <td class="num">${c.hourlyExp ? short(c.hourlyExp) : '<span class="dim">—</span>'}</td>
+      <td class="num">${dpsCell(c.id)}</td>
       <td>${esc(c.mapName)}</td>
       <td>${idle} <span class="sm">${autoToggle(c.id)}</span></td>
       <td class="num">${short(c.money)}</td>
       <td class="num" title="點數是整個帳號共用">${typeof r.s.points === 'number' ? (r.active ? fmt(r.s.points) : `<span class="dim">${fmt(r.s.points)}</span>`) : '<span class="dim">—</span>'}</td>
       ${more ? `<td class="num" title="${esc((c.hpItem || '') + ' / ' + (c.mpItem || ''))}">${pot(c.hpQty)} <span class="dim">/</span> ${pot(c.mpQty)}</td><td class="num">${c.gearBagCount ?? '—'}</td><td class="num">${c.itemStackCount ?? '—'}</td><td class="dim">${esc(c.tradeId || '—')}</td>` : ''}
       <td class="dim">${r.s.idleOffline ? `<span class="warn" title="遊戲已進入離線掛機，畫面暫停更新">離線掛機中</span><div class="sm">資料停在 ${clock(r.s.idleOffline.since)}</div><button class="btn" data-wake="${c.id}" style="padding:1px 6px">⏏ 領取</button>` : ago(Date.now() - (r.s.receivedAt || r.s.at))}</td></tr>`;
+    if (ui.ovOpen.has(c.id)) h += dpsDetail(c.id, ncol);
   }
   h += '</tbody></table>';
   $('#ovTable').innerHTML = h;
@@ -664,9 +709,10 @@ function renderOvBar() {
     : `<span class="dim">勾選角色可以批次操作，或</span><button class="btn" id="idleSelStopped">選未掛機的</button><button class="btn" id="idleSelAll">全選</button><span class="dim" id="idleMsg"></span>`;
 }
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-attn],[data-openjobs],[data-goto],[data-ovmode]');
+  const t = e.target.closest('[data-attn],[data-openjobs],[data-goto],[data-ovmode],[data-dpsopen]');
   if (!t) return;
   try {
+    if (t.dataset.dpsopen) { const id = t.dataset.dpsopen; if (ui.ovOpen.has(id)) ui.ovOpen.delete(id); else ui.ovOpen.add(id); renderOverview(); return; }
     if (t.dataset.ovmode) { ui.ovOnlyActive = t.dataset.ovmode === 'active'; try { localStorage.setItem('ovOnlyActive', ui.ovOnlyActive ? '1' : '0'); } catch (_) {} renderOverview(); return; }
     if (t.hasAttribute('data-openjobs')) { openJobs(); return; }
     if (t.dataset.goto) { document.querySelector(`nav button[data-tab="${t.dataset.goto}"]`).click(); return; }

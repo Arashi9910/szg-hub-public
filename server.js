@@ -310,8 +310,15 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, fs.readFileSync(DASHBOARD, 'utf8'), 'text/html; charset=utf-8');
     }
 
+    if (req.method === 'POST' && url.pathname === '/api/dps') {
+      const e = JSON.parse(await readBody(req));
+      if (!e || !e.charId) return send(res, 400, { error: 'bad dps' });
+      db.dps = db.dps || {};
+      db.dps[e.charId] = { ...e, receivedAt: Date.now() };
+      return send(res, 200, { ok: true }); // 不特別存檔：下次其他資料存檔時一起寫入
+    }
     if (req.method === 'GET' && url.pathname === '/api/data') {
-      return send(res, 200, { now: Date.now(), chars: db.chars, settings: db.settings, jobs: db.jobs.slice(-100), idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo });
+      return send(res, 200, { now: Date.now(), chars: db.chars, dps: db.dps || {}, settings: db.settings, jobs: db.jobs.slice(-100), idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo });
     }
 
     if (req.method === 'POST' && url.pathname === '/api/push') {
