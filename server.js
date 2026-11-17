@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const updater = require('./update');
+const makeMarket = require('./market');
 
 const PORT = Number(process.env.PORT) || 8787;
 // 只接受本機連線
@@ -80,6 +81,7 @@ function quizBank() {
 function quizLog(msg) { const q = quizStore(); q.log.push({ at: Date.now(), msg: String(msg).slice(0, 200) }); if (q.log.length > 200) q.log.splice(0, q.log.length - 200); }
 
 let saveTimer = null;
+let market = null; // 自由市場模組（db 載入後建立）
 let saveFailed = false;
 function save() {
   clearTimeout(saveTimer);
@@ -96,6 +98,7 @@ function save() {
     }
   }, 1000);
 }
+market = makeMarket(() => db, save, id => charName(id));
 
 
 // ================= 交易工作 =================
@@ -353,6 +356,34 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/jobs/approve-all') {
       for (const j of db.jobs) if (j.status === 'pending') { j.status = 'approved'; j.approvedAt = Date.now(); jobLog(j, '已確認，排隊等待執行'); }
       save();
+      return send(res, 200, { ok: true });
+    }
+
+    // ---- 自由市場 ----
+    if (req.method === 'GET' && url.pathname === '/api/market') return send(res, 200, market.summary());
+    if (req.method === 'POST' && url.pathname === '/api/market/claim') {
+      const { charId } = JSON.parse(await readBody(req));
+      return send(res, 200, market.claim(charId));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/market/report') {
+      const { charId, results } = JSON.parse(await readBody(req));
+      market.report(charId, results);
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/market/stall') {
+      const { charId, stall } = JSON.parse(await readBody(req));
+      if (charId && stall) market.reportStall(charId, stall);
+      return send(res, 200, { ok: true, autoClaim: market.cfg().autoClaim });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/market/scan-now') return send(res, 200, { ok: true, added: market.enqueueAll(true) });
+    if (req.method === 'GET' && url.pathname === '/api/market/plan') {
+      const charId = url.searchParams.get('charId');
+      if (charId) return send(res, 200, market.plan(charId));
+      return send(res, 200, { plans: Object.keys(db.chars).map(id => ({ charId: id, name: charName(id), ...market.plan(id) })) });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/market/log') {
+      const e = JSON.parse(await readBody(req));
+      if (e && e.msg) market.log({ charId: e.charId, msg: String(e.msg).slice(0, 600) });
       return send(res, 200, { ok: true });
     }
 

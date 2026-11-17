@@ -563,6 +563,131 @@ function agentMain(ctx) {
       } finally { asRunning = false; setTimeout(() => setBadge('ok'), 3000); }
     }
 
+    // ---------- 自由市場 ----------
+    //  - 掃描：中控排好要查的道具，一次只交給一個頁面；用市場搜尋（依單價由低到高）抓前幾頁
+    //  - 攤位：定時回報自己攤位的商品、待領收益、成交紀錄；可自動領收益
+    //  - 自動上架：照中控算好的計畫上架（試跑模式只記錄）
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    function mktCat(key) {
+      const it = (catalog && catalog.items[key]) || {};
+      const prefix = Math.floor((it.id || 0) / 1000000);
+      if (it.type === '消耗' || it.type === '卷軸' || it.use || prefix === 2) return 'consume';
+      if (prefix === 3) return 'setup';
+      if (prefix === 5) return 'cash';
+      return 'etc';
+    }
+    async function marketSync(extra) {
+      const j = await game({ type: 'sync', marketOnly: true, includeMarket: true, tradeOnly: false, marketQuery: '', marketPage: 0, marketStall: null, marketCategory: 'all', marketMode: 'browse', ...extra });
+      return j && j.market;
+    }
+    let mktBusy = false;
+    async function marketScanTick() {
+      if (mktBusy || agentBusy) return;
+      const state = readState(); if (!state || !state.character || !account) return;
+      mktBusy = true;
+      try {
+        const charId = state.character.id;
+        const { items } = await hub('POST', '/api/market/claim', { charId });
+        if (!items || !items.length) return; // finally 會放開 mktBusy
+        const results = [];
+        for (const it of items) {
+          if (agentBusy) break;
+          const products = []; let more = false;
+          for (let page = 0; page < 3; page++) {
+            const m = await marketSync({ marketMode: 'search', marketQuery: it.q, marketPage: page });
+            const ps = (m && m.products) || [];
+            products.push(...ps);
+            more = !!(m && m.productsHasMore);
+            const hits = products.filter(p => it.key ? p.key === it.key : p.name === it.gear).length;
+            // 找到 10 筆以上同物品、或沒有下一頁就停；搜尋結果依單價排序，前面幾頁就是最便宜的
+            if (!more || hits >= 10) break;
+            await sleep(1200);
+          }
+          results.push({ ...it, products, more });
+          await sleep(1500);
+        }
+        if (results.length) await hub('POST', '/api/market/report', { charId, results });
+      } catch (e) { console.warn('[szg-hub market scan]', e); }
+      finally { mktBusy = false; }
+    }
+
+    let lastStallAt = 0;
+    async function stallTick(force) {
+      if (agentBusy || (!force && Date.now() - lastStallAt < 5 * 60 * 1000)) return null;
+      const state = readState(); if (!state || !state.character || !account) return null;
+      lastStallAt = Date.now();
+      const charId = state.character.id;
+      const m = await marketSync({});
+      if (!m) return null;
+      const mine = m.mine;
+      const stall = mine ? { exists: true, open: !!mine.open, title: mine.title, count: mine.count || (mine.listings || []).length, proceeds: mine.proceeds || 0,
+        listings: (mine.listings || []).map(l => ({ id: l.id, kind: l.kind, key: l.key, name: l.name, qty: l.qty, price: l.price })), history: mine.history || [] } : { exists: false };
+      const r = await hub('POST', '/api/market/stall', { charId, stall });
+      if (mine && mine.proceeds > 0 && r && r.autoClaim) {
+        try { await game({ type: 'marketClaim', characterId: charId }); await hub('POST', '/api/market/log', { charId, msg: `已領取攤位收益 ${Number(mine.proceeds).toLocaleString()} 楓幣` }); }
+        catch (e) { await hub('POST', '/api/market/log', { charId, msg: '領取收益失敗：' + e.message }).catch(() => {}); }
+      }
+      return m;
+    }
+
+    let lastPlanHash = '';
+    async function autoListTick() {
+      for (let i = 0; i < 20 && mktBusy; i++) await sleep(3000); // 掃描中就等它做完，不要整輪跳過
+      if (mktBusy || agentBusy) return;
+      const state = readState(); if (!state || !state.character || !account || !catalog) return;
+      mktBusy = true;
+      const charId = state.character.id;
+      const log = msg => hub('POST', '/api/market/log', { charId, msg }).catch(() => {});
+      try {
+        const p = await hub('GET', '/api/market/plan?charId=' + encodeURIComponent(charId));
+        if (!p || p.mode === 'off' || !p.enabled) return;
+        if (!p.entries.length) { lastPlanHash = ''; return; }
+        const hash = JSON.stringify(p.entries.map(e => [e.key || e.uid, e.qty, e.price]));
+        if (p.mode === 'preview') {
+          if (hash !== lastPlanHash) await log('試跑：會上架 ' + p.entries.map(e => `${e.name}×${e.qty} @${e.price.toLocaleString()}（${e.why}）`).join('、'));
+          lastPlanHash = hash; return;
+        }
+        // 自動上架：先拿最新的攤位與可上架清單
+        let m = await stallTick(true);
+        if (!m) return;
+        if (!m.mine) {
+          const title = (state.character.name + '的小攤').slice(0, 24);
+          await game({ type: 'marketConfig', title, open: true, characterId: charId });
+          await log(`還沒有攤位，已自動開設「${title}」`);
+          await sleep(1000);
+          m = await marketSync({});
+          if (!m || !m.mine) { await log('開設攤位失敗，先停止上架'); return; }
+        }
+        let room = 50 - ((m.mine.listings || []).length);
+        const inv = (m.sellInventory && m.sellInventory.inventory) || {};
+        const eItems = new Set(m.eligibleItems || []), eGear = new Set(m.eligibleGear || []);
+        const done = [], skipped = [];
+        for (const e of p.entries) {
+          if (room <= 0) { skipped.push(e.name + '（攤位已滿 50 件）'); continue; }
+          if (agentBusy) break;
+          try {
+            if (e.kind === 'item') {
+              const have = Math.min(Number(inv[e.key]) || 0, (state.character.inventory || {})[e.key] || 0);
+              const qty = Math.min(e.qty, have, 9999);
+              if (!eItems.has(e.key) || qty <= 0) { skipped.push(e.name + '（遊戲判定不可上架）'); continue; }
+              await game({ type: 'marketList', kind: 'item', category: mktCat(e.key), item: e.key, qty, price: e.price, characterId: charId });
+              done.push(`${e.name}×${qty} @${e.price.toLocaleString()}`);
+            } else {
+              if (!eGear.has(e.uid)) { skipped.push(e.name + '（遊戲判定不可上架）'); continue; }
+              await game({ type: 'marketList', kind: 'gear', category: 'equip', uid: e.uid, qty: 1, price: e.price, characterId: charId });
+              done.push(`${e.name} @${e.price.toLocaleString()}`);
+            }
+            room--;
+            await sleep(1200);
+          } catch (err) { skipped.push(`${e.name}（${err.message}）`); }
+        }
+        if (done.length) await log('已上架：' + done.join('、'));
+        if (skipped.length) await log('略過：' + skipped.join('、'));
+        if (done.length) { lastStallAt = 0; await stallTick(true).catch(() => {}); } // 回報最新攤位
+      } catch (e) { console.warn('[szg-hub autolist]', e); log('自動上架出錯：' + e.message); }
+      finally { mktBusy = false; }
+    }
+
     // ---------- 知識王 ----------
     //  - 不管是你手動作答還是自動作答，答完都會看到正確答案（綠框），一律回報到中控題庫
     //  - 面板開啟「自動作答」時：題庫有答案就直接答；遇到題庫沒有的題目就停下來（作答不限時），
@@ -871,6 +996,11 @@ function agentMain(ctx) {
       setInterval(agentTick, AGENT_MS);
       setTimeout(idleTick, 15000);
       setInterval(idleTick, 30000);
+      setTimeout(() => stallTick().catch(() => {}), 40000);
+      setInterval(() => { if (!mktBusy) stallTick().catch(() => {}); }, 60000);
+      setInterval(marketScanTick, 31000);
+      setTimeout(autoListTick, 70000);
+      setInterval(autoListTick, 3 * 60 * 1000);
       setTimeout(autoSellTick, 20000);
       setInterval(autoSellTick, 20000);
       setTimeout(quizTick, 25000);

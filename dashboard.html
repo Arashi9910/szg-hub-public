@@ -77,6 +77,7 @@
     <button data-tab="res">資源</button>
     <button data-tab="trade">交易</button>
     <button data-tab="bag">背包</button>
+    <button data-tab="market">市場</button>
     <button data-tab="quiz">知識王</button>
   </nav>
   <div id="updBox"></div>
@@ -245,6 +246,41 @@
       <div id="bagOut" style="max-height:620px;overflow:auto"></div>
     </div>
   </section>
+  <!-- 自由市場 -->
+  <section id="market">
+    <div class="card">
+      <h3>市場行情</h3>
+      <div class="bar">
+        <span>每</span><input type="number" id="mkScanH" min="1" max="24" style="width:56px"><span>小時自動掃描一次</span>
+        <button class="btn" id="mkScanNow">立即掃描</button>
+        <label><input type="checkbox" id="mkAutoClaim"> 自動領取攤位收益</label>
+        <span class="dim" id="mkScanInfo"></span>
+      </div>
+      <div class="dim">掃描範圍：所有帳號背包裡有的道具，加上符合「自動上架」裝備規則的裝備。價格都是<b>單件價</b>，而且<b>排除你自己帳號的掛單</b>。遊戲沒有全服成交紀錄，漲跌與 7 日數據是中控自己定時記錄的，從開始使用那天起累積。需要至少一個遊戲分頁開著才會掃描。</div>
+      <div class="bar" style="margin-top:8px">
+        <input id="mkSearch" placeholder="搜尋名稱" style="width:160px">
+        <label><input type="checkbox" id="mkOnlyPriced" checked> 只看有行情的</label>
+        <label><input type="checkbox" id="mkShowGear"> 含裝備</label>
+      </div>
+      <div id="mkTable"></div>
+    </div>
+    <div class="card"><h3>我的攤位</h3><div id="mkStalls"></div>
+      <details><summary class="dim">最近成交（所有帳號）</summary><div id="mkSales"></div></details></div>
+    <div class="card" id="mkAuto">
+      <h3>自動上架</h3>
+      <div class="bar">
+        <span>模式</span><select id="mkMode"><option value="off">關閉</option><option value="preview">試跑（只記錄會怎麼上架）</option><option value="auto">自動上架</option></select>
+        <span style="margin-left:12px">套用的角色</span><div class="chips" id="mkChars"></div>
+      </div>
+      <div class="dim">每 3 分鐘檢查一次：符合規則的背包物品，依規則定價後上架到那隻角色的攤位（沒有攤位會自動開一個，每攤最多 50 件）。
+        <b>每條規則都要設底價</b>，定價低於底價就用底價；不高於商店收購價、或行情超過 12 小時沒更新的不會上架。上架後商品在攤位裡，可以在遊戲裡下架取回。</div>
+      <div id="mkRules"></div>
+      <div class="bar"><button class="btn" id="mkAddItem">＋ 道具規則</button><button class="btn" id="mkAddGear">＋ 裝備規則</button><span class="dim" id="mkMsg"></span></div>
+      <details><summary>預覽：現在會上架哪些</summary><div id="mkPlan"></div></details>
+      <details><summary>上架紀錄</summary><div id="mkLog"></div></details>
+    </div>
+  </section>
+
   <!-- 知識王 -->
   <section id="quiz">
     <div class="card">
@@ -758,6 +794,7 @@ function pickerList(id, which) {
   return list.map(i => `<label><input type="checkbox" data-pkitem="${id}|${which}|${esc(i.key)}" ${keys.has(i.key) ? 'checked' : ''}>${esc(i.name)}<span class="q">${esc(i.kind)} · 共 ${fmt(i.total)}（${i.holders} 隻）</span></label>`).join('');
 }
 function rerenderFF(id) {
+  if (id.startsWith('mr')) { saveMk({ rules: readMkRules() }); renderMkAuto(true); return; }
   const box = { collect: '#ffCollect', give: '#ffGive', bag: '#ffBag' }[id];
   if (box) $(box).innerHTML = ffHTML(id, ui.ff[id], id === 'bag');
   if (id === 'collect') renderTrade();
@@ -1105,6 +1142,7 @@ document.addEventListener('change', e => {
   }
   if (t.dataset && t.dataset.ff) {
     readFF(t.dataset.ff);
+    if (t.dataset.ff.startsWith('mr')) { saveMkRules(false); return; }
     if (t.dataset.ff === 'collect') renderTrade();
     if (t.dataset.ff === 'give') renderGivePick();
     if (t.dataset.ff === 'bag') renderBagList();
@@ -1297,6 +1335,177 @@ document.addEventListener('change', async e => {
   if (t.closest('#asRules')) { await saveAS({ rules: readRules() }); $('#asMsg').textContent = '規則已儲存'; if (t.classList.contains('r-all')) renderAS(true); else renderASPreview(); }
 });
 
+
+// ================= 自由市場 =================
+let MK = null;
+ui.mkOpen = new Set();
+ui.mkSort = { key: 'value', dir: -1 };
+async function loadMarket() { try { MK = await (await fetch('/api/market')).json(); } catch (_) {} }
+const mkCfg = () => ({ scanHours: 3, autoClaim: true, mode: 'off', chars: {}, rules: [], ...(S.market || {}) });
+function saveMk(patch) { return saveSettings({ market: { ...mkCfg(), ...patch } }); }
+const pct = v => v == null ? '—' : `<span class="${v > 0 ? 'bad' : v < 0 ? 'good' : 'dim'}">${v > 0 ? '▲' : v < 0 ? '▼' : ''}${(Math.abs(v) * 100).toFixed(1)}%</span>`;
+function spark(daily) {
+  if (!daily || daily.length < 2) return '<span class="dim">—</span>';
+  const vs = daily.map(d => d.v), lo = Math.min(...vs), hi = Math.max(...vs), w = 80, h = 20;
+  const pts = vs.map((v, i) => `${(i / (vs.length - 1) * w).toFixed(1)},${(hi === lo ? h / 2 : h - (v - lo) / (hi - lo) * h).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${h + 2}" style="vertical-align:middle" title="${esc(daily.map(d => d.d.slice(5) + ' ' + fmt(d.v)).join('\n'))}"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>`;
+}
+function ownedTotals() {
+  const m = {};
+  for (const s of snaps()) {
+    for (const i of s.items || []) if (i.loc === '背包') { const a = m[i.key] || (m[i.key] = { qty: 0, npc: i.sellPrice || 0, kind: i.kind }); a.qty += i.qty; }
+    for (const g of s.gear || []) if (g.loc === '背包') { const a = m['g:' + g.name] || (m['g:' + g.name] = { qty: 0, npc: 0, kind: '裝備' }); a.qty++; }
+  }
+  return m;
+}
+function renderMarket() {
+  if (!MK) { loadMarket().then(() => MK && renderMarket()); return; }
+  const c = mkCfg(), own = ownedTotals();
+  if (document.activeElement !== $('#mkScanH')) $('#mkScanH').value = c.scanHours;
+  $('#mkAutoClaim').checked = c.autoClaim !== false;
+  const sc = MK.scan || {};
+  $('#mkScanInfo').textContent = `${sc.lastFull ? '上次完整掃描 ' + clock(sc.lastFull) : '尚未掃描'}　待掃 ${sc.queue}${sc.lease ? `　${sc.lease.name} 掃描中（${sc.lease.n} 項）` : ''}`;
+  // 行情表
+  const q = $('#mkSearch').value.trim(), onlyPriced = $('#mkOnlyPriced').checked, withGear = $('#mkShowGear').checked;
+  let rows = (MK.rows || []).filter(r => (withGear || !r.gear) && (!q || r.name.includes(q)) && (!onlyPriced || r.min != null)).map(r => {
+    const o = own[r.id] || { qty: 0, npc: 0, kind: r.gear ? '裝備' : '' };
+    return { ...r, own: o.qty, npc: o.npc, kind: o.kind, value: r.min != null ? r.min * o.qty : 0 };
+  });
+  const k = ui.mkSort.key, d = ui.mkSort.dir;
+  rows.sort((a, b) => cmp(a[k], b[k]) * d || cmp(a.name, b.name));
+  const th = (key, label, cls = '') => `<th data-mksort="${key}" class="${cls}">${label}${k === key ? (d > 0 ? ' ▲' : ' ▼') : ''}</th>`;
+  let h = `<table class="sticky"><thead><tr>${th('name', '物品')}${th('kind', '類別')}${th('own', '持有', 'num')}${th('min', '市場最低', 'num')}${th('med', '中位數', 'num')}${th('n', '掛單', 'num')}${th('min7', '7日最低', 'num')}${th('avg7', '7日均', 'num')}${th('max7', '7日最高', 'num')}${th('change', '漲跌', 'num')}<th class="nosort">走勢</th>${th('npc', '商店價', 'num')}${th('value', '持有估值', 'num')}${th('at', '更新')}</tr></thead><tbody>`;
+  for (const r of rows.slice(0, 400)) {
+    const open = ui.mkOpen.has(r.id);
+    h += `<tr data-mkrow="${esc(r.id)}" style="cursor:pointer"><td>${open ? '▾' : '▸'} ${esc(r.name)}</td><td class="dim">${esc(r.kind)}</td><td class="num">${r.own ? fmt(r.own) : '<span class="dim">0</span>'}</td>
+      <td class="num">${r.min != null ? fmt(r.min) : '<span class="dim">無人賣</span>'}</td><td class="num">${fmt(r.med)}</td><td class="num">${r.n ? `${r.n}<span class="dim">／${short(r.q)}</span>` : '<span class="dim">0</span>'}</td>
+      <td class="num">${fmt(r.min7)}</td><td class="num">${fmt(r.avg7)}</td><td class="num">${fmt(r.max7)}</td><td class="num">${pct(r.change)}</td><td>${spark(r.daily)}</td>
+      <td class="num dim">${r.npc ? fmt(r.npc) : '—'}</td><td class="num">${r.value ? short(r.value) : '<span class="dim">—</span>'}</td><td class="dim">${r.at ? ago(Date.now() - r.at) : '未掃描'}</td></tr>`;
+    if (open) {
+      const lr = (r.latest && r.latest.rows) || [];
+      h += `<tr><td colspan="14" style="background:var(--panel2)">${lr.length ? lr.map(x => `<span class="tag" style="${x.mine ? 'opacity:.55' : ''}">${fmt(x.price)} × ${fmt(x.qty)}　${esc(x.seller)}${x.mine ? '（自己）' : ''}${x.stats ? '　' + esc(statLine(x.stats, STAT_ORDER)) + (x.plus ? ` +${x.plus}` : '') : ''}</span>`).join(' ') : '<span class="dim">上次掃描沒有掛單</span>'}
+        ${r.since ? `<div class="dim">紀錄從 ${clock(r.since)} 開始</div>` : ''}</td></tr>`;
+    }
+  }
+  if (!rows.length) h += `<tr><td colspan="14" class="empty">${(MK.rows || []).length ? '沒有符合的物品' : '還沒有資料：開著遊戲分頁，按「立即掃描」'}</td></tr>`;
+  $('#mkTable').innerHTML = h + '</tbody></table>' + (rows.length > 400 ? '<div class="dim">只顯示前 400 項，請用搜尋縮小範圍</div>' : '');
+  // 攤位
+  const st = (MK.stalls || []).slice().sort((a, b) => cmp(a.name, b.name));
+  $('#mkStalls').innerHTML = st.length ? `<table><thead><tr><th class="nosort">角色</th><th class="nosort">攤位</th><th class="nosort num">上架</th><th class="nosort num">待領收益</th><th class="nosort">商品</th><th class="nosort">更新</th></tr></thead><tbody>${st.map(x =>
+    `<tr><td>${esc(x.name)}</td><td>${x.exists ? `${esc(x.title)} ${x.open ? '<span class="good">營業中</span>' : '<span class="warn">暫停</span>'}` : '<span class="dim">沒有攤位</span>'}</td><td class="num">${x.exists ? `${x.count}/50` : '—'}</td><td class="num">${x.proceeds ? fmt(x.proceeds) : '<span class="dim">0</span>'}</td>
+     <td class="wrap dim" title="${esc((x.listings || []).map(l => `${l.name}×${l.qty} @${l.price}`).join('\n'))}">${esc((x.listings || []).slice(0, 4).map(l => `${l.name}×${l.qty} @${short(l.price)}`).join('、'))}${(x.listings || []).length > 4 ? ' …' : ''}</td><td class="dim">${ago(Date.now() - x.at)}</td></tr>`).join('')}</tbody></table>` : '<div class="dim">遊戲分頁開著約 1 分鐘後會回報。</div>';
+  const sales = (MK.sales || []).slice().sort((a, b) => b.time - a.time).slice(0, 60);
+  $('#mkSales').innerHTML = sales.length ? sales.map(x => `<div><span class="dim">${clock(x.time)}</span> ${esc(charNameOf(x.charId))} 賣出 ${esc(x.name)} × ${x.qty}，${fmt(x.total)}（稅後 ${fmt(x.net)}）　買家 ${esc(x.buyer)}</div>`).join('') : '<span class="dim">還沒有紀錄</span>';
+  renderMkAuto();
+}
+function charNameOf(id) { const s = DATA.chars[id]; if (s) return s.char.name; for (const x of snaps()) { const c = (x.accountChars || []).find(c => c.id === id); if (c) return c.name; } return id; }
+
+// ---- 自動上架規則 ----
+function mkRuleHTML(r, i) {
+  const p = r.price || {};
+  const id = 'mr' + i;
+  if (r.target !== 'gear') ui.ff[id] = ui.ff[id] || { kinds: [], incKeys: [], excKeys: [], gear: 'none', lock: 'all', ...(r.ff || {}) };
+  const gf = r.gearFilter || {};
+  const hasTarget = r.target === 'gear' ? ((gf.slots || []).length || gf.name || (gf.jobs || []).length || (gf.conds || []).some(c => c.val !== '')) : ((ui.ff[id].kinds || []).length || (ui.ff[id].incKeys || []).length);
+  const warn = [!hasTarget && '還沒指定對象（不會生效）', !(Number(p.floor) > 0) && '還沒設底價（不會生效）'].filter(Boolean);
+  const target = r.target === 'gear'
+    ? `<div class="bar"><span style="width:56px">部位</span><div class="chips">${SLOT_ORDER.map(sl => `<label><input type="checkbox" class="mg-slot" value="${sl}" ${(gf.slots || []).includes(sl) ? 'checked' : ''}>${slotLabel(sl)}</label>`).join('')}</div></div>
+       <div class="bar"><span style="width:56px">職業</span><div class="chips">${JOBS.map(([n, b]) => `<label><input type="checkbox" class="mg-job" value="${b}" ${(gf.jobs || []).includes(b) ? 'checked' : ''}>${n}</label>`).join('')}</div>
+         <span>名稱含</span><input class="mg-name" value="${esc(gf.name || '')}" style="width:110px"></div>
+       <div class="bar" style="align-items:flex-start"><span style="width:56px">素質條件</span><div><div class="mg-conds">${(gf.conds || []).map(condRow).join('')}</div><button class="btn" data-mkaddc="${i}">＋ 條件</button></div></div>`
+    : `${ffHTML(id, ui.ff[id], false).replace(/<div class="bar"><span style="width:70px">裝備<\/span>[\s\S]*$/, '')}
+       <div class="bar"><span>每隻角色保留</span><input type="number" class="mr-keep" min="0" value="${esc(r.keepQty ?? 0)}" style="width:80px"><span>個不賣，其餘上架；每筆最多</span><input type="number" class="mr-per" min="1" max="9999" value="${esc(r.perListing ?? 9999)}" style="width:80px"><span>個</span></div>`;
+  return `<div class="card mkrule" data-mi="${i}" data-target="${r.target === 'gear' ? 'gear' : 'item'}" style="margin:8px 0">
+    <div class="bar"><b>${r.target === 'gear' ? '裝備' : '道具'}規則</b><label><input type="checkbox" class="mr-on" ${r.on !== false ? 'checked' : ''}> 啟用</label>
+      <input class="mr-name" value="${esc(r.name || '')}" placeholder="規則名稱" style="width:140px"><button class="btn" data-mkdel="${i}">刪除</button>
+      ${warn.length ? `<span class="warn">${warn.join('、')}</span>` : ''}</div>
+    ${target}
+    <div class="bar"><span style="width:56px">定價</span>
+      <select class="mp-base">${[['min', '市場最低價'], ['median', '市場中位數'], ['avg7', '7 日平均最低價'], ['fixed', '固定價格']].map(([v, n]) => `<option value="${v}" ${(p.base || 'min') === v ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      <span class="mp-adj" ${p.base === 'fixed' ? 'style="display:none"' : ''}>再調整 <input type="number" class="mp-pct" value="${esc(p.adjPct ?? -1)}" step="0.5" style="width:64px">% 、<input type="number" class="mp-abs" value="${esc(p.adjAbs ?? 0)}" style="width:90px"> 楓幣</span>
+      <span class="mp-fixwrap" ${p.base === 'fixed' ? '' : 'style="display:none"'}>每件 <input type="number" class="mp-fixed" value="${esc(p.fixed ?? '')}" style="width:110px"> 楓幣</span>
+      <span>底價（必填）</span><input type="number" class="mp-floor" value="${esc(p.floor ?? '')}" style="width:110px">
+      <span>查不到行情時</span><select class="mp-nodata"><option value="skip" ${p.noData !== 'floor' ? 'selected' : ''}>不上架</option><option value="floor" ${p.noData === 'floor' ? 'selected' : ''}>用底價上架</option></select>
+    </div>
+    <div class="dim">例：市場最低價 1,000、調整 −1% → 定價 990；低於底價就用底價。價格都是每件單價。${r.target === 'gear' ? '裝備是用「同名裝備」的掛單比價，素質不同價格可能差很多，底價請設保守一點。' : ''}</div>
+  </div>`;
+}
+function readMkRules() {
+  return [...document.querySelectorAll('#mkRules .mkrule')].map(el => {
+    const i = el.dataset.mi, gear = el.dataset.target === 'gear';
+    const r = { on: el.querySelector('.mr-on').checked, name: el.querySelector('.mr-name').value.trim(), target: gear ? 'gear' : 'item',
+      price: { base: el.querySelector('.mp-base').value, adjPct: Number(el.querySelector('.mp-pct').value) || 0, adjAbs: Number(el.querySelector('.mp-abs').value) || 0,
+        fixed: Number(el.querySelector('.mp-fixed').value) || 0, floor: Number(el.querySelector('.mp-floor').value) || 0, noData: el.querySelector('.mp-nodata').value } };
+    if (gear) r.gearFilter = { slots: [...el.querySelectorAll('.mg-slot:checked')].map(x => x.value), jobs: [...el.querySelectorAll('.mg-job:checked')].map(x => Number(x.value)),
+      name: el.querySelector('.mg-name').value.trim(), conds: readConds(el.querySelector('.mg-conds')) };
+    else { const f = ui.ff['mr' + i] || {}; r.ff = { kinds: f.kinds || [], incKeys: f.incKeys || [], excKeys: f.excKeys || [] };
+      r.keepQty = Math.max(0, Number(el.querySelector('.mr-keep').value) || 0); r.perListing = Math.min(9999, Math.max(1, Number(el.querySelector('.mr-per').value) || 9999)); }
+    return r;
+  });
+}
+async function saveMkRules(rerender) { await saveMk({ rules: readMkRules() }); $('#mkMsg').textContent = '規則已儲存'; if (rerender) renderMkAuto(true); else renderMkPlan(); }
+let MKPLAN = null;
+async function renderMkPlan() {
+  try { MKPLAN = await (await fetch('/api/market/plan')).json(); } catch (_) { return; }
+  const plans = (MKPLAN.plans || []).filter(p => p.entries.length || p.skipped.length);
+  $('#mkPlan').innerHTML = plans.length ? plans.map(p => `<div style="margin:6px 0"><b>${esc(p.name)}</b> ${p.enabled ? '' : '<span class="dim">（沒勾選這隻角色，不會執行）</span>'}${p.overflow ? `<span class="warn">　攤位空間不足，還有 ${p.overflow} 項放不下</span>` : ''}
+      ${p.entries.map(e => `<div>　上架 ${esc(e.name)} × ${fmt(e.qty)}　每件 <b>${fmt(e.price)}</b>　<span class="dim">${esc(e.why)}${e.ref ? `，目前最低 ${fmt(e.ref)}` : ''}｜${esc(e.rule || '')}</span></div>`).join('')}
+      ${p.skipped.length ? `<div class="dim">　不上架：${p.skipped.map(x => `${esc(x.name)}（${esc(x.why)}）`).join('、')}</div>` : ''}</div>`).join('') : '<div class="dim">目前沒有符合規則的物品。</div>';
+}
+function renderMkAuto(force) {
+  const c = mkCfg(), box = $('#mkAuto');
+  const logs = (MK && MK.log || []).slice().reverse().slice(0, 60);
+  $('#mkLog').innerHTML = logs.length ? logs.map(l => `<div><span class="dim">${clock(l.at)}</span> ${esc(l.name)}：${esc(l.msg)}</div>`).join('') : '<span class="dim">還沒有紀錄</span>';
+  if (!force && (box.contains(document.activeElement) && document.activeElement.tagName !== 'BUTTON' || (ui.pickOpen || '').startsWith('mr'))) return;
+  $('#mkMode').value = c.mode;
+  $('#mkChars').innerHTML = snaps().slice().sort((a, b) => cmp(a.char.name, b.char.name)).map(s => `<label><input type="checkbox" class="mk-char" value="${s.char.id}" ${c.chars[s.char.id] ? 'checked' : ''}>${esc(s.char.name)}</label>`).join('')
+    + '<button class="btn" id="mkCharAll">全選</button><button class="btn" id="mkCharNone">清除</button>';
+  $('#mkRules').innerHTML = c.rules.length ? c.rules.map(mkRuleHTML).join('') : '<div class="dim" style="margin:8px 0">還沒有規則。</div>';
+  if ($('#mkPlan').closest('details').open) renderMkPlan();
+}
+document.addEventListener('click', async e => {
+  const t = e.target;
+  if (t.dataset && t.dataset.mksort) { const k = t.dataset.mksort; ui.mkSort = { key: k, dir: ui.mkSort.key === k ? -ui.mkSort.dir : (k === 'name' || k === 'kind' ? 1 : -1) }; renderMarket(); return; }
+  const row = t.closest && t.closest('[data-mkrow]');
+  if (row) { const id = row.dataset.mkrow; if (ui.mkOpen.has(id)) ui.mkOpen.delete(id); else ui.mkOpen.add(id); renderMarket(); return; }
+  if (t.id === 'mkScanNow') { const r = await api('/api/market/scan-now'); $('#mkScanInfo').textContent = `已排入 ${r.added} 項，開著的遊戲分頁會陸續掃描…`; await loadMarket(); return; }
+  if (!t.closest || !t.closest('#mkAuto')) return;
+  const c = mkCfg();
+  if (t.id === 'mkAddItem' || t.id === 'mkAddGear') {
+    const rules = [...readMkRules(), t.id === 'mkAddGear'
+      ? { on: true, name: '裝備規則 ' + (c.rules.length + 1), target: 'gear', gearFilter: { slots: [], jobs: [], name: '', conds: [] }, price: { base: 'min', adjPct: -1, adjAbs: 0, floor: '', noData: 'skip' } }
+      : { on: true, name: '道具規則 ' + (c.rules.length + 1), target: 'item', ff: { kinds: [], incKeys: [], excKeys: [] }, keepQty: 0, perListing: 9999, price: { base: 'min', adjPct: -1, adjAbs: 0, floor: '', noData: 'skip' } }];
+    for (const k of Object.keys(ui.ff)) if (k.startsWith('mr')) delete ui.ff[k];
+    await saveMk({ rules }); renderMkAuto(true);
+  }
+  if (t.dataset.mkdel !== undefined) {
+    if (!confirm('刪除這條規則？')) return;
+    const rules = readMkRules(); rules.splice(Number(t.dataset.mkdel), 1);
+    for (const k of Object.keys(ui.ff)) if (k.startsWith('mr')) delete ui.ff[k];
+    await saveMk({ rules }); renderMkAuto(true);
+  }
+  if (t.dataset.mkaddc !== undefined) { const rules = readMkRules(); rules[Number(t.dataset.mkaddc)].gearFilter.conds.push({ join: 'and', stat: 'incSTR', op: '>=', val: '' }); await saveMk({ rules }); renderMkAuto(true); }
+  if (t.hasAttribute('data-delcond') && t.closest('#mkRules')) { e.stopImmediatePropagation(); t.closest('.cond').remove(); await saveMkRules(true); }
+  if (t.id === 'mkCharAll' || t.id === 'mkCharNone') { const chars = {}; if (t.id === 'mkCharAll') snaps().forEach(s => chars[s.char.id] = true); await saveMk({ chars }); renderMkAuto(true); }
+}, true);
+document.addEventListener('change', async e => {
+  const t = e.target;
+  if (['mkSearch', 'mkOnlyPriced', 'mkShowGear'].includes(t.id)) { renderMarket(); return; }
+  if (t.id === 'mkScanH') { await saveMk({ scanHours: Math.min(24, Math.max(1, Number(t.value) || 3)) }); return; }
+  if (t.id === 'mkAutoClaim') { await saveMk({ autoClaim: t.checked }); return; }
+  if (!t.closest || !t.closest('#mkAuto')) return;
+  if (t.id === 'mkMode') {
+    if (t.value === 'auto' && !confirm('開啟自動上架後，符合規則的物品會依定價直接上架到攤位（可以在遊戲裡下架取回）。建議先用「試跑」確認價格。確定開啟？')) { t.value = mkCfg().mode; return; }
+    await saveMk({ mode: t.value }); $('#mkMsg').textContent = '已儲存'; return;
+  }
+  if (t.classList.contains('mk-char')) { const chars = { ...mkCfg().chars }; if (t.checked) chars[t.value] = true; else delete chars[t.value]; await saveMk({ chars }); return; }
+  if (t.closest('#mkRules') && !t.dataset.ff && !t.dataset.pkitem) {
+    if (t.classList.contains('mp-base')) { const card = t.closest('.mkrule'); card.querySelector('.mp-adj').style.display = t.value === 'fixed' ? 'none' : ''; card.querySelector('.mp-fixwrap').style.display = t.value === 'fixed' ? '' : 'none'; }
+    await saveMkRules(false);
+  }
+});
+document.addEventListener('input', e => { if (e.target.id === 'mkSearch') renderMarket(); });
+
 // ================= 主流程 =================
 function renderAll() {
   const active = document.querySelector('nav button.on').dataset.tab;
@@ -1306,6 +1515,7 @@ function renderAll() {
   if (active === 'trade') renderTrade();
   if (active === 'bag') renderBag();
   if (active === 'quiz') loadQuiz().then(renderQuiz);
+  if (active === 'market') loadMarket().then(renderMarket);
 }
 
 async function poll(force) {
