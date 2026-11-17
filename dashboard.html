@@ -305,7 +305,7 @@
         <span title="很多人把消耗品、雜物掛天價（例如紅藥水一個 100 萬），這種價格沒有參考價值">掛價超過商店收購價</span><input type="number" id="mkSanity" min="10" max="1000000" style="width:80px"><span>倍視為異常</span>
         <span class="dim" id="mkScanInfo"></span>
       </div>
-      <div class="dim">掃描範圍：所有帳號背包裡有的道具，加上符合「自動上架」裝備規則的裝備。價格都是<b>單件價</b>，而且<b>排除你自己帳號的掛單</b>。這裡顯示的是<b>掛單價</b>，不是成交價：掛價遠高於商店收購價的會標 ⚠ 疑似亂掛，持有估值改用商店收購價計算，自動上架也不會拿它當參考。「我方成交」是你自己帳號實際賣出的單價。遊戲沒有全服成交紀錄，漲跌與 7 日數據是中控自己定時記錄的，從開始使用那天起累積。需要至少一個遊戲分頁開著才會掃描。</div>
+      <div class="dim">掃描範圍：所有帳號背包裡有的道具，加上符合「自動上架」裝備規則的裝備。價格都是<b>單件價</b>，而且<b>排除你自己帳號的掛單</b>。這裡顯示的是<b>掛單價</b>，不是成交價：掛價遠高於商店收購價的會標 ⚠ 疑似亂掛，持有估值改用商店收購價計算，自動上架也不會拿它當參考。卷軸和裝備不做這個判斷（商店價很低但本來就值錢）。「我方成交」是你自己帳號實際賣給別人的單價（自己帳號互買不算）。遊戲沒有全服成交紀錄，漲跌與 7 日數據是中控自己定時記錄的，從開始使用那天起累積。需要至少一個遊戲分頁開著才會掃描。</div>
       <div class="bar" style="margin-top:8px">
         <input id="mkSearch" placeholder="搜尋名稱" style="width:160px">
         <label><input type="checkbox" id="mkOnlyPriced" checked> 只看有行情的</label>
@@ -1465,11 +1465,13 @@ function renderMarket() {
   $('#mkScanInfo').textContent = `${sc.lastFull ? '上次完整掃描 ' + clock(sc.lastFull) : '尚未掃描'}　待掃 ${sc.queue}${sc.lease ? `　${sc.lease.name} 掃描中（${sc.lease.n} 項）` : ''}`;
   // 行情表
   const q = $('#mkSearch').value.trim(), onlyPriced = $('#mkOnlyPriced').checked, withGear = $('#mkShowGear').checked;
-  const lastSale = {};
-  for (const x of MK.sales || []) if (x.qty > 0 && (!lastSale[x.name] || x.time > lastSale[x.name].time)) lastSale[x.name] = { unit: Math.round(x.total / x.qty), time: x.time };
+  const lastSale = {}, myNames = new Set();
+  for (const s of snaps()) { myNames.add(s.char.name); for (const ch of s.accountChars || []) myNames.add(ch.name); }
+  // 買家是自己帳號的（自己帳號之間轉移）不算成交價
+  for (const x of MK.sales || []) if (x.qty > 0 && !myNames.has(x.buyer) && (!lastSale[x.name] || x.time > lastSale[x.name].time)) lastSale[x.name] = { unit: Math.round(x.total / x.qty), time: x.time };
   let rows = (MK.rows || []).filter(r => (withGear || !r.gear) && (!q || r.name.includes(q)) && (!onlyPriced || r.min != null)).map(r => {
     const o = own[r.id] || { qty: 0, npc: 0, kind: r.gear ? '裝備' : '' };
-    const odd = r.min != null && o.npc > 0 && r.min > o.npc * c.sanityMult;
+    const odd = r.min != null && o.kind !== '卷軸' && !r.gear && o.npc > 0 && r.min > o.npc * c.sanityMult; // 卷軸商店價很低但本來就值錢，不判斷
     const sold = lastSale[r.name];
     // 估值：有自己的成交價用成交價；掛價異常就用商店收購價；否則用市場最低掛單價
     const unit = sold ? sold.unit : odd ? o.npc : r.min;

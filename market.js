@@ -160,7 +160,7 @@ module.exports = function (getDb, save, charName) {
   }
 
   // ---------- 自動上架：定價 ----------
-  function priceFor(rule, id, npcPrice) {
+  function priceFor(rule, id, npcPrice, kind) {
     const p = rule.price || {};
     const st = stats(id);
     let base = null, why = '';
@@ -177,7 +177,7 @@ module.exports = function (getDb, save, charName) {
     }
     // 很多人把消耗品／雜物掛天價（例如紅藥水一個 100 萬），拿來當參考會定出賣不掉的價格
     const mult = cfg().sanityMult;
-    if (p.base !== 'fixed' && npcPrice > 0 && base > npcPrice * mult) return { skip: `市場掛價 ${Math.round(base).toLocaleString()} 是商店收購價的 ${Math.round(base / npcPrice).toLocaleString()} 倍，疑似亂掛，不自動上架（真的要賣請改用固定價）` };
+    if (p.base !== 'fixed' && kind !== '卷軸' && npcPrice > 0 && base > npcPrice * mult) return { skip: `市場掛價 ${Math.round(base).toLocaleString()} 是商店收購價的 ${Math.round(base / npcPrice).toLocaleString()} 倍，疑似亂掛，不自動上架（真的要賣請改用固定價）` };
     let price = Math.floor(base);
     const floor = Number(p.floor) || 0;
     if (floor > 0 && price < floor) { price = floor; why += '（低於底價，改用底價）'; }
@@ -252,7 +252,7 @@ module.exports = function (getDb, save, charName) {
           if (i.supply) { skipped.push({ name: i.name, why: '補給使用中', rule: r.name }); continue; }
           const can = Math.max(0, (i.tradableQty || 0) - Math.max(0, Number(r.keepQty) || 0));
           if (!can) { skipped.push({ name: i.name, why: r.keepQty ? `保留 ${r.keepQty} 個後沒有可上架數量` : '沒有可交易數量', rule: r.name }); continue; }
-          const pr = priceFor(r, i.key, i.sellPrice || 0);
+          const pr = priceFor(r, i.key, i.sellPrice || 0, i.kind);
           if (pr.skip) { skipped.push({ name: i.name, why: pr.skip, rule: r.name }); continue; }
           const per = Math.min(9999, Math.max(1, Number(r.perListing) || 9999));
           entries.push({ kind: 'item', key: i.key, cat: i.cat, name: i.name, qty: Math.min(can, per), price: pr.price, why: pr.why, rule: r.name, ref: pr.st && pr.st.min });
