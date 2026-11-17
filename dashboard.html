@@ -6,6 +6,54 @@
 <title>上漲谷中控</title>
 <link rel="icon" href="data:,">
 <style>
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { background: transparent; color: var(--dim); border: 0; border-right: 1px solid var(--line); padding: 4px 12px; cursor: pointer; font: inherit; }
+  .seg button:last-child { border-right: 0; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .seg button .n { opacity: .7; font-size: 11px; margin-left: 3px; }
+  .bag-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 10px; }
+  .bag-tools #bSearch { width: 180px; }
+  .bag-adv { width: 100%; } .bag-adv summary { color: var(--dim); cursor: pointer; font-size: 12px; }
+  .char-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 8px; }
+  .ccard { border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; cursor: pointer; background: var(--panel2); position: relative; }
+  .ccard:hover { border-color: var(--accent); }
+  .ccard.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .ccard.off { opacity: .45; }
+  .ccard .nm { font-weight: 600; } .ccard .sub { color: var(--dim); font-size: 11px; }
+  .ccard .cnt { font-size: 12px; margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .ccard .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: middle; }
+  .holder { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; margin: 2px 4px 2px 0; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); font-size: 12px; cursor: pointer; user-select: none; }
+  .holder:hover { border-color: var(--accent); }
+  .holder.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .holder.lk { opacity: .6; }
+  .bag-char { margin-bottom: 12px; }
+  .bag-char .hd { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .bag-char .hd b { font-size: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 5px; }
+  .grid .kindlbl { grid-column: 1 / -1; color: var(--dim); font-size: 12px; margin-top: 4px; }
+  .tile { position: relative; height: 52px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; }
+  .tile:hover { border-color: var(--accent); }
+  .tile.sel { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); background: #22355a; }
+  .tile img { width: 32px; height: 32px; object-fit: contain; image-rendering: pixelated; }
+  .tile .q { position: absolute; right: 3px; bottom: 1px; font-size: 11px; font-weight: 600; text-shadow: 0 0 3px #000, 0 0 2px #000; }
+  .tile .p { position: absolute; left: 3px; top: 1px; font-size: 10px; color: var(--main); font-weight: 600; text-shadow: 0 0 3px #000; }
+  .tile .l { position: absolute; right: 2px; top: 0; font-size: 10px; }
+  .tile .nm { font-size: 10px; padding: 2px; text-align: center; line-height: 1.1; color: var(--dim); }
+  .tile.sup { outline: 1px dashed var(--good); outline-offset: -3px; }
+  .action-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 14px; z-index: 30; background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; padding: 9px 14px; box-shadow: 0 8px 30px rgba(0,0,0,.55); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; max-width: calc(100% - 40px); }
+  .action-bar .sum b { font-size: 15px; }
+  .jobs-btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; cursor: pointer; font: inherit; display: inline-flex; gap: 6px; align-items: center; }
+  .jobs-btn.hot { border-color: var(--warn); }
+  .badge { border-radius: 10px; padding: 0 7px; font-size: 11px; font-weight: 600; }
+  .warn-b { background: var(--warn); color: #222; } .run-b { background: var(--accent); color: #fff; } .bad-b { background: var(--bad); color: #fff; }
+  .drawer { position: fixed; top: var(--hdr, 52px); right: 0; bottom: 0; width: min(980px, 96vw); z-index: 40; background: var(--panel); border-left: 1px solid var(--accent); box-shadow: -10px 0 30px rgba(0,0,0,.5); overflow: auto; padding: 10px 14px; }
+  .drawer .dhd { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; position: sticky; top: -10px; background: var(--panel); padding: 8px 0; z-index: 2; }
+  .drawer table td { white-space: normal; }
+  .help { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; border: 1px solid var(--dim); color: var(--dim); font-size: 11px; margin-left: 7px; cursor: help; position: relative; vertical-align: middle; font-weight: 600; }
+  .help:hover, .help:focus { border-color: var(--accent); color: var(--text); outline: none; }
+  .help-pop { display: none; position: absolute; left: -8px; top: 24px; width: min(460px, 80vw); z-index: 60; background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; padding: 10px 12px; color: var(--text); font-weight: 400; font-size: 12.5px; line-height: 1.65; white-space: normal; box-shadow: 0 8px 24px rgba(0,0,0,.5); cursor: default; }
+  .help-pop > div + div { margin-top: 6px; }
+  .help:hover .help-pop, .help:focus .help-pop, .help:focus-within .help-pop { display: block; }
   img.ico { width: 22px; height: 22px; object-fit: contain; vertical-align: middle; margin-right: 4px; image-rendering: pixelated; }
   img.mico { max-width: 44px; max-height: 40px; object-fit: contain; vertical-align: middle; margin-right: 6px; image-rendering: pixelated; }
   .cell-gear img.ico { width: 26px; height: 26px; float: left; margin: 2px 6px 0 0; }
@@ -85,9 +133,14 @@
     <button data-tab="market">市場</button>
     <button data-tab="quiz">知識王</button>
   </nav>
+  <button id="jobBtn" class="jobs-btn" title="交易、背包的工作佇列">工作<span id="jobBadge"></span></button>
   <div id="updBox"></div>
   <div id="status">連線中…</div>
 </header>
+<aside id="jobDrawer" class="drawer" style="display:none">
+  <div class="dhd"><b>工作佇列</b><span class="dim" style="flex:1">待確認的要按「確認執行」才會開始；執行時那隻角色要是遊戲分頁的目前角色。</span><button class="btn" id="jobClose">關閉 ✕</button></div>
+  <div id="jobOutAll"></div>
+</aside>
 <main>
   <!-- 總覽 -->
   <section id="overview" class="on">
@@ -199,11 +252,6 @@
   </section>
   <!-- 交易 -->
   <section id="trade">
-    <div class="card">
-      <h3>工作佇列</h3>
-      <div class="bar dim">建立的工作會先停在「待確認」，核對內容後按「確認執行」才會開始。執行時雙方的遊戲分頁都要開著，而且要切到指定角色。</div>
-      <div id="jobOut"></div>
-    </div>
 
     <div class="card">
       <h3>收集：分身 → 本尊</h3>
@@ -234,28 +282,21 @@
 
   <!-- 背包 -->
   <section id="bag">
-    <div class="card">
-      <h3>工作佇列</h3>
-      <div class="bar dim">背包操作也要按「確認執行」才會開始；執行時那隻角色的遊戲分頁要開著。</div>
-      <div id="jobOut2"></div>
-    </div>
-    <div class="card">
-      <h3>背包操作</h3>
-      <div class="bar"><span>角色</span><select id="bChar"></select><span class="dim" id="bInfo"></span></div>
-      <div id="ffBag"></div>
-      <div class="bar">
-        <button class="btn" id="bSelAll">全選篩選結果</button>
-        <button class="btn" id="bSelSell">全選可賣的（一鍵全賣）</button>
-        <button class="btn" id="bClear">清除選擇</button>
-        <span style="margin-left:12px"></span>
-        <button class="btn primary" id="bSell">賣出選取</button>
-        <button class="btn" id="bLock">鎖定選取</button>
-        <button class="btn" id="bUnlock">解鎖選取</button>
-        <span class="dim" id="bMsg"></span>
+    <div class="card bag-top">
+      <h3>背包</h3>
+      <div class="dim help-src">一次看所有角色的背包。上面的角色卡可以點選只看某幾隻；「依道具」看每樣東西在誰身上、共有多少，「依角色」用格子看每隻角色的背包。勾選後畫面底部會出現動作列，可以跨角色一起賣出／鎖定／解鎖。賣出會自動跳過已鎖定的、補給使用中的藥水；穿在身上的裝備不會出現在這裡。建立的工作要在右上角「工作」按「確認執行」才會開始，執行時那隻角色要是遊戲分頁的目前角色。</div>
+      <div class="bag-tools">
+        <div class="seg" id="bView"><button data-bview="item">依道具</button><button data-bview="char">依角色</button></div>
+        <input id="bSearch" placeholder="搜尋道具名稱" autocomplete="off">
+        <div class="seg" id="bKinds"></div>
+        <label><input type="checkbox" id="bSellOnly"> 只看可賣</label>
+        <label><input type="checkbox" id="bHideLocked"> 隱藏已鎖定</label>
+        <details class="bag-adv"><summary>更多篩選</summary><div id="ffBag"></div></details>
       </div>
-      <div class="dim" style="margin-bottom:6px">賣出會自動跳過：已鎖定的、補給設定使用中的藥水；穿在身上的裝備不會出現在這裡。「一鍵全賣」只選有售價的道具與未鎖定的背包裝備。</div>
-      <div id="bagOut" style="max-height:620px;overflow:auto"></div>
+      <div id="bChars" class="char-strip"></div>
     </div>
+    <div id="bagOut"></div>
+    <div id="bagBar" class="action-bar" style="display:none"></div>
   </section>
   <!-- 地圖 -->
   <section id="maps">
@@ -708,7 +749,7 @@ function renderList() {
       <span style="margin-left:12px">已勾選 <b>${ui.gearSel.size}</b> 件</span>
       <button class="btn" id="gSelAll">勾選篩選結果中背包的裝備</button><button class="btn" id="gSelNone">清除</button>
       <button class="btn" data-gact="lock">🔒 鎖定</button><button class="btn" data-gact="unlock">解鎖</button><button class="btn warn" data-gact="sell">賣出</button>
-      <span class="dim" id="gActMsg">${esc(ui.gearMsg || '只有「背包」裡的裝備可以勾選；會依角色建立工作，到「背包」分頁的佇列核對後確認執行。')}</span></div>
+      <span class="dim" id="gActMsg">${esc(ui.gearMsg || '只有「背包」裡的裝備可以勾選；會依角色建立工作，到右上角「工作」核對後確認執行。')}</span></div>
     <table class="sticky"><thead><tr><th class="nosort"></th>${th('charName','持有者')}${th('loc','位置')}${th('slot','部位')}${th('name','名稱')}${th('plus','強化','num')}${th('slotsLeft','可衝','num')}${f.cols.map(c => th(c, statNames[c] || c, 'num')).join('')}${th('reqLevel','需求Lv','num')}<th class="nosort">需求</th>${th('wear','可穿的角色')}</tr></thead><tbody>`;
   for (const g of rows.slice(0, ui.gearLimit)) {
     const st = g[mode] || {};
@@ -874,15 +915,15 @@ function pickerList(id, which) {
 function rerenderFF(id) {
   if (id.startsWith('mr')) { saveMk({ rules: readMkRules() }); renderMkAuto(true); return; }
   const box = { collect: '#ffCollect', give: '#ffGive', bag: '#ffBag' }[id];
-  if (box) $(box).innerHTML = ffHTML(id, ui.ff[id], id === 'bag');
+  if (box) $(box).innerHTML = ffHTML(id, ui.ff[id], id === 'bag', id === 'bag');
   if (id === 'collect') renderTrade();
   if (id === 'give') renderGivePick();
   if (id === 'bag') renderBagList();
 }
 
-function ffHTML(id, f, withLock) {
+function ffHTML(id, f, withLock, noKinds) {
   const kinds = allKinds();
-  return `<div class="bar"><span style="width:70px">道具類別</span><div class="chips">${kinds.map(k => `<label><input type="checkbox" data-ff="${id}" data-k="kinds" value="${esc(k)}" ${f.kinds.includes(k) ? 'checked' : ''}>${esc(k)}</label>`).join('')}<span class="dim">（都不勾＝全部）</span></div></div>
+  return `${noKinds ? '' : `<div class="bar"><span style="width:70px">道具類別</span><div class="chips">${kinds.map(k => `<label><input type="checkbox" data-ff="${id}" data-k="kinds" value="${esc(k)}" ${f.kinds.includes(k) ? 'checked' : ''}>${esc(k)}</label>`).join('')}<span class="dim">（都不勾＝全部）</span></div></div>`}
     <div class="bar"><span style="width:70px">指定道具</span>${pickerHTML(id, 'inc')}${pickerHTML(id, 'exc')}</div>
     <div class="bar"><span style="width:70px">裝備</span><select data-ff="${id}" data-k="gear"><option value="all" ${f.gear === 'all' ? 'selected' : ''}>全部背包裝備</option><option value="none" ${f.gear === 'none' ? 'selected' : ''}>不含裝備</option>${(S.presets || []).map((p, i) => `<option value="p:${i}" ${f.gear === 'p:' + i ? 'selected' : ''}>套用組合：${esc(p.name)}</option>`).join('')}</select>
       ${withLock ? `<span>鎖定</span><select data-ff="${id}" data-k="lock">${[['all', '全部'], ['unlocked', '未鎖定'], ['locked', '已鎖定']].map(([v, n]) => `<option value="${v}" ${f.lock === v ? 'selected' : ''}>${n}</option>`).join('')}</select>` : ''}
@@ -973,7 +1014,6 @@ function renderJobs(sel, filterFn) {
 // ---------- 交易頁 ----------
 function renderTrade() {
   const main = S.mainCharId && DATA.chars[S.mainCharId];
-  renderJobs('#jobOut', j => !BAG_KINDS.includes(j.kind) && j.kind !== 'idle');
   if (!ui.ff.collect) { const sv = S.collectFilter || {}; ui.ff.collect = { ...emptyFF(), kinds: sv.kinds || [], incKeys: sv.incKeys || [], excKeys: sv.excKeys || [], gear: sv.gear || 'all', lock: 'all' }; }
   if ($('#cKeep').value === '' && document.activeElement !== $('#cKeep')) $('#cKeep').value = S.collectKeepPct ?? 10;
   if (!ui.pickOpen.startsWith('collect|') && (!document.activeElement || !document.activeElement.closest || !document.activeElement.closest('#ffCollect'))) $('#ffCollect').innerHTML = ffHTML('collect', ui.ff.collect, false);
@@ -1031,69 +1071,206 @@ function renderGivePick() {
 }
 
 // ---------- 背包頁 ----------
-function bagRows(s) {
-  const f = ui.ff.bag;
-  const items = (s.items || []).filter(i => i.loc === '背包' && itemPass(i, f)).sort((a, b) => cmp(a.kind, b.kind) || cmp(a.name, b.name))
-    .map(i => ({ id: 'i:' + i.key, t: 'i', i, sellable: (i.sellPrice || 0) > 0 && !i.supply && i.qty - (i.lockedQty || 0) > 0 }));
+// ---------- 背包（全角色） ----------
+ui.bag = { view: 'item', q: '', kind: '', sellOnly: false, hideLocked: false, chars: new Set() };
+try { const v = localStorage.getItem('bagView'); if (v === 'char' || v === 'item') ui.bag.view = v; } catch (_) {}
+const BAG_KIND_ORDER = ['裝備', '消耗', '卷軸', '其他', '裝飾', '點數'];
+const kindRank = k => { const i = BAG_KIND_ORDER.indexOf(k); return i < 0 ? 99 : i; };
+const bagSid = (charId, rid) => charId + '|' + rid;
+// 有背包資料的角色（依帳號、名稱排序）
+function bagChars() {
+  return snaps().filter(s => (s.items || []).length || (s.gear || []).some(g => g.loc === '背包'))
+    .sort((a, b) => cmp(accountLabel(a.accountId, a), accountLabel(b.accountId, b)) || cmp(a.char.name, b.char.name));
+}
+// 某隻角色背包裡符合篩選的物品；kind 篩選與搜尋在這裡處理
+function bagRows(s, ignoreKind, raw) {
+  const f = raw ? emptyFF() : ui.ff.bag, b = ui.bag, q = raw ? '' : b.q.trim();
+  const items = (s.items || []).filter(i => i.loc === '背包' && itemPass(i, f))
+    .map(i => { const free = i.qty - (i.lockedQty || 0); return { id: 'i:' + i.key, t: 'i', i, kind: i.kind, name: i.name, qty: i.qty, free, locked: free <= 0,
+      sellable: (i.sellPrice || 0) > 0 && !i.supply && free > 0, value: (i.sellPrice || 0) * Math.max(0, free) }; });
   const gear = (s.gear || []).filter(g => g.loc === '背包' && g.uid && gearPass(g, f))
-    .map(g => ({ id: 'g:' + g.uid, t: 'g', g, sellable: !g.locked }));
-  return [...items, ...gear];
+    .map(g => ({ id: 'g:' + g.uid, t: 'g', g, kind: '裝備', name: g.name, qty: 1, free: g.locked ? 0 : 1, locked: !!g.locked, sellable: !g.locked, value: 0 }));
+  if (raw) return [...gear, ...items];
+  return [...gear, ...items].filter(r => (ignoreKind || !b.kind || r.kind === b.kind) && (!q || r.name.includes(q)) && (!b.sellOnly || r.sellable) && (!b.hideLocked || !r.locked))
+    .sort((x, y) => kindRank(x.kind) - kindRank(y.kind) || cmp(x.name, y.name));
+}
+function bagVisibleChars() { const all = bagChars(); return ui.bag.chars.size ? all.filter(s => ui.bag.chars.has(s.char.id)) : all; }
+function bagSelected() {
+  const out = [];
+  for (const s of bagChars()) for (const r of bagRows(s, true, true)) if (ui.bagSel.has(bagSid(s.char.id, r.id))) out.push({ s, r });
+  return out;
 }
 function renderBag() {
-  renderJobs('#jobOut2', j => BAG_KINDS.includes(j.kind) && j.kind !== 'idle');
-  const cur = $('#bChar').value || S.mainCharId || '';
-  $('#bChar').innerHTML = charOpt(cur, true);
-  if (!ui.pickOpen.startsWith('bag|') && (!document.activeElement || !document.activeElement.closest || !document.activeElement.closest('#ffBag'))) $('#ffBag').innerHTML = ffHTML('bag', ui.ff.bag, true);
+  const b = ui.bag;
+  document.querySelectorAll('#bView button').forEach(x => x.classList.toggle('on', x.dataset.bview === b.view));
+  if (document.activeElement !== $('#bSearch')) $('#bSearch').value = b.q;
+  $('#bSellOnly').checked = b.sellOnly; $('#bHideLocked').checked = b.hideLocked;
+  if (!ui.pickOpen.startsWith('bag|') && (!document.activeElement || !document.activeElement.closest || !document.activeElement.closest('#ffBag'))) $('#ffBag').innerHTML = ffHTML('bag', ui.ff.bag, true, true);
   renderBagList();
 }
 function renderBagList() {
-  const s = DATA.chars[$('#bChar').value];
-  if (!s) { $('#bagOut').innerHTML = '<div class="dim">先選擇角色。</div>'; $('#bInfo').textContent = ''; return; }
-  const rows = bagRows(s);
-  const valid = new Set(rows.map(r => r.id));
+  const b = ui.bag, chars = bagChars();
+  // 移除已不存在的選取
+  const valid = new Set(); for (const s of chars) for (const r of bagRows(s, true, true)) valid.add(bagSid(s.char.id, r.id));
   for (const id of [...ui.bagSel]) if (!valid.has(id)) ui.bagSel.delete(id);
-  const sel = rows.filter(r => ui.bagSel.has(r.id));
-  const est = sel.reduce((a, r) => a + (r.t === 'i' && r.sellable ? (r.i.qty - (r.i.lockedQty || 0)) * r.i.sellPrice : 0), 0);
-  $('#bInfo').innerHTML = `${isOnline(s) ? '<span class="good">在線</span>' : '<span class="bad">離線</span>'}　已選 ${sel.length} 項${est ? `，道具估計售價 ${short(est)}` : ''}${s.activeCharId && s.activeCharId !== s.char.id ? '　<span class="warn">執行時需切到這隻角色</span>' : ''}`;
-  let h = `<table><thead><tr><th class="nosort"></th><th class="nosort">名稱</th><th class="nosort">類別</th><th class="nosort num">數量</th><th class="nosort">鎖定</th><th class="nosort num">單價</th><th class="nosort">素質／備註</th></tr></thead><tbody>`;
-  for (const r of rows) {
-    if (r.t === 'i') {
-      const i = r.i;
-      h += `<tr><td><input type="checkbox" data-bsel="${esc(r.id)}" ${ui.bagSel.has(r.id) ? 'checked' : ''}></td><td>${iname(i.itemId, i.name)}</td><td class="dim">${esc(i.kind)}</td><td class="num">${fmt(i.qty)}</td>
-        <td>${i.lockedQty ? (i.lockedQty >= i.qty ? '🔒' : `🔒 ${fmt(i.lockedQty)}`) : ''}</td><td class="num">${i.sellPrice ? fmt(i.sellPrice) : '<span class="dim">不可賣</span>'}</td><td class="dim">${i.supply ? '<span class="tag">補給中</span>' : ''}</td></tr>`;
-    } else {
-      const g = r.g;
-      h += `<tr><td><input type="checkbox" data-bsel="${esc(r.id)}" ${ui.bagSel.has(r.id) ? 'checked' : ''}></td><td>${iname(g.itemId, g.name, g.plus ? ` <span class="plus">+${g.plus}</span>` : '')}</td><td class="dim">裝備・${slotLabel(g.slot)}</td><td class="num">1</td>
-        <td>${g.locked ? '🔒' : ''}</td><td class="num dim">—</td><td class="dim">${esc(statLine(g.stats || {}, STAT_ORDER))}　可衝 ${g.slotsLeft}/${g.maxSlots}</td></tr>`;
-    }
-  }
-  if (!rows.length) h += '<tr><td colspan="7" class="empty">沒有符合條件的物品</td></tr>';
-  $('#bagOut').innerHTML = h + '</tbody></table>';
+  const vis = bagVisibleChars();
+  // 類別頁籤（數量是目前看得到的角色）
+  const kc = {}; let all = 0;
+  for (const s of vis) for (const r of bagRows(s, true)) { kc[r.kind] = (kc[r.kind] || 0) + 1; all++; }
+  $('#bKinds').innerHTML = `<button data-bkind="" class="${!b.kind ? 'on' : ''}">全部<span class="n">${all}</span></button>` +
+    Object.keys(kc).sort((x, y) => kindRank(x) - kindRank(y)).map(k => `<button data-bkind="${esc(k)}" class="${b.kind === k ? 'on' : ''}">${esc(k)}<span class="n">${kc[k]}</span></button>`).join('');
+  // 角色卡
+  $('#bChars').innerHTML = chars.map(s => {
+    const rows = bagRows(s, true), on = !b.chars.size || b.chars.has(s.char.id);
+    const nSel = bagRows(s, true, true).filter(r => ui.bagSel.has(bagSid(s.char.id, r.id))).length;
+    const val = rows.reduce((a, r) => a + r.value, 0), nG = rows.filter(r => r.t === 'g').length, nI = rows.length - nG;
+    const online = isOnline(s), active = !s.activeCharId || s.activeCharId === s.char.id;
+    return `<div class="ccard ${b.chars.has(s.char.id) ? 'on' : ''} ${on ? '' : 'off'}" data-bchar="${s.char.id}" title="點一下只看這隻；按住 Ctrl 可多選">
+      <div><span class="dot" style="background:${online && active ? 'var(--good)' : online ? 'var(--warn)' : 'var(--bad)'}"></span><span class="nm">${esc(s.char.name)}</span>${S.mainCharId === s.char.id ? ' <span class="tag main">本尊</span>' : ''}</div>
+      <div class="sub">${esc(accountLabel(s.accountId, s))}・Lv${s.char.lv}・${!online ? '離線' : active ? '在線' : '非目前角色'}・${ago(Date.now() - (s.receivedAt || s.at))}</div>
+      <div class="cnt"><span>道具 <b>${nI}</b></span><span>裝備 <b>${nG}</b></span>${val ? `<span class="dim">可賣 ${short(val)}</span>` : ''}${nSel ? `<span class="good">已選 ${nSel}</span>` : ''}</div></div>`;
+  }).join('') + (b.chars.size ? `<div class="ccard" data-bchar="*" style="display:flex;align-items:center;justify-content:center"><span class="dim">顯示全部角色</span></div>` : '');
+  $('#bagOut').innerHTML = b.view === 'char' ? bagCharView(vis) : bagItemView(vis);
+  renderBagBar();
 }
-function bagJob(kind) {
-  const s = DATA.chars[$('#bChar').value];
-  if (!s) throw new Error('請先選擇角色');
-  const rows = bagRows(s).filter(r => ui.bagSel.has(r.id));
-  const items = [], gear = [];
-  let estimate = 0;
-  for (const r of rows) {
-    if (r.t === 'i') {
-      const i = r.i;
-      const stacks = (i.stacks || []).filter(st => kind === 'unlock' ? st.locked : !st.locked);
-      if (!stacks.length) continue;
-      if (kind === 'sell' && (!r.sellable)) continue;
-      const qty = stacks.reduce((a, st) => a + st.qty, 0);
-      if (kind === 'sell') estimate += qty * i.sellPrice;
-      items.push({ key: i.key, name: i.name, cat: i.cat, qty, uids: stacks.map(st => st.uid) });
-    } else {
-      const g = r.g;
-      if (kind === 'unlock' ? !g.locked : g.locked) continue;
-      gear.push({ uid: g.uid, name: gearLabel(g) });
-    }
+// 依道具：每種東西一行，後面列出誰有多少；點名字選那一份，勾左邊選全部
+function bagItemView(vis) {
+  const g = {};
+  for (const s of vis) for (const r of bagRows(s)) {
+    const k = r.t === 'g' ? 'g:' + r.name : r.id;
+    const a = g[k] || (g[k] = { k, t: r.t, name: r.name, kind: r.kind, itemId: r.t === 'g' ? r.g.itemId : r.i.itemId, price: r.t === 'i' ? r.i.sellPrice || 0 : 0, total: 0, value: 0, holders: [] });
+    a.total += r.qty; a.value += r.value; a.holders.push({ s, r, sid: bagSid(s.char.id, r.id) });
   }
-  if (!items.length && !gear.length) throw new Error('選取的物品裡沒有可以' + JOB_KIND[kind] + '的');
-  return { kind, fromCharId: s.char.id, toCharId: s.char.id, estimate, batches: [{ items, gear, money: 0 }] };
+  const list = Object.values(g).sort((x, y) => kindRank(x.kind) - kindRank(y.kind) || y.value - x.value || cmp(x.name, y.name));
+  if (!list.length) return `<div class="card empty">${bagChars().length ? '沒有符合條件的物品' : '還沒有背包資料：打開遊戲分頁，約 10 秒後會出現。'}</div>`;
+  let h = `<div class="card" style="padding:0"><table class="sticky"><thead><tr><th class="nosort" style="width:28px"></th><th class="nosort">物品</th><th class="nosort">類別</th><th class="nosort num">總數</th><th class="nosort num">商店單價</th><th class="nosort num">可賣總額</th><th class="nosort">在誰身上（點名字選取那一份）</th></tr></thead><tbody>`;
+  for (const a of list.slice(0, 600)) {
+    const nSel = a.holders.filter(x => ui.bagSel.has(x.sid)).length;
+    a.holders.sort((x, y) => y.r.qty - x.r.qty);
+    const chips = a.t === 'g'
+      ? a.holders.map(x => `<span class="holder ${ui.bagSel.has(x.sid) ? 'sel' : ''} ${x.r.locked ? 'lk' : ''}" data-bpick="${esc(x.sid)}" title="${esc(statLine(x.r.g.stats || {}, STAT_ORDER))}　可衝 ${x.r.g.slotsLeft}/${x.r.g.maxSlots}">${esc(x.s.char.name)}${x.r.g.plus ? ` <b class="plus">+${x.r.g.plus}</b>` : ''}${x.r.locked ? ' 🔒' : ''}</span>`).join('')
+      : a.holders.map(x => `<span class="holder ${ui.bagSel.has(x.sid) ? 'sel' : ''} ${x.r.locked ? 'lk' : ''}" data-bpick="${esc(x.sid)}">${esc(x.s.char.name)} <b>${fmt(x.r.qty)}</b>${x.r.i.lockedQty ? (x.r.locked ? ' 🔒' : ` <span title="其中 ${fmt(x.r.i.lockedQty)} 個已鎖定">🔒${fmt(x.r.i.lockedQty)}</span>`) : ''}${x.r.i.supply ? ' <span title="補給使用中，不會被賣掉">💊</span>' : ''}</span>`).join('');
+    h += `<tr><td><input type="checkbox" data-bgroup="${esc(a.k)}" ${nSel && nSel === a.holders.length ? 'checked' : ''}></td><td>${iname(a.itemId, a.name)}</td><td class="dim">${esc(a.kind)}</td><td class="num"><b>${fmt(a.total)}</b></td>
+      <td class="num dim">${a.price ? fmt(a.price) : '—'}</td><td class="num">${a.value ? short(a.value) : '<span class="dim">—</span>'}</td><td class="wrap">${chips}</td></tr>`;
+  }
+  return h + `</tbody></table>${list.length > 600 ? '<div class="dim" style="padding:8px">只顯示前 600 種，請用搜尋或類別縮小範圍</div>' : ''}</div>`;
 }
+// 依角色：每隻角色一塊，用格子顯示（像遊戲背包）
+function bagCharView(vis) {
+  const blocks = [];
+  for (const s of vis) {
+    const rows = bagRows(s);
+    if (!rows.length) continue;
+    const nSel = rows.filter(r => ui.bagSel.has(bagSid(s.char.id, r.id))).length;
+    const val = rows.reduce((a, r) => a + r.value, 0);
+    let grid = '', lastKind = '';
+    for (const r of rows) {
+      if (r.kind !== lastKind) { grid += `<div class="kindlbl">${esc(r.kind)}</div>`; lastKind = r.kind; }
+      const sid = bagSid(s.char.id, r.id), id = r.t === 'g' ? r.g.itemId : r.i.itemId, u = itemImg(id || EXT_BYNAME[r.name]);
+      const tip = [r.name, r.t === 'g' ? statLine(r.g.stats || {}, STAT_ORDER) + `　可衝 ${r.g.slotsLeft}/${r.g.maxSlots}` : `數量 ${fmt(r.qty)}${r.i.lockedQty ? `（鎖定 ${fmt(r.i.lockedQty)}）` : ''}${r.i.sellPrice ? `　商店單價 ${fmt(r.i.sellPrice)}` : '　不可賣'}`, r.t === 'i' && r.i.supply ? '補給使用中' : '', itemTip(id)].filter(Boolean).join('\n');
+      grid += `<div class="tile ${ui.bagSel.has(sid) ? 'sel' : ''} ${r.t === 'i' && r.i.supply ? 'sup' : ''}" data-bpick="${esc(sid)}" title="${esc(tip)}">${u ? `<img src="${esc(u)}" loading="lazy" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'nm',textContent:${esc(JSON.stringify(r.name.slice(0, 6)))}}))">` : `<span class="nm">${esc(r.name.slice(0, 6))}</span>`}
+        ${r.t === 'g' && r.g.plus ? `<span class="p">+${r.g.plus}</span>` : ''}${r.t === 'i' && r.qty > 1 ? `<span class="q">${r.qty >= 10000 ? short(r.qty) : fmt(r.qty)}</span>` : ''}${r.locked ? '<span class="l">🔒</span>' : ''}</div>`;
+    }
+    blocks.push(`<div class="card bag-char"><div class="hd"><b>${esc(s.char.name)}</b><span class="dim">${esc(accountLabel(s.accountId, s))}・Lv${s.char.lv}</span><span>${rows.length} 項${val ? `・可賣 ${short(val)}` : ''}</span>
+      <button class="btn" data-bcharsel="${s.char.id}" data-mode="sell">選可賣的</button><button class="btn" data-bcharsel="${s.char.id}" data-mode="all">全選</button>${nSel ? `<button class="btn" data-bcharsel="${s.char.id}" data-mode="none">取消選取（${nSel}）</button>` : ''}</div><div class="grid">${grid}</div></div>`);
+  }
+  return blocks.join('') || `<div class="card empty">${bagChars().length ? '沒有符合條件的物品' : '還沒有背包資料：打開遊戲分頁，約 10 秒後會出現。'}</div>`;
+}
+function renderBagBar() {
+  const sel = bagSelected(), bar = $('#bagBar');
+  const vis = bagVisibleChars(), visCount = vis.reduce((a, s) => a + bagRows(s).length, 0);
+  if (!sel.length) {
+    bar.style.display = visCount ? '' : 'none';
+    bar.innerHTML = `<span class="dim">點物品選取，或</span><button class="btn" data-bquick="sell">選取畫面上所有可賣的</button><button class="btn" data-bquick="all">選取畫面上全部</button>`;
+    return;
+  }
+  const chars = new Set(sel.map(x => x.s.char.id));
+  const est = sel.reduce((a, x) => a + (x.r.sellable ? x.r.value : 0), 0);
+  const nSell = sel.filter(x => x.r.sellable).length;
+  const notReady = [...chars].map(id => DATA.chars[id]).filter(s => !isOnline(s) || (s.activeCharId && s.activeCharId !== s.char.id));
+  bar.style.display = '';
+  bar.innerHTML = `<span class="sum">已選 <b>${sel.length}</b> 項・<b>${chars.size}</b> 隻角色${est ? `・賣出約 <b class="good">${short(est)}</b> 楓幣` : ''}</span>
+    ${notReady.length ? `<span class="warn" title="${esc(notReady.map(s => s.char.name).join('、'))}">⚠ ${notReady.length} 隻離線或不是目前角色，工作會等到它上線</span>` : ''}
+    <button class="btn primary" data-bact="sell" ${nSell ? '' : 'disabled'}>賣出${nSell < sel.length ? `（${nSell} 項可賣）` : ''}</button><button class="btn" data-bact="lock">鎖定</button><button class="btn" data-bact="unlock">解鎖</button><button class="btn" data-bquick="clear">清除選擇</button><span class="dim" id="bMsg"></span>`;
+}
+// 依選取建立工作：每隻角色一個工作
+function bagJobs(kind) {
+  const by = {};
+  for (const x of bagSelected()) (by[x.s.char.id] = by[x.s.char.id] || []).push(x.r);
+  const reqs = [];
+  for (const [cid, rows] of Object.entries(by)) {
+    const items = [], gear = []; let estimate = 0;
+    for (const r of rows) {
+      if (r.t === 'i') {
+        const i = r.i;
+        const stacks = (i.stacks || []).filter(st => kind === 'unlock' ? st.locked : !st.locked);
+        if (!stacks.length) continue;
+        if (kind === 'sell' && !r.sellable) continue;
+        const qty = stacks.reduce((a, st) => a + st.qty, 0);
+        if (kind === 'sell') estimate += qty * i.sellPrice;
+        items.push({ key: i.key, name: i.name, cat: i.cat, qty, uids: stacks.map(st => st.uid) });
+      } else {
+        const g = r.g;
+        if (kind === 'unlock' ? !g.locked : g.locked) continue;
+        gear.push({ uid: g.uid, name: gearLabel(g) });
+      }
+    }
+    if (items.length || gear.length) reqs.push({ kind, fromCharId: cid, toCharId: cid, estimate, batches: [{ items, gear, money: 0 }] });
+  }
+  if (!reqs.length) throw new Error('選取的物品裡沒有可以' + JOB_KIND[kind] + '的');
+  return reqs;
+}
+document.addEventListener('click', async e => {
+  const t = e.target.closest('[data-bview],[data-bkind],[data-bchar],[data-bpick],[data-bcharsel],[data-bquick],[data-bact]');
+  if (!t || !t.closest('#bag')) return;
+  const d = t.dataset, b = ui.bag;
+  try {
+    if (d.bview) { b.view = d.bview; try { localStorage.setItem('bagView', b.view); } catch (_) {} renderBag(); return; }
+    if (d.bkind !== undefined) { b.kind = d.bkind; renderBagList(); return; }
+    if (d.bchar) {
+      if (d.bchar === '*') b.chars.clear();
+      else if (e.ctrlKey || e.metaKey) { if (b.chars.has(d.bchar)) b.chars.delete(d.bchar); else b.chars.add(d.bchar); }
+      else if (b.chars.size === 1 && b.chars.has(d.bchar)) b.chars.clear();
+      else { b.chars.clear(); b.chars.add(d.bchar); }
+      renderBagList(); return;
+    }
+    if (d.bpick) { if (ui.bagSel.has(d.bpick)) ui.bagSel.delete(d.bpick); else ui.bagSel.add(d.bpick); renderBagList(); return; }
+    if (d.bcharsel) {
+      const s = DATA.chars[d.bcharsel]; if (!s) return;
+      for (const r of bagRows(s)) { const sid = bagSid(s.char.id, r.id); if (d.mode === 'none') ui.bagSel.delete(sid); else if (d.mode === 'all' || r.sellable) ui.bagSel.add(sid); }
+      renderBagList(); return;
+    }
+    if (d.bquick) {
+      if (d.bquick === 'clear') ui.bagSel.clear();
+      else for (const s of bagVisibleChars()) for (const r of bagRows(s)) if (d.bquick === 'all' || r.sellable) ui.bagSel.add(bagSid(s.char.id, r.id));
+      renderBagList(); return;
+    }
+    if (d.bact) {
+      const reqs = bagJobs(d.bact);
+      if (d.bact === 'sell') {
+        const est = reqs.reduce((a, r) => a + r.estimate, 0), n = reqs.reduce((a, r) => a + r.batches[0].items.length + r.batches[0].gear.length, 0);
+        if (!confirm(`建立 ${reqs.length} 個賣出工作（${n} 項，約 ${fmt(est)} 楓幣）？\n\n建立後還要在「工作」裡按確認執行才會真的賣出。`)) return;
+      }
+      await api('/api/jobs', reqs);
+      ui.bagSel.clear();
+      await poll(true);
+      openJobs();
+    }
+  } catch (err) { alert('失敗：' + err.message); }
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (!t.closest || !t.closest('#bag')) return;
+  if (t.id === 'bSellOnly') { ui.bag.sellOnly = t.checked; renderBagList(); }
+  if (t.id === 'bHideLocked') { ui.bag.hideLocked = t.checked; renderBagList(); }
+  if (t.dataset.bgroup) {
+    const k = t.dataset.bgroup;
+    for (const s of bagVisibleChars()) for (const r of bagRows(s)) { const gk = r.t === 'g' ? 'g:' + r.name : r.id; if (gk !== k) continue; const sid = bagSid(s.char.id, r.id); if (t.checked) ui.bagSel.add(sid); else ui.bagSel.delete(sid); }
+    renderBagList();
+  }
+});
+let bagSearchTimer = null;
+document.addEventListener('input', e => { if (e.target.id === 'bSearch') { ui.bag.q = e.target.value; clearTimeout(bagSearchTimer); bagSearchTimer = setTimeout(renderBagList, 150); } });
 
 
 async function api(path, body) {
@@ -1176,8 +1353,8 @@ document.addEventListener('click', async e => {
       if (!reqs.length) { $('#collectMsg').textContent = '沒有可收集的內容'; return; }
       await saveSettings({ collectFilter: ui.ff.collect, collectKeepPct: keepPctValue() });
       const r = await api('/api/jobs', reqs);
-      $('#collectMsg').textContent = `已建立 ${r.jobs.length} 個工作，請在上方「工作佇列」核對後按確認執行。`;
-      await poll(true);
+      $('#collectMsg').textContent = `已建立 ${r.jobs.length} 個工作，請在右上角「工作」核對後按確認執行。`;
+      await poll(true); openJobs();
     }
     // 分發
     if (t.id === 'gSelItems' || t.id === 'gSelGear' || t.id === 'gClear') {
@@ -1197,23 +1374,8 @@ document.addEventListener('click', async e => {
       const money = Number($('#gMoney').value) || 0;
       await api('/api/jobs', { kind: 'give', fromCharId: from, toCharId: to, batches: toBatches(items.flatMap(v => splitItem(v)), gear, money) });
       giveDraft.items = {}; giveDraft.gear.clear(); $('#gMoney').value = '';
-      $('#giveMsg').textContent = '已建立工作，請在上方「工作佇列」核對後按確認執行。';
-      await poll(true);
-    }
-    // 背包
-    if (t.id === 'bSelAll' || t.id === 'bSelSell' || t.id === 'bClear') {
-      const s = DATA.chars[$('#bChar').value]; if (!s) return;
-      if (t.id === 'bClear') ui.bagSel.clear();
-      else { if (t.id === 'bSelSell') ui.bagSel.clear(); for (const r of bagRows(s)) if (t.id === 'bSelAll' || r.sellable) ui.bagSel.add(r.id); }
-      renderBagList();
-    }
-    if (t.id === 'bSell' || t.id === 'bLock' || t.id === 'bUnlock') {
-      const kind = { bSell: 'sell', bLock: 'lock', bUnlock: 'unlock' }[t.id];
-      const req = bagJob(kind);
-      await api('/api/jobs', req);
-      ui.bagSel.clear();
-      $('#bMsg').textContent = `已建立「${JOB_KIND[kind]}」工作，請在上方佇列核對後按確認執行。`;
-      await poll(true);
+      $('#giveMsg').textContent = '已建立工作，請在右上角「工作」核對後按確認執行。';
+      await poll(true); openJobs();
     }
   } catch (err) { alert('失敗：' + err.message); }
 });
@@ -1245,10 +1407,8 @@ document.addEventListener('change', e => {
   if (t.id === 'cMoney') renderTrade();
   if (t.id === 'cKeep') { saveSettings({ collectKeepPct: keepPctValue() }); renderTrade(); }
   if (t.id === 'gFrom') { giveDraft.items = {}; giveDraft.gear.clear(); renderGivePick(); }
-  if (t.id === 'bChar') { ui.bagSel.clear(); renderBagList(); }
   if (t.dataset && t.dataset.gitem) { const max = Number(t.max) || 0; const v = Math.max(0, Math.min(max, Number(t.value) || 0)); t.value = v || ''; giveDraft.items[t.dataset.gitem] = v; renderGivePick(); }
   if (t.dataset && t.dataset.ggear) { if (t.checked) giveDraft.gear.add(t.dataset.ggear); else giveDraft.gear.delete(t.dataset.ggear); renderGivePick(); }
-  if (t.dataset && t.dataset.bsel) { if (t.checked) ui.bagSel.add(t.dataset.bsel); else ui.bagSel.delete(t.dataset.bsel); renderBagList(); }
 });
 document.addEventListener('input', e => {
   const t = e.target;
@@ -1324,7 +1484,7 @@ document.addEventListener('click', async e => {
     const n = reqs.reduce((a, r) => a + r.batches[0].gear.length, 0);
     if (!n) { ui.gearMsg = $('#gActMsg').textContent = '勾選的裝備裡沒有可以' + JOB_KIND[kind] + '的（賣出／鎖定會略過已鎖定的）'; return; }
     if (kind === 'sell' && !confirm(`建立賣出工作：${n} 件裝備（${reqs.length} 隻角色）。\n確認執行後賣出無法復原。`)) return;
-    try { await api('/api/jobs', reqs); ui.gearSel.clear(); ui.gearMsg = $('#gActMsg').textContent = `已建立 ${reqs.length} 個「${JOB_KIND[kind]}」工作（${n} 件），請到「背包」分頁的佇列確認執行。`; await poll(true); }
+    try { await api('/api/jobs', reqs); ui.gearSel.clear(); ui.gearMsg = $('#gActMsg').textContent = `已建立 ${reqs.length} 個「${JOB_KIND[kind]}」工作（${n} 件），請在右上角「工作」確認執行。`; await poll(true); openJobs(); }
     catch (err) { ui.gearMsg = $('#gActMsg').textContent = '建立失敗：' + err.message; }
   }
 });
@@ -1418,7 +1578,7 @@ document.addEventListener('click', async e => {
     pv.forEach(({ g }) => (byChar[g.charId] || (byChar[g.charId] = [])).push({ uid: g.uid, name: gearLabel(g) }));
     const reqs = Object.entries(byChar).map(([cid, gear]) => ({ kind: 'sell', fromCharId: cid, toCharId: cid, estimate: 0, batches: [{ items: [], gear, money: 0 }] }));
     if (!confirm(`建立 ${reqs.length} 個賣出工作，共 ${pv.length} 件。確認執行後無法復原。`)) return;
-    await api('/api/jobs', reqs); $('#asMsg').textContent = '已建立賣出工作，請到「背包」分頁的佇列確認執行。'; await poll(true);
+    await api('/api/jobs', reqs); $('#asMsg').textContent = '已建立賣出工作，請在右上角「工作」確認執行。'; await poll(true); openJobs();
   }
 }, true);
 document.addEventListener('change', async e => {
@@ -1898,8 +2058,23 @@ function mobImg(mob) {
   return `<img class="mico" src="${esc(u)}" loading="lazy" alt="" onerror="this.remove()">`;
 }
 
+function renderJobsUI() {
+  const js = (DATA.jobs || []).filter(j => j.kind !== 'idle');
+  const pend = js.filter(j => j.status === 'pending').length, run = js.filter(j => ['approved', 'running'].includes(j.status)).length, fail = js.filter(j => j.status === 'failed').length;
+  $('#jobBadge').innerHTML = pend ? `<span class="badge warn-b">${pend} 待確認</span>` : run ? `<span class="badge run-b">${run} 執行中</span>` : fail ? `<span class="badge bad-b">${fail} 失敗</span>` : '';
+  $('#jobBtn').classList.toggle('hot', !!pend);
+  if ($('#jobDrawer').style.display !== 'none') renderJobs('#jobOutAll', j => j.kind !== 'idle');
+}
+function openJobs() { $('#jobDrawer').style.display = ''; renderJobs('#jobOutAll', j => j.kind !== 'idle'); }
+document.addEventListener('click', e => {
+  if (e.target.closest('#jobBtn')) { if ($('#jobDrawer').style.display === 'none') openJobs(); else $('#jobDrawer').style.display = 'none'; }
+  if (e.target.id === 'jobClose') $('#jobDrawer').style.display = 'none';
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#jobDrawer').style.display = 'none'; });
+
 function renderAll() {
   loadExt();
+  renderJobsUI();
   const active = document.querySelector('nav button.on').dataset.tab;
   if (active === 'overview') { renderOverview(); renderIdleCard(); }
   if (active === 'gear') { renderGear(); renderAS(); }
@@ -2006,6 +2181,21 @@ function setHdr() { const h = document.querySelector('header'); if (h) document.
 window.addEventListener('resize', setHdr);
 new ResizeObserver(setHdr).observe(document.querySelector('header'));
 setHdr();
+// 卡片裡的大段說明收進標題旁的「?」，滑過或點一下才顯示
+function initHelp() {
+  document.querySelectorAll('.card').forEach(card => {
+    const h = card.querySelector(':scope > h3');
+    if (!h || h.querySelector('.help')) return;
+    const srcs = [...card.querySelectorAll(':scope > div.dim, :scope > .bar.dim, :scope > .help-src')]
+      .filter(d => !d.id && !d.querySelector('[id], input, select, button') && d.textContent.trim().length >= 30);
+    if (!srcs.length) return;
+    const tip = document.createElement('span'); tip.className = 'help'; tip.tabIndex = 0; tip.textContent = '?';
+    const pop = document.createElement('div'); pop.className = 'help-pop';
+    for (const d of srcs) { const p = document.createElement('div'); p.innerHTML = d.innerHTML; pop.appendChild(p); d.remove(); }
+    tip.appendChild(pop); h.appendChild(tip);
+  });
+}
+initHelp();
 poll();
 setInterval(poll, 10000);
 </script>
