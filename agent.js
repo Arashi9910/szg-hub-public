@@ -252,7 +252,7 @@ function agentMain(ctx) {
         weaponType: /Weapon/.test(category) ? (g.type || e.equipmentType) : '',
         itemId: g.itemId, name: g.name, plus: g.successes || 0, slotsLeft: g.slots || 0, maxSlots: g.maxSlots || 0,
         locked: !!g.locked, tradable: loc === '背包' ? gearTradable(g) : false,
-        stats: g.stats || {}, cleanStats: g.cleanStats || g.baseStats || {},
+        stats: g.stats || {}, cleanStats: g.cleanStats || g.baseStats || {}, baseStats: g.rollVersion && g.baseStats ? g.baseStats : null,
         reqLevel: meta.reqLevel || 0, reqJob: meta.reqJob || 0,
         reqSTR: meta.reqSTR || 0, reqDEX: meta.reqDEX || 0, reqINT: meta.reqINT || 0, reqLUK: meta.reqLUK || 0,
       };
