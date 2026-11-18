@@ -10,7 +10,7 @@
   .seg button { background: transparent; color: var(--dim); border: 0; border-right: 1px solid var(--line); padding: 4px 12px; cursor: pointer; font: inherit; }
   .seg button:last-child { border-right: 0; }
   .seg button.on { background: var(--accent); color: #fff; }
-  .seg button .n { opacity: .7; font-size: 11px; margin-left: 3px; }
+  .seg button .n { opacity: .7; font-size: 12px; margin-left: 3px; }
   .bag-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 10px; }
   .bag-tools #bSearch { width: 180px; }
   .bag-adv { width: 100%; } .bag-adv summary { color: var(--dim); cursor: pointer; font-size: 12px; }
@@ -19,7 +19,7 @@
   .ccard:hover { border-color: var(--accent); }
   .ccard.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
   .ccard.off { opacity: .45; } .ccard.none { opacity: .35; }
-  .ccard .nm { font-weight: 600; } .ccard .sub { color: var(--dim); font-size: 11px; }
+  .ccard .nm { font-weight: 600; } .ccard .sub { color: var(--dim); font-size: 12px; }
   .ccard .cnt { font-size: 12px; margin-top: 2px; display: flex; gap: 8px; }
   .ccard .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: middle; }
   .holder { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; margin: 2px 4px 2px 0; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); font-size: 12px; cursor: pointer; user-select: none; }
@@ -37,7 +37,7 @@
   .tile:hover { border-color: var(--accent); }
   .tile.sel { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); background: #22355a; }
   .tile img { width: 32px; height: 32px; object-fit: contain; image-rendering: pixelated; }
-  .tile .q { position: absolute; right: 3px; bottom: 1px; font-size: 11px; font-weight: 600; text-shadow: 0 0 3px #000, 0 0 2px #000; }
+  .tile .q { position: absolute; right: 3px; bottom: 1px; font-size: 12px; font-weight: 600; text-shadow: 0 0 3px #000, 0 0 2px #000; }
   .tile .p { position: absolute; left: 3px; top: 1px; font-size: 10px; color: var(--main); font-weight: 600; text-shadow: 0 0 3px #000; }
   .tile .l { position: absolute; right: 2px; top: 0; font-size: 10px; }
   .tile .nm { font-size: 10px; padding: 2px; text-align: center; line-height: 1.1; color: var(--dim); }
@@ -49,12 +49,12 @@
   header h1 { white-space: nowrap; }
   .jobs-btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; cursor: pointer; font: inherit; display: inline-flex; gap: 6px; align-items: center; }
   .jobs-btn.hot { border-color: var(--warn); }
-  .badge { border-radius: 10px; padding: 0 7px; font-size: 11px; font-weight: 600; }
+  .badge { border-radius: 10px; padding: 0 7px; font-size: 12px; font-weight: 600; }
   .warn-b { background: var(--warn); color: #222; } .run-b { background: var(--accent); color: #fff; } .bad-b { background: var(--bad); color: #fff; }
   .drawer { position: fixed; top: var(--hdr, 52px); right: 0; bottom: 0; width: min(980px, 96vw); z-index: 40; background: var(--panel); border-left: 1px solid var(--accent); box-shadow: -10px 0 30px rgba(0,0,0,.5); overflow: auto; padding: 10px 14px; }
   .drawer .dhd { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; position: sticky; top: -10px; background: var(--panel); padding: 8px 0; z-index: 2; }
   .drawer table td { white-space: normal; }
-  .help { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; border: 1px solid var(--dim); color: var(--dim); font-size: 11px; margin-left: 7px; cursor: help; position: relative; vertical-align: middle; font-weight: 600; }
+  .help { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; border: 1px solid var(--dim); color: var(--dim); font-size: 12px; margin-left: 7px; cursor: help; position: relative; vertical-align: middle; font-weight: 600; }
   .help:hover, .help:focus { border-color: var(--accent); color: var(--text); outline: none; }
   .help-pop { display: none; position: absolute; left: -8px; top: 24px; width: min(460px, 80vw); z-index: 60; background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; padding: 10px 12px; color: var(--text); font-weight: 400; font-size: 12.5px; line-height: 1.65; white-space: normal; box-shadow: 0 8px 24px rgba(0,0,0,.5); cursor: default; }
   .help-pop > div + div { margin-top: 6px; }
@@ -73,13 +73,13 @@
   table.ov tr.alt:hover td { opacity: 1; }
   table.ov tr.accstart td { border-top: 2px solid var(--line); }
   table.ov tr.picked td { background: #1d2c47; }
-  .sm { font-size: 11px; }
+  .sm { font-size: 12px; }
   .lvl { display: inline-block; min-width: 50px; }
   .dpslink { cursor: pointer; } .dpslink:hover b { color: var(--accent); text-decoration: underline; }
   tr.dps-detail td { background: var(--panel2); white-space: normal; }
   .dpsbox { padding: 6px 4px; }
   .dps-kpis { display: flex; flex-wrap: wrap; gap: 10px 28px; margin-bottom: 10px; }
-  .dps-kpis div { display: flex; flex-direction: column; } .dps-kpis span { color: var(--dim); font-size: 11px; } .dps-kpis b { font-size: 17px; } .dps-kpis i { font-style: normal; color: var(--dim); font-size: 11px; }
+  .dps-kpis div { display: flex; flex-direction: column; } .dps-kpis span { color: var(--dim); font-size: 12px; } .dps-kpis b { font-size: 17px; } .dps-kpis i { font-style: normal; color: var(--dim); font-size: 12px; }
   .dps-cols { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(260px, 1fr); gap: 24px; }
   .skrow { display: grid; grid-template-columns: 130px 1fr 52px; gap: 8px; align-items: center; font-size: 12px; margin: 3px 0; }
   .skbar { height: 7px; background: var(--line); border-radius: 4px; overflow: hidden; } .skbar i { display: block; height: 100%; background: var(--accent); }
@@ -109,7 +109,7 @@
   .grid.named { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
   .grid.named .tile { height: 78px; flex-direction: column; justify-content: flex-start; padding-top: 8px; }
   .grid.named .tile .q { bottom: auto; top: 30px; }
-  .tile .tn { font-size: 11px; line-height: 1.15; text-align: center; padding: 3px 3px 0; color: var(--text); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .tile .tn { font-size: 12px; line-height: 1.15; text-align: center; padding: 3px 3px 0; color: var(--text); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   @media (max-width: 1100px) { .lanes { grid-template-columns: 1fr; } }
   .fac { position: relative; height: calc(100vh - var(--hdr, 52px) - 130px); min-height: 560px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px; cursor: grab; touch-action: none;
     background-color: #0c121c; background-image: radial-gradient(circle, #24324a 1px, transparent 1.2px); background-size: 22px 22px; }
@@ -150,7 +150,7 @@
   .fnode.fmap.hot { outline: 2px dashed var(--accent); outline-offset: 3px; }
   .fnode.fsink .fn-hd { border-top-color: #e0b341; } .fnode.fsink.soon { opacity: .55; border-style: dashed; } .fnode.fsink.soon .fn-hd { border-top-color: var(--dim); }
   .fnode .big { font-size: 20px; font-weight: 600; }
-  .fnode .flane { margin-left: auto; font-size: 11px; padding: 0 2px; }
+  .fnode .flane { margin-left: auto; font-size: 12px; padding: 0 2px; }
   .fnode .fn-act { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
   .fnode .fgoal { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fnode .fgoal img.ico { width: 18px; height: 18px; }
@@ -166,10 +166,10 @@
   .qbank td { vertical-align: top; }
   :root {
     --bg: #0f1520; --panel: #182131; --panel2: #1e2a3d; --line: #2b3a52; --text: #dbe3ef; --dim: #8a99b0;
-    --accent: #4f7fd1; --good: #3fae6a; --warn: #d9a441; --bad: #d65c5c; --main: #f0c75e;
+    --accent: #4f7fd1; --good: #3fae6a; --warn: #d9a441; --bad: #e66b6b; --main: #f0c75e;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.5 "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif; }
   header { display: flex; align-items: center; gap: 16px; padding: 10px 18px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
   header h1 { font-size: 16px; margin: 0; }
   nav button { background: transparent; color: var(--dim); border: 1px solid transparent; padding: 6px 10px; border-radius: 6px; cursor: pointer; font: inherit; }
@@ -248,7 +248,6 @@
   header nav { display: flex; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
   #updBox { white-space: nowrap; }
   #updBox * { white-space: nowrap; }
-  #status { flex: 1 1 240px; min-width: 200px; }
   .fac-hud { flex-wrap: wrap; right: 10px; max-width: calc(100% - 20px); }
   .fac-hud > * { white-space: nowrap; }
   .fac-hud .seg button { white-space: nowrap; }
@@ -260,7 +259,6 @@
     main :has(> table.sticky) > table.sticky thead th { top: 0; }
     main table:has(> thead > tr > th:nth-child(9)) { min-width: 980px; }
     main table:has(> thead > tr > th:nth-child(13)) { min-width: 1200px; }
-    #status { order: 9; flex-basis: 100%; }
   }
   @media (max-width: 900px) {
     header { padding: 8px 10px; gap: 8px; }
@@ -273,6 +271,26 @@
   .holder.gl { border-color: #2c6e8f; background: #132d3b; }
   .holder.gl.sel { background: #1f5673; }
   .bag-guild { border-color: #2c6e8f; }
+
+  /* ===== 日常可讀性（v0.34）===== */
+  td.num, th.num, .num, .stat b, .tabnum { font-variant-numeric: tabular-nums; }
+  table.ov { width: auto; min-width: 60%; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  tr.pickrow:focus-visible, .holder:focus-visible, .tile:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* 頂端的系統狀態：平常收成一個小標，有狀況才變色；點開看詳細 */
+  .sysbox { position: relative; margin-left: auto; }
+  .sysbox > summary { list-style: none; cursor: pointer; padding: 4px 10px; border: 1px solid var(--line); border-radius: 14px; color: var(--dim); font-size: 12px; white-space: nowrap; }
+  .sysbox > summary::-webkit-details-marker { display: none; }
+  .sysbox > summary.warn { color: var(--warn); border-color: var(--warn); }
+  .sysbox > summary.bad { color: var(--bad); border-color: var(--bad); }
+  .sysbox > summary.upd { color: var(--text); border-color: var(--accent); background: #1d2c47; }
+  .sys-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 50; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; width: max-content; max-width: 70vw; box-shadow: 0 10px 30px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 8px; }
+  .sys-pop #updBox { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  /* 沒選東西時，浮動操作列縮成右下角的小列，不擋內容 */
+  .action-bar.idle { left: auto; right: 14px; transform: none; border-color: var(--line); box-shadow: 0 4px 14px rgba(0,0,0,.4); padding: 4px 8px; gap: 6px; font-size: 12px; opacity: .9; }
+  .action-bar.idle .btn { padding: 2px 8px; font-size: 12px; }
+  .gd-grp { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; margin: 2px 0; }
+  .gd-grp > b { width: 44px; flex: none; color: var(--dim); font-weight: 400; }
 </style>
 </head>
 <body>
@@ -291,8 +309,8 @@
     <button data-tab="guild">公倉</button>
   </nav>
   <button id="jobBtn" class="jobs-btn" title="交易、背包的工作佇列">工作<span id="jobBadge"></span></button>
-  <div id="updBox"></div>
-  <div id="status">連線中…</div>
+  <details id="sysBox" class="sysbox"><summary id="sysSum" title="版本、腳本、更新設定">連線中…</summary>
+    <div class="sys-pop"><div id="status">連線中…</div><div id="updBox"></div></div></details>
 </header>
 <aside id="jobDrawer" class="drawer" style="display:none">
   <div class="dhd"><b>工作佇列</b><span class="dim" style="flex:1">待確認的要按「確認執行」才會開始；執行時那隻角色要有自己的遊戲分頁（同一個帳號可以開兩個分頁）。</span><button class="btn" id="jobClose">關閉 ✕</button></div>
@@ -786,7 +804,7 @@ function tabTag(charId) {
   const t = tabOf(charId);
   if (!t) return '';
   return t.hidden || t.off ? ` <span class="tag warn" title="這隻的遊戲分頁在背景或離線掛機中：遊戲會暫停更新畫面，資料慢一點、工作要等它醒來。把分頁拖成獨立視窗最好">分頁・背景</span>`
-    : ` <span class="tag good" title="這隻角色有自己的遊戲分頁：資料即時、工作直接執行">分頁</span>`;
+    : ''; // 正常（有分頁、看得到）不標；只標例外
 }
 function switchBtn(charId, accountId) {
   if (hasTab(charId)) return tabTag(charId);
@@ -1041,9 +1059,10 @@ function renderOvBar() {
   const bar = $('#ovBar'); if (!bar) return;
   const n = ui.idleSel.size;
   bar.style.display = '';
+  bar.classList.toggle('idle', !n);
   bar.innerHTML = n
     ? `<span class="sum">已選 <b>${n}</b> 隻</span><button class="btn primary" data-idle="start">▶ 開始掛機</button><button class="btn" data-idle="stop">Ⅱ 暫停</button><button class="btn" data-idle="restart" title="先暫停再開始，掛機時間重新從 24 小時算起">↻ 重新開始</button><button class="btn" data-idle="wake" title="幫勾選的帳號按遊戲的「點一下繼續」，領回離線掛機期間累積的收益">⏏ 領取離線收益</button><button class="btn" data-idle="switch" title="把勾選的角色切成該帳號的目前角色（同帳號勾兩隻時以後面那隻為準）">⇄ 切換為目前角色</button><button class="btn" id="idleSelNone">清除</button>${ovGroupBtns()}<span class="dim" id="idleMsg">${esc(ui.idleMsg || '')}</span>`
-    : `<span class="dim">勾選角色可以批次操作，或</span><button class="btn" id="idleSelStopped">選未掛機的</button><button class="btn" id="idleSelAll">全選</button>${ovGroupBtns()}<span class="dim" id="idleMsg">${esc(ui.idleMsg || '')}</span>`;
+    : `<span class="dim">批次操作：</span><button class="btn" id="idleSelStopped">選未掛機的</button><button class="btn" id="idleSelAll">全選</button>${ovGroupBtns()}<span class="dim" id="idleMsg">${esc(ui.idleMsg || '')}</span>`;
 }
 document.addEventListener('click', async e => {
   const t = e.target.closest('[data-attn],[data-openjobs],[data-goto],[data-ovmode],[data-dpsopen]');
@@ -1703,6 +1722,7 @@ function renderBagBar() {
   const sel = bagSelected(), bar = $('#bagBar');
   const vis = bagVisibleChars(), visCount = vis.reduce((a, s) => a + bagRows(s).length, 0);
   const gsel = [...ui.bagSel].filter(id => id.startsWith(GSID));
+  bar.classList.toggle('idle', !sel.length && !gsel.length);
   const guildSeg = gsel.length ? `<span class="give-grp gl-grp">🏦 公倉已選 <b>${gsel.length}</b> 項 → 領給<select id="bGuildTo">${charOpt(ui.bag.guildTo || S.mainCharId || '', true).replace('（選擇角色）', '（選角色）')}</select><button class="btn primary" data-bact="guildTake" title="從公會倉庫領到這隻角色的背包（道具領全部數量）">從公倉領取</button></span>` : '';
   if (!sel.length && gsel.length) {
     bar.style.display = '';
@@ -1711,7 +1731,7 @@ function renderBagBar() {
   }
   if (!sel.length) {
     bar.style.display = visCount ? '' : 'none';
-    bar.innerHTML = `<span class="dim">點物品選取，或</span><button class="btn" data-bquick="sell">選取畫面上所有可賣的</button><button class="btn" data-bquick="all">選取畫面上全部</button>`;
+    bar.innerHTML = `<span class="dim">快速選取：</span><button class="btn" data-bquick="sell">選取畫面上所有可賣的</button><button class="btn" data-bquick="all">選取畫面上全部</button>`;
     return;
   }
   const chars = new Set(sel.map(x => x.s.char.id));
@@ -3824,7 +3844,14 @@ function renderGuildDeposit() {
   const d = gdState();
   const ae = document.activeElement;
   $('#gdSummary').innerHTML = gdSummary(d);
-  $('#gdChars').innerHTML = snaps().slice().sort((a, b) => cmp(charGroup(a.char.id), charGroup(b.char.id)) || cmp(a.char.name, b.char.name)).map(s => `<label title="${esc(s.char.jobName || '')} ・${charGroup(s.char.id)} 組"><input type="checkbox" data-gdchar="${s.char.id}" ${!d.chars || d.chars.has(s.char.id) ? 'checked' : ''}>${esc(s.char.name)} <span class="dim sm">Lv${s.char.lv}</span></label>`).join('');
+  {
+    // 選角色：全部角色時收起來；自訂時分 A 組、B 組兩列
+    const chip = sn => `<label title="${esc(sn.char.jobName || '')}"><input type="checkbox" data-gdchar="${sn.char.id}" ${!d.chars || d.chars.has(sn.char.id) ? 'checked' : ''}>${esc(sn.char.name)} <span class="dim sm">Lv${sn.char.lv}</span></label>`;
+    const byG = { A: [], B: [] }; for (const sn of snaps().slice().sort((a, b) => cmp(a.char.name, b.char.name))) (byG[charGroup(sn.char.id)] || byG.A).push(sn);
+    $('#gdChars').innerHTML = !d.chars && !ui.gdCharsOpen
+      ? `<span>全部角色（目前 ${snaps().length} 隻，之後新增的也算）</span> <button class="btn sm" id="gdCharsCustom">自訂角色</button>`
+      : ['A', 'B'].filter(g => byG[g].length).map(g => `<div class="gd-grp"><b>${g} 組</b>${byG[g].map(chip).join('')}</div>`).join('');
+  }
   $('#gdCharsInfo').textContent = d.chars ? `已選 ${d.chars.size} 隻` : '目前：全部角色（之後新增的也會存）';
   document.querySelectorAll('#gdKinds button').forEach(b => b.classList.toggle('on', b.dataset.gdkind === d.kind));
   const all = gdCandidates(), shown = gdShown(all);
@@ -3899,8 +3926,9 @@ document.addEventListener('click', async e => {
     if (t.dataset.gdpreset) { gdPreset(d, t.dataset.gdpreset); gdSave(); renderGuildDeposit(); renderGuideSteps(); return; }
     if (t.dataset.gdgroup) { const ids = new Set(groupChars(t.dataset.gdgroup)); d.chars = new Set(gdAllCharIds().filter(id => ids.has(id))); gdSave(); renderGuildDeposit(); return; }
     if (t.id === 'gaRun') { t.disabled = true; await api('/api/guild/auto-run', {}); await loadGuild(true); renderGuildAuto(); await poll(true); t.disabled = false; return; }
-    if (t.id === 'gdCharsAll') { d.chars = null; gdSave(); renderGuildDeposit(); return; }
-    if (t.id === 'gdCharsNone') { d.chars = new Set(); gdSave(); renderGuildDeposit(); return; }
+    if (t.id === 'gdCharsAll') { d.chars = null; ui.gdCharsOpen = false; gdSave(); renderGuildDeposit(); return; }
+    if (t.id === 'gdCharsCustom') { ui.gdCharsOpen = true; renderGuildDeposit(); return; }
+    if (t.id === 'gdCharsNone') { d.chars = new Set(); ui.gdCharsOpen = true; gdSave(); renderGuildDeposit(); return; }
     if (t.dataset.gdkind) { d.kind = t.dataset.gdkind; renderGuildDeposit(); return; }
     if (t.id === 'gdPickShown') { for (const x of gdShown(gdCandidates())) d.names.add(x.k); gdSave(); renderGuildDeposit(); return; }
     if (t.id === 'gdPickNone') { d.names.clear(); gdSave(); renderGuildDeposit(); return; }
@@ -4046,6 +4074,13 @@ async function poll(force) {
     const ver = DATA.scriptVersion || (DATA.update && DATA.update.current) || '?';
     const live = snaps().filter(isOnline);
     const okN = live.filter(s => s.scriptVersion === DATA.scriptVersion).length;
+    {
+      const u0 = DATA.update || {}, sum = $('#sysSum');
+      const stale = live.length - okN;
+      const cls = u0.hasUpdate ? 'upd' : stale > 0 ? 'warn' : '';
+      sum.className = cls;
+      sum.textContent = u0.hasUpdate ? `有新版本 v${u0.latest}` : stale > 0 ? `v${ver}・${stale} 個分頁還是舊腳本` : `v${ver}`;
+    }
     $('#status').innerHTML = `伺服器 v${esc(ver)} · 腳本 <span class="${okN < live.length ? 'warn' : 'good'}" title="在線角色中，執行最新腳本的數量">${okN}/${live.length} 最新</span> · 已同步 ${snaps().length} 隻角色 · ${new Date().toLocaleTimeString('zh-TW')}`;
     const u = DATA.update || {};
     const auto = S.autoUpdate !== false;
@@ -4060,6 +4095,7 @@ async function poll(force) {
     if (force || !typing) renderAll();
   } catch (e) {
     $('#status').innerHTML = '<span class="bad">連不到本機伺服器，請確認 server 視窗有開著</span>';
+    const sum = $('#sysSum'); if (sum) { sum.className = 'bad'; sum.textContent = '連不到伺服器'; }
   }
 }
 
