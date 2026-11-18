@@ -543,10 +543,18 @@ function agentMain(ctx) {
       if (failed.length) await report(job, { event: 'error', msg: '失敗：' + failed.join('、') });
       else await report(job, { event: 'batchDone' });
       if (switchTo) {
-        // 讓遊戲頁面以新角色重新載入（跟遊戲內「切換」一樣的結果）
-        try { sessionStorage.setItem('mapleCharacter', switchTo); sessionStorage.removeItem('mapleSessionView'); } catch (_) {}
+        // 讓遊戲頁面以新角色重新載入（跟遊戲內「切換」一樣的結果）。
+        // 遊戲每次同步完會把 mapleCharacter 寫回「畫面上的角色」，重新整理前剛好同步一次就會切回舊角色：
+        // 這段期間擋掉遊戲寫回舊角色，離開頁面時再寫一次，然後立刻重新整理
+        const pin = () => { try { sessionStorage.setItem('mapleCharacter', switchTo); sessionStorage.removeItem('mapleSessionView'); } catch (_) {} };
+        try {
+          const SP = (W.Storage || Storage).prototype, orig = SP.setItem, ss = W.sessionStorage;
+          SP.setItem = function (k, v) { if (this === ss && k === 'mapleCharacter' && v !== switchTo) return; return orig.call(this, k, v); };
+        } catch (_) {}
+        try { W.addEventListener('pagehide', pin); } catch (_) {}
+        pin();
         setBadge(null, '已切換角色，重新整理頁面…');
-        setTimeout(() => location.reload(), 800);
+        setTimeout(() => location.reload(), 50);
       }
     }
 
