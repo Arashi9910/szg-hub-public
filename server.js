@@ -148,7 +148,7 @@ function jobLog(job, msg) {
 }
 function publicJob(j) { return j; }
 
-const BAG_KINDS = new Set(['sell', 'lock', 'unlock', 'idle']);
+const BAG_KINDS = new Set(['sell', 'lock', 'unlock', 'idle', 'forge']);
 
 // ================= 掛機控制 =================
 // 指令（開始／暫停／重新開始）依帳號分組，交給那個帳號目前在線的遊戲頁面執行；
@@ -242,7 +242,7 @@ function createBagJob(body) {
     id: crypto.randomBytes(6).toString('hex'), kind: body.kind, status: 'pending', createdAt: Date.now(),
     fromCharId: owner.char.id, fromName: owner.char.name, fromCode: owner.playerCode,
     toCharId: owner.char.id, toName: owner.char.name, toCode: owner.playerCode,
-    batches: [{ items: b.items || [], gear: b.gear || [], money: 0 }], batchIndex: 0, log: [], lastMsg: '',
+    batches: [{ items: b.items || [], gear: b.gear || [], money: 0, ...(body.kind === 'forge' && b.forge ? { forge: b.forge } : {}) }], batchIndex: 0, log: [], lastMsg: '',
     estimate: Number(body.estimate) || 0,
   };
   db.jobs.push(job);
@@ -393,6 +393,16 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ---- 交易工作 ----
+    // 強化工坊的結果（每件衝了幾次、成功幾次、是否及格），給面板和之後的分流用
+    if (req.method === 'POST' && url.pathname === '/api/forge/result') {
+      const r = JSON.parse(await readBody(req));
+      if (!r || !Array.isArray(r.results)) return send(res, 400, { error: 'bad result' });
+      (db.forgeLog || (db.forgeLog = [])).push({ at: Date.now(), ...r });
+      if (db.forgeLog.length > 100) db.forgeLog.splice(0, db.forgeLog.length - 100);
+      save();
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/forge') return send(res, 200, { log: (db.forgeLog || []).slice(-40) });
     if (req.method === 'GET' && url.pathname === '/api/jobs') {
       return send(res, 200, { jobs: db.jobs.slice(-100).map(publicJob) });
     }

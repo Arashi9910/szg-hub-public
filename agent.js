@@ -148,7 +148,7 @@ function agentMain(ctx) {
     }
     // 把地圖、怪物、掉落表整理後交給中控（面板的「地圖」分頁用）；同一版本只傳一次
     async function uploadWorld(cat) {
-      const ver = 'w3:' + String(cat.version || '') + ':' + Object.keys(cat.maps || {}).length + ':' + (cat.mobs || []).length + ':' + Object.keys(cat.drops || {}).length;
+      const ver = 'w4:' + String(cat.version || '') + ':' + Object.keys(cat.maps || {}).length + ':' + (cat.mobs || []).length + ':' + Object.keys(cat.drops || {}).length;
       const have = await hub('GET', '/api/world/version');
       if (have && have.version === ver) return;
       const names = {};
@@ -172,6 +172,8 @@ function agentMain(ctx) {
         maps: Object.values(cat.maps || {}).map(m => ({ id: m.id, msId: m.msId, name: m.name, region: m.region, minLevel: m.minLevel || 0, mobIds: m.mobIds || [], boss: (m.bossSpawns || []).map(b => b.mobId) })),
         mobs: (cat.mobs || []).map(m => ({ id: m.id, msId: m.msId, name: m.name, lv: m.lv, hp: m.hp, xp: m.xp, money: m.money, isBoss: !!m.isBoss, acc: m.meta && m.meta.accuracy, eva: m.meta && m.meta.evasion, def: m.defense })),
         drops, mobDrops, names, skills, jobs,
+        // 卷軸：[名稱, 適用部位（對應裝備的 type）, 成功率, 詛咒（失敗時裝備消失機率 %）, 素質]，給強化工坊用
+        scrolls: Object.fromEntries(Object.entries(cat.scrolls || {}).map(([k, sc]) => [k, [sc.name, sc.target, Number(sc.rate) || 0, Number(sc.cursed) || 0, sc.stats || {}]])),
         // 每張地圖可設定自動販售的掉落物：[itemId, 種類, 名稱, 商店價, 可賣, 分類, 掉落的怪物 id]
         autoSellDrops: Object.fromEntries(Object.entries(cat.autoSellDrops || {}).map(([mapId, rows]) => [mapId, (rows || []).filter(r => r && r.itemId).map(r => [r.itemId, r.kind, r.name, r.price || 0, r.sellable ? 1 : 0, r.category || '', (r.monsters || []).map(m => m.id)])])),
       };
@@ -249,7 +251,7 @@ function agentMain(ctx) {
       if (/Weapon/.test(category)) slot = 'weapon';
       return {
         loc, slot, uid: g.uid,
-        weaponType: /Weapon/.test(category) ? (g.type || e.equipmentType) : '',
+        weaponType: /Weapon/.test(category) ? (g.type || e.equipmentType) : '', gtype: g.type || e.equipmentType || '',
         itemId: g.itemId, name: g.name, plus: g.successes || 0, slotsLeft: g.slots || 0, maxSlots: g.maxSlots || 0,
         locked: !!g.locked, tradable: loc === '背包' ? gearTradable(g) : false,
         stats: g.stats || {}, cleanStats: g.cleanStats || g.baseStats || {}, baseStats: g.rollVersion && g.baseStats ? g.baseStats : null,
@@ -1102,7 +1104,57 @@ function agentMain(ctx) {
         await report(job, { event: 'log', msg: `已賣出 ${count} 項，共 ${total.toLocaleString()} 楓幣` });
         return report(job, { event: 'batchDone' });
       }
+      if (job.kind === 'forge') return runForgeJob(job, c);
       return report(job, { event: 'error', msg: '未知的工作類型：' + job.kind });
+    }
+    // ---------- 強化工坊：用神匠之魂（artisanScroll）批次衝卷 ----------
+    // 遊戲規則：每衝 1 次扣 1 張卷軸＋10 萬楓幣（失敗也扣格）；一次最多 10 件，多件時要「名稱相同、剩餘次數相同、沒鎖定」；
+    // 單件 {uid}、多件 {uids}；結果在 character.lastArtisan。這裡另外用衝之前／之後的裝備狀態算每件的結果，不依賴結果格式
+    const FORGE_FEE = 100000;
+    async function runForgeJob(job, c) {
+      const b = job.batches[0] || {}, f = b.forge || {};
+      const rid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
+      const gearOf = ch => new Map([...Object.values(ch.gear || {}).filter(Boolean), ...(ch.equipmentBag || [])].map(g => [g.uid, g]));
+      const results = [], skipped = [];
+      let fee = 0, stop = '';
+      for (const grp of b.groups || f.groups || []) {
+        if (stop) break;
+        const cur = gearOf(c);
+        // 第二次檢查：還在、沒鎖定、剩餘次數跟試跑時一樣
+        const ok = grp.uids.filter(u => { const g = cur.get(u); if (!g) { skipped.push(u + '（找不到）'); return false; } if (g.locked) { skipped.push(g.name + '（已鎖定）'); return false; } if ((g.slots || 0) !== grp.slots) { skipped.push(g.name + '（剩餘次數變了）'); return false; } return true; });
+        if (!ok.length) continue;
+        const count = Math.min(10, grp.slots, f.count === 'all' ? grp.slots : Number(f.count) || 1);
+        const have = (c.inventory || {})[f.item] || 0;
+        if (have < ok.length) { stop = `卷軸不夠（剩 ${have} 張）`; break; }
+        if ((c.money || 0) < FORGE_FEE * ok.length) { stop = '楓幣不夠'; break; }
+        const before = new Map(ok.map(u => [u, { ...cur.get(u) }]));
+        setBadge(null, `強化工坊：${before.get(ok[0]).name} ×${ok.length}，每件最多 ${count} 次…`);
+        const action = { type: 'artisanScroll', item: f.item, count, stopAfterSuccesses: Number(f.stopAfter) || 0, expectedSlots: grp.slots, stopOnFail: !!f.stopOnFail, characterId: c.id, requestId: rid() };
+        if (ok.length === 1) action.uid = ok[0]; else action.uids = ok;
+        let j;
+        try { j = await gameRetry(action); }
+        catch (e) { stop = '遊戲拒絕：' + e.message; break; }
+        const after = j && j.character && j.character.id === c.id ? j.character : null;
+        if (!after) { stop = '遊戲沒有回傳角色資料，停止（請到遊戲裡確認結果）'; break; }
+        const now = gearOf(after);
+        const la = after.lastArtisan || null;
+        ok.forEach((u, i) => {
+          const g0 = before.get(u), g1 = now.get(u), it = la && la.multi ? (la.items || [])[i] : la;
+          const destroyed = !g1;
+          const succ = destroyed ? ((it && it.successes) || 0) : (g1.successes || 0) - (g0.successes || 0);
+          const att = destroyed ? ((it && (it.attempts || []).length) || 1) : (g0.slots || 0) - (g1.slots || 0);
+          fee += att * FORGE_FEE;
+          results.push({ uid: u, name: g0.name, attempts: att, successes: succ, destroyed, slotsLeft: destroyed ? 0 : g1.slots, plus: destroyed ? 0 : g1.successes, pass: !destroyed && (g1.successes || 0) >= (Number(f.minSucc) || 0) });
+        });
+        c = after;
+        await sleepP(800);
+      }
+      const pass = results.filter(r => r.pass).length, lost = results.filter(r => r.destroyed).length;
+      hub('POST', '/api/forge/result', { jobId: job.id, charId: c.id, charName: c.name, item: f.item, itemName: f.itemName, minSucc: Number(f.minSucc) || 0, results, fee, stop }).catch(() => {});
+      if (skipped.length) await report(job, { event: 'log', msg: '略過：' + skipped.join('、') });
+      await report(job, { event: 'log', msg: `衝了 ${results.length} 件、共 ${results.reduce((t, r) => t + r.attempts, 0)} 次，成功 ${results.reduce((t, r) => t + r.successes, 0)} 次；及格 ${pass} 件${lost ? `、消失 ${lost} 件` : ''}；花費 ${fee.toLocaleString()} 楓幣${stop ? '；' + stop + '，提前停止' : ''}` });
+      if (!results.length && stop) return report(job, { event: 'error', msg: stop });
+      return report(job, { event: 'batchDone' });
     }
 
     async function agentTick() {
