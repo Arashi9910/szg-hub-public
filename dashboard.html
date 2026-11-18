@@ -182,6 +182,9 @@
   .fg-chip { display: inline-block; border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; margin: 0 3px 2px 0; font-size: 12px; }
   .fg-chip.good { border-color: var(--good); color: var(--good); } .fg-chip.bad { border-color: var(--bad); color: var(--bad); }
   .fg-res > summary { cursor: pointer; padding: 4px 0; } .fg-plus { font-size: 14px; }
+  .fnode.fchar.bgc { opacity: .62; border-style: dashed; }
+  .fnode .fn-hd .tag.sm { font-size: 10px; padding: 0 4px; margin-left: 4px; }
+  .fnode .fn-hd a[data-bdmovegrp] { margin-left: auto; cursor: pointer; }
   tr.pickrow { cursor: pointer; user-select: none; }
   tr.pickrow:hover td { background: rgba(255,255,255,.04); }
   tr.pickrow.picked td { background: rgba(91,141,239,.16); }
@@ -398,7 +401,7 @@
       <h3>派工看板</h3>
       <div class="dim help-src">把角色拖到地圖上決定去哪裡（也可以點一下角色再點地圖）。地圖分成「練功、打卷軸、打裝備」三條路線，每張圖可以設定：🎯 要打的目標道具（看板會估計派去的角色每小時大約打到幾個）、💰 自動販售（撿到就賣給商店的道具，遊戲伺服器處理，分頁沒開也有效）。排好後按「套用派工」：要移動的角色換過去，並套用那張圖的自動販售。遊戲只能設定「目前所在地圖」的自動販售，所以換圖和設定是一起做的。估計值和地圖分頁的組隊試算用同一套方法，只是參考。</div>
       <div class="bar"><div class="seg" id="bdViewSeg"><button data-bview2="factory">🏭 工廠圖</button><button data-bview2="list">☰ 清單</button></div>
-        <button class="btn" id="bdApply">▶ 套用派工</button><button class="btn" id="bdImport" title="把角色目前所在的地圖放上看板，並用你在遊戲裡設好的自動販售當範本">⤓ 匯入目前設定</button><button class="btn" id="bdClear">清除派工</button>
+        <span id="bdGroupBox"></span><button class="btn" id="bdApply">▶ 套用派工</button><button class="btn" id="bdImport" title="把角色目前所在的地圖放上看板，並用你在遊戲裡設好的自動販售當範本">⤓ 匯入目前設定</button><button class="btn" id="bdClear">清除派工</button>
         <select id="bdAddMap" style="max-width:260px"><option value="">＋ 加入地圖…</option></select><span class="dim" id="bdMsg"></span></div>
     </div>
     <div id="bdFactory" class="fac"></div>
@@ -2341,18 +2344,48 @@ document.addEventListener('click', async e => {
 // ================= 派工看板 =================
 const LANES = [['train', '練功', '經驗'], ['scroll', '打卷軸', '卷軸'], ['gear', '打裝備', '裝備']];
 ui.board = { pick: null, sellEdit: null, goalEdit: null, dragging: false, sellDraft: null, q: '' };
+// ---- 派工分組：每個帳號第 1 隻角色＝A 組、第 2 隻＝B 組（可以單獨改），每組各有一份看板設定 ----
+// 切換角色後，另一隻在背景掛機；看板預設跟著「目前角色多的那一組」
+ui.board.group = (() => { try { return localStorage.getItem('boardGroup') || 'auto'; } catch (_) { return 'auto'; } })();
+function charGroup(id) {
+  const g = (S.charGroup || {})[id]; if (g) return g;
+  for (const s of snaps()) { const i = (s.accountChars || []).findIndex(c => c.id === id); if (i >= 0) return i === 0 ? 'A' : 'B'; }
+  return 'A';
+}
+function groupChars(g) { const ids = new Set(); for (const s of snaps()) for (const c of s.accountChars || []) ids.add(c.id); for (const s of snaps()) ids.add(s.char.id); return [...ids].filter(id => charGroup(id) === g); }
+function boardGroupAuto() {
+  const act = { A: 0, B: 0 };
+  // 只看有兩隻角色的帳號（只有一隻的不管切不切都在 A 組）
+  for (const s of Object.values(latestByAccount())) { if ((s.accountChars || []).length < 2) continue; const id = s.activeCharId || s.char.id; act[charGroup(id)] = (act[charGroup(id)] || 0) + 1; }
+  return act.B > act.A ? 'B' : 'A';
+}
+function boardGroup() { return ui.board.group === 'A' || ui.board.group === 'B' ? ui.board.group : boardGroupAuto(); }
+function boardGroupSeg() {
+  const g = boardGroup(), info = x => { const ids = groupChars(x), act = ids.filter(id => { const s = DATA.chars[id]; return s && activeCharOf(s.accountId) === id; }).length; return `${ids.length} 隻・目前 ${act}`; };
+  const inact = groupChars(g).filter(id => { const s = DATA.chars[id] || snaps().find(x => (x.accountChars || []).some(c => c.id === id)); return s && activeCharOf(s.accountId) !== id; });
+  return `<div class="seg" title="每個帳號第 1 隻角色＝A 組、第 2 隻＝B 組；兩組各有一份派工設定">${['A', 'B'].map(x => `<button data-bdgroup="${x}" class="${g === x ? 'on' : ''}">${x} 組 <span class="dim sm">${info(x)}</span></button>`).join('')}<button data-bdgroup="auto" class="${ui.board.group === 'auto' ? 'on' : ''}" title="跟著目前角色比較多的那一組">自動</button></div>`
+    + (inact.length ? `<button class="btn sm" data-bdgswitch="${g}" title="把這一組不是目前角色的，切換成目前角色（另一組會轉成背景掛機）">⇄ ${g} 組切成目前角色（${inact.length} 隻）</button>` : '');
+}
 function boardCfg() {
-  const b = S.board || {};
+  const all = S.boards || { A: S.board || {} };
+  const b = all[boardGroup()] || {};
   return { lanes: { train: [...((b.lanes || {}).train || [])], scroll: [...((b.lanes || {}).scroll || [])], gear: [...((b.lanes || {}).gear || [])] }, assign: { ...(b.assign || {}) }, sell: { ...(b.sell || {}) }, goals: { ...(b.goals || {}) }, pos: { ...(b.pos || {}) } };
 }
 let boardSaveTimer = null;
-function saveBoard(cfg) { S.board = cfg; clearTimeout(boardSaveTimer); boardSaveTimer = setTimeout(() => saveSettings({ board: cfg }), 300); }
+function saveBoard(cfg) {
+  const g = boardGroup(), all = { ...(S.boards || { A: S.board || {} }) };
+  all[g] = cfg; S.boards = all; if (g === 'A') S.board = cfg;
+  clearTimeout(boardSaveTimer); boardSaveTimer = setTimeout(() => saveSettings({ boards: S.boards, ...(g === 'A' ? { board: cfg } : {}) }), 300);
+}
 const isScrollId = id => Math.floor(Number(id) / 10000) === 204;
 const sellRows = mapId => ((WORLD && WORLD.autoSellDrops) || {})[mapId] || [];
 // 看板上的角色：每個帳號的目前角色（換圖只能動目前角色），另一隻列在最後供參考
 function boardChars() {
-  const list = snaps().map(s => ({ id: s.char.id, name: s.char.name, lv: s.char.lv, job: s.char.job, jobName: s.char.jobName, map: s.char.map, hourly: s.char.hourlyExp, accountId: s.accountId, active: activeCharOf(s.accountId) === s.char.id, s }));
-  for (const c of list) { try { calibrateChar(c); } catch (_) {} }
+  const list = snaps().map(s => ({ id: s.char.id, name: s.char.name, lv: s.char.lv, job: s.char.job, jobName: s.char.jobName, map: s.char.map, hourly: s.char.hourlyExp, accountId: s.accountId, active: activeCharOf(s.accountId) === s.char.id, group: charGroup(s.char.id), s }));
+  // 還沒同步過的角色（一直在背景掛機）：用帳號角色清單的資料顯示，可以先排派工
+  const have = new Set(list.map(c => c.id));
+  for (const s of Object.values(latestByAccount())) for (const x of s.accountChars || []) if (!have.has(x.id)) { have.add(x.id); list.push({ id: x.id, name: x.name, lv: x.lv, job: x.job, jobName: (s.statNames && null) || x.jobName || '', map: null, accountId: s.accountId, active: false, group: charGroup(x.id), s: null, unsynced: true }); }
+  for (const c of list) { try { if (c.s) calibrateChar(c); } catch (_) {} }
   const known = list.filter(c => c.power);
   for (const c of list) if (!c.power) { const ref = known.slice().sort((a, b) => Math.abs(a.lv - c.lv) - Math.abs(b.lv - c.lv))[0]; c.power = ref ? ref.power * Math.pow(c.lv / ref.lv, 1.8) : Math.pow(c.lv, 2) * 5; c.guess = true; }
   return list.sort((a, b) => (b.active - a.active) || b.lv - a.lv);
@@ -2375,7 +2408,8 @@ function renderBoard() {
   if ($('#bdFactory')) { $('#bdFactory').style.display = fv ? '' : 'none'; $('#bdList').style.display = fv ? 'none' : ''; }
   if (!WORLD) { loadWorld().then(() => WORLD && renderBoard()); $('#bdLanes').innerHTML = '<div class="card dim">還沒有地圖資料：打開任一個遊戲分頁，約 10 秒後會自動上傳。</div>'; return; }
   if (ui.board.dragging || ui.fac.drag) return;
-  const cfg = boardCfg(), chars = boardChars(), onBoard = new Set(Object.values(cfg.lanes).flat());
+  const cfg = boardCfg(), grp = boardGroup(), chars = boardChars().filter(c => c.group === grp), onBoard = new Set(Object.values(cfg.lanes).flat());
+  if ($('#bdGroupBox')) $('#bdGroupBox').innerHTML = boardGroupSeg();
   const where = c => cfg.assign[c.id] || (onBoard.has(c.map) ? c.map : null); // 沒指定、但人已經在看板上的某張圖，就算在那張圖
   const moving = chars.filter(c => cfg.assign[c.id] && cfg.assign[c.id] !== c.map);
   $('#bdApply').textContent = moving.length ? `▶ 套用派工（${moving.length} 隻要移動）` : '▶ 套用派工';
@@ -2416,7 +2450,7 @@ function boardMapCard(lane, m, here, cfg) {
   }
   const chips = here.map(c => {
     const x = per[c.id], moving = cfg.assign[c.id] && cfg.assign[c.id] !== c.map;
-    const sa = c.s.autoSell, same = sell && sa && sa.map === m.id && sa.enabled === sell.enabled && sa.itemIds.length === sell.itemIds.length && sell.itemIds.every(id => sa.itemIds.includes(id));
+    const sa = (c.s || {}).autoSell, same = sell && sa && sa.map === m.id && sa.enabled === sell.enabled && sa.itemIds.length === sell.itemIds.length && sell.itemIds.every(id => sa.itemIds.includes(id));
     return `<span class="holder ${moving ? 'mv' : ''}" draggable="true" data-bdchar="${c.id}" title="${esc([moving ? '待移動到這張圖' : '已在這張圖', x ? `估計 ${short(x.exp)} 經驗/小時、擊殺 ${fmt(Math.round(x.kills))}/小時` : '', x && !x.eligible ? '等級太低，分不到經驗' : '', sell ? (same ? '自動販售和這張圖的設定一致' : '自動販售和這張圖的設定不同（套用派工時會更新）') : ''].filter(Boolean).join('\n'))}">${moving ? '→ ' : ''}${esc(c.name)} <span class="dim">Lv${c.lv}</span>${x && !x.eligible ? ' <span class="bad">!</span>' : ''}${sell && !moving ? (same ? ' <span class="good">✓</span>' : ' <span class="warn">≠</span>') : ''}</span>`;
   }).join('');
   return `<div class="mcard" data-bddrop="${esc(m.id)}">
@@ -2508,23 +2542,24 @@ document.addEventListener('click', async e => {
     }
     if (t.id === 'bdClear') { if (!confirm('清除所有派工指定？（看板上的地圖、販售設定、目標會保留）')) return; const cfg = boardCfg(); cfg.assign = {}; saveBoard(cfg); renderBoard(); return; }
     if (t.id === 'bdApply') {
-      const cfg = boardCfg(), chars = boardChars(), targets = [], lines = [], skipped = [];
+      const cfg = boardCfg(), grp = boardGroup(), chars = boardChars().filter(c => c.group === grp), targets = [], lines = [], skipped = [];
       for (const c of chars) {
         const to = cfg.assign[c.id]; if (!to || to === '__pool') continue;
         const m = mapOf(to); if (!m) continue;
+        if (!c.active) { if (to !== c.map) skipped.push(`${c.name}（背景掛機中，要先切成目前角色）`); continue; }
         const sell = cfg.sell[to];
         if (to !== c.map) {
           if (c.lv < m.minLevel) { skipped.push(`${c.name}（等級不足 ${m.minLevel}）`); continue; }
           targets.push({ charId: c.id, action: 'map', map: to, mapName: m.name, sell }); lines.push(`${c.name}：${(mapOf(c.map) || {}).name || '?'} → ${m.name}${sell ? '（＋自動販售）' : ''}${c.active ? '' : '　⚠ 非目前角色'}`);
         } else if (sell) {
-          const sa = c.s.autoSell, same = sa && sa.map === to && sa.enabled === sell.enabled && sa.itemIds.length === sell.itemIds.length && sell.itemIds.every(id => sa.itemIds.includes(id));
+          const sa = (c.s || {}).autoSell, same = sa && sa.map === to && sa.enabled === sell.enabled && sa.itemIds.length === sell.itemIds.length && sell.itemIds.every(id => sa.itemIds.includes(id));
           if (!same && c.active) { targets.push({ charId: c.id, action: 'autosell', map: to, mapName: m.name, sell }); lines.push(`${c.name}：更新 ${m.name} 的自動販售`); }
         }
       }
       // 已在看板地圖上、沒有另外指定的角色，也幫牠們把販售設定對齊
       const onBoard = new Set(Object.values(cfg.lanes).flat());
       for (const c of chars) if (!cfg.assign[c.id] && onBoard.has(c.map) && cfg.sell[c.map] && c.active) {
-        const sell = cfg.sell[c.map], sa = c.s.autoSell;
+        const sell = cfg.sell[c.map], sa = (c.s || {}).autoSell;
         const same = sa && sa.map === c.map && sa.enabled === sell.enabled && sa.itemIds.length === sell.itemIds.length && sell.itemIds.every(id => sa.itemIds.includes(id));
         if (!same) { targets.push({ charId: c.id, action: 'autosell', map: c.map, mapName: (mapOf(c.map) || {}).name, sell }); lines.push(`${c.name}：更新 ${(mapOf(c.map) || {}).name} 的自動販售`); }
       }
@@ -2541,7 +2576,7 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('change', e => {
   const t = e.target;
-  if (t.id === 'bdAddMap' && t.value) { const cfg = boardCfg(); cfg.lanes.train = [...cfg.lanes.train, t.value]; saveBoard(cfg); renderBoard(); return; }
+  if ((t.id === 'bdAddMap' || t.id === 'facAddMap') && t.value) { const cfg = boardCfg(); cfg.lanes.train = [...cfg.lanes.train, t.value]; saveBoard(cfg); renderBoard(); return; }
   if (t.dataset && t.dataset.bdadd) { if (!t.value) return; const cfg = boardCfg(); cfg.lanes[t.dataset.bdadd] = [...cfg.lanes[t.dataset.bdadd], t.value]; saveBoard(cfg); renderBoard(); }
   if (t.id === 'bdSellOn' && ui.board.sellDraft) ui.board.sellDraft.enabled = t.checked;
 });
@@ -2567,7 +2602,7 @@ function facMapLane(cfg, id) { for (const [l, ids] of Object.entries(cfg.lanes))
 function renderFactory() {
   const box = $('#bdFactory');
   if (ui.fac.drag) return;
-  const cfg = boardCfg(), chars = boardChars().filter(c => c.active), pos = facPos(cfg, chars);
+  const cfg = boardCfg(), grp = boardGroup(), chars = boardChars().filter(c => c.group === grp), pos = facPos(cfg, chars);
   const onBoard = Object.values(cfg.lanes).flat();
   const where = c => cfg.assign[c.id] && cfg.assign[c.id] !== '__pool' ? cfg.assign[c.id] : (onBoard.includes(c.map) && cfg.assign[c.id] !== '__pool' ? c.map : null);
   // 每張圖的估算
@@ -2587,7 +2622,7 @@ function renderFactory() {
   let html = '';
   for (const c of chars) {
     const to = where(c), pend = cfg.assign[c.id] && cfg.assign[c.id] !== '__pool' && cfg.assign[c.id] !== c.map, d = dpsOf(c.id);
-    html += node('c:' + c.id, 'fchar' + (pend ? ' pend' : ''), FN_W.c, `<div class="fn-hd" data-fdrag><b>${esc(c.name)}</b><span class="dim sm">Lv${c.lv}</span></div>
+    html += node('c:' + c.id, 'fchar' + (pend ? ' pend' : '') + (c.active ? '' : ' bgc'), FN_W.c, `<div class="fn-hd" data-fdrag><b>${esc(c.name)}</b><span class="dim sm">Lv${c.lv}</span>${c.active ? '' : '<span class="tag sm" title="不是目前角色，在背景掛機；可以先排，套用時會略過">背景掛機</span>'}<a class="sm dim" data-bdmovegrp="${c.id}" title="把這隻移到另一組">→${grp === 'A' ? 'B' : 'A'}</a></div>
       <div class="fn-bd sm"><span class="dim">${esc(c.jobName || '')}</span>${d ? ` ・DPS ${short(d.w5.dps || d.w60.dps)}` : ''}<div class="dim">${pend ? `<span class="warn">${esc((mapOf(c.map) || {}).name || '?')} → ${esc((mapOf(to) || {}).name || '')}</span> <a data-funassign="${c.id}" title="取消派工">✕</a>` : esc((mapOf(c.map) || {}).name || '—')}</div></div>
       <span class="port out" data-fport="${c.id}" title="拖曳連到地圖＝派工"></span>`);
   }
@@ -2618,12 +2653,32 @@ function renderFactory() {
   if (ui.fac.sig === sig && $('#facWorld')) { requestAnimationFrame(() => { drawWires(); renderRecent(); }); return; }
   ui.fac.sig = sig;
   box.innerHTML = `<div class="fac-world" id="facWorld" style="width:${W}px;height:${H}px;transform:translate(${ui.fac.pan.x}px,${ui.fac.pan.y}px) scale(${ui.fac.zoom})"><svg class="fac-wires" id="facWires" width="${W}" height="${H}"></svg>${html}</div>
-    <div class="fac-hud"><button class="btn sm" data-fzoom="1.15">＋</button><button class="btn sm" data-fzoom="0.87">－</button><button class="btn sm" data-fzoom="fit" title="縮放到看得到所有節點">全部顯示</button><button class="btn sm" data-fzoom="reset">100%</button><button class="btn sm" data-fzoom="layout" title="把所有節點排回預設位置和大小">重新排列</button>
+    <div class="fac-hud"><span id="facGroupBox">${boardGroupSeg()}</span><select id="facAddMap" class="sm" style="max-width:200px">${$('#bdAddMap') ? $('#bdAddMap').innerHTML : '<option value="">＋ 加入地圖…</option>'}</select><button class="btn sm" data-fzoom="1.15">＋</button><button class="btn sm" data-fzoom="0.87">－</button><button class="btn sm" data-fzoom="fit" title="縮放到看得到所有節點">全部顯示</button><button class="btn sm" data-fzoom="reset">100%</button><button class="btn sm" data-fzoom="layout" title="把所有節點排回預設位置和大小">重新排列</button>
       <button class="btn sm" data-fzoom="max" title="畫布佔滿整個視窗">${document.getElementById('board').classList.contains('fac-max') ? '還原' : '⛶ 放大畫布'}</button><button class="btn sm primary" data-fzoom="apply">▶ 套用派工</button>
       <label class="sm" title="打到東西時，圖示沿著線飛到背包或商店"><input type="checkbox" id="facFx" ${ui.fac.fx !== 'off' ? 'checked' : ''}> 掉落動畫</label><label class="sm"><input type="checkbox" id="facFxGoal" ${ui.fac.fx === 'goal' ? 'checked' : ''}> 只顯示目標</label>
       <span class="dim sm">拖曳角色右邊的 ● 連到地圖＝派工・拖標題移動節點・拖空白處平移・滾輪縮放</span></div>`;
   requestAnimationFrame(() => { drawWires(); renderRecent(); });
 }
+// ---- 派工分組的操作 ----
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('[data-bdgroup],[data-bdgswitch],[data-bdmovegrp]'); if (!t || !t.closest('#board')) return;
+  try {
+    if (t.dataset.bdgroup) { ui.board.group = t.dataset.bdgroup; try { localStorage.setItem('boardGroup', ui.board.group); } catch (_) {} ui.fac.sig = null; renderBoard(); return; }
+    if (t.dataset.bdmovegrp) {
+      const id = t.dataset.bdmovegrp, to = charGroup(id) === 'A' ? 'B' : 'A';
+      await saveSettings({ charGroup: { ...(S.charGroup || {}), [id]: to } }); ui.fac.sig = null; renderBoard(); return;
+    }
+    if (t.dataset.bdgswitch) {
+      const g = t.dataset.bdgswitch;
+      const ids = groupChars(g).filter(id => { const s = DATA.chars[id] || snaps().find(x => (x.accountChars || []).some(c => c.id === id)); return s && activeCharOf(s.accountId) !== id; });
+      if (!ids.length) return;
+      if (!confirm(`把 ${g} 組的 ${ids.length} 隻角色切成目前角色？另一組會轉成背景掛機。需要那些帳號的遊戲分頁開著。`)) return;
+      const r = await api('/api/idle', { targets: ids.map(charId => ({ charId, action: 'switch' })) });
+      if ($('#bdMsg')) $('#bdMsg').textContent = `已送出切換（${r.jobs.length} 個帳號），約 10 秒後更新`;
+      setTimeout(() => poll(true), 8000); return;
+    }
+  } catch (err) { alert('失敗：' + err.message); }
+});
 // 依節點實際位置畫線
 function drawWires(tmp) {
   const svg = $('#facWires'); if (!svg) return;
@@ -2816,7 +2871,7 @@ try { if (localStorage.getItem('facMax') === '1' && document.getElementById('boa
 function boardImport() {
   const cfg = boardCfg(), onBoard = new Set(Object.values(cfg.lanes).flat());
   const all = snaps(), added = [], tpl = [], diff = [];
-  for (const s of all) { const isActive = activeCharOf(s.accountId) === s.char.id; if (!isActive || !s.char.map || onBoard.has(s.char.map) || !mapOf(s.char.map)) continue; cfg.lanes.train.push(s.char.map); onBoard.add(s.char.map); added.push(mapOf(s.char.map).name); }
+  for (const s of all) { const isActive = charGroup(s.char.id) === boardGroup(); if (!isActive || !s.char.map || onBoard.has(s.char.map) || !mapOf(s.char.map)) continue; cfg.lanes.train.push(s.char.map); onBoard.add(s.char.map); added.push(mapOf(s.char.map).name); }
   const byMap = {};
   for (const s of all) for (const [m, x] of Object.entries(s.autoSellAll || {})) { if (!mapOf(m) || !x || !(x.itemIds || []).length) continue; (byMap[m] = byMap[m] || []).push({ who: s.char.name, x }); }
   let overwrite = null;
