@@ -411,6 +411,15 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
     if (req.method === 'GET' && url.pathname === '/api/forge') return send(res, 200, { log: (db.forgeLog || []).slice(-40) });
+    // 分流：記下某筆強化結果已經處理過（及格／不及格各做了什麼）
+    if (req.method === 'POST' && url.pathname === '/api/forge/split') {
+      const b = JSON.parse(await readBody(req));
+      const r = (db.forgeLog || []).find(x => x.jobId === b.jobId && x.at === b.at);
+      if (!r) return send(res, 404, { error: '找不到這筆強化結果' });
+      r.split = { at: Date.now(), summary: String(b.summary || '').slice(0, 300) };
+      save();
+      return send(res, 200, { ok: true });
+    }
     if (req.method === 'GET' && url.pathname === '/api/jobs') {
       return send(res, 200, { jobs: db.jobs.slice(-100).map(publicJob) });
     }

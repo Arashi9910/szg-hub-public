@@ -179,6 +179,7 @@
   main { padding: 14px 18px 40px; }
   section { display: none; } section.on { display: block; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 0 0 10px; }
+  .fg-split { margin: 6px 0 10px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 6px; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
   .fg-chip { display: inline-block; border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; margin: 0 3px 2px 0; font-size: 12px; }
   .fg-chip.good { border-color: var(--good); color: var(--good); } .fg-chip.bad { border-color: var(--bad); color: var(--bad); }
   .fg-res > summary { cursor: pointer; padding: 4px 0; } .fg-plus { font-size: 14px; }
@@ -2665,7 +2666,9 @@ function renderFactory() {
   { const last = (FORGE.log || []).slice(-1)[0], run = (DATA.jobs || []).find(j => j.kind === 'forge' && ['approved', 'running'].includes(j.status));
     if (!forgeLoadAt) loadForge();
     html += node('forge', 'fsink', FN_W.s, `<div class="fn-hd" data-fdrag><b>🔨 強化工坊</b><a data-goto="forge" class="sm">開啟 ›</a></div><div class="fn-bd sm">${run ? `<div class="good">執行中：${esc(run.fromName)}</div>` : ''}${last ? `<div>上次 ${clock(last.at)}・${esc(last.itemName || '')}</div><div>衝 ${last.results.length} 件：${forgeDist(last.results).map(d => `+${d.plus}×${d.n}`).join(' ')}</div><div><b class="good">及格 ${last.results.filter(x => x.pass).length}</b>${last.results.some(x => x.destroyed) ? `、<b class="bad">消失 ${last.results.filter(x => x.destroyed).length}</b>` : ''}</div>` : '<div class="dim">還沒衝過。到「強化」分頁設定規則、試跑</div>'}</div><span class="port in"></span><span class="port out2"></span>`); }
-  html += node('out', 'fsink soon', FN_W.s, `<div class="fn-hd" data-fdrag><b>🔀 分流</b></div><div class="fn-bd sm dim">規劃中：及格→鎖定／穿上<br>不及格→商店／市場</div><span class="port in"></span>`);
+  { const todo = (FORGE.log || []).filter(r => !r.split && (splitGear(r).pass.length + splitGear(r).fail.length)), last = (FORGE.log || []).filter(r => r.split).slice(-1)[0];
+    const n = todo.reduce((t, r) => { const g = splitGear(r); return t + g.pass.length + g.fail.length; }, 0);
+    html += node('out', 'fsink', FN_W.s, `<div class="fn-hd" data-fdrag><b>🔀 分流</b><a data-goto="forge" class="sm">開啟 ›</a></div><div class="fn-bd sm">${n ? `<div class="warn">等你分流：${n} 件</div>` : '<div class="dim">沒有待分流的裝備</div>'}${last ? `<div class="dim">上次 ${clock(last.split.at)}：${esc(last.split.summary)}</div>` : '<div class="dim">及格→鎖定／交給角色；不及格→賣掉</div>'}</div><span class="port in"></span>`); }
   const W = 6000, H = Math.max(4000, 600 + Math.max(...Object.values(pos).map(p => p[1])));
   if (!ui.fac.pan) ui.fac.pan = { x: 10, y: 10 };
   ui.fac.est = est; ui.fac.where = where; ui.fac.chars = chars;
@@ -2725,7 +2728,7 @@ function drawWires(tmp) {
     else wire(from, pt('bag', 'l'), 'none', LANE_COLOR[x.lane], '', 0, 'm:' + id + '>bag');
   }
   { const run = (DATA.jobs || []).some(j => j.kind === 'forge' && ['approved', 'running'].includes(j.status)); wire(pt('bag', 'r'), pt('forge', 'l'), run ? 'flow' : 'idle', '#c084fc', run ? '強化中' : '', run ? 1.2 : 0, 'bag>forge'); }
-  wire(pt('forge', 'r'), pt('out', 'l'), 'soon', 'var(--dim)', '');
+  { const todo = (FORGE.log || []).some(r => !r.split && (splitGear(r).pass.length + splitGear(r).fail.length)); wire(pt('forge', 'r'), pt('out', 'l'), todo ? 'flow' : 'idle', '#c084fc', todo ? '待分流' : '', todo ? 1.3 : 0, 'forge>out'); }
   if (tmp && tmp.a) s += `<path d="${curve(tmp.a, tmp.b)}" class="w tmp" stroke="var(--accent)"/>`;
   svg.innerHTML = s;
 }
@@ -2972,6 +2975,85 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#jobDrawer').style.display = 'none'; });
 
+// ================= 分流：強化完的裝備，及格／不及格各自處理 =================
+const SPLIT_PASS = [['lock', '鎖定在身上'], ['give', '交給角色…'], ['none', '不處理']];
+const SPLIT_FAIL = [['sell', '賣給商店'], ['lock', '鎖定'], ['none', '不處理']];
+ui.fgSplit = {};
+const splitKey = r => r.jobId + '|' + r.at;
+// 這筆結果裡還在執行角色身上的裝備
+function splitGear(r) {
+  const s = DATA.chars[r.charId], have = new Map(((s && s.gear) || []).map(g => [g.uid, g]));
+  const out = { pass: [], fail: [] };
+  for (const x of r.results) { if (x.destroyed) continue; const g = have.get(x.uid); if (!g) continue; (x.pass ? out.pass : out.fail).push({ ...x, g }); }
+  return out;
+}
+// 交給誰：職業、等級可以穿（不分組），等級剛好夠的排前面；同帳號不能交易，排除
+function splitTargets(r, list) {
+  const g = list[0] && list[0].g; const exec = DATA.chars[r.charId];
+  return snaps().filter(s => s.char.id !== r.charId && (!exec || s.playerCode !== exec.playerCode))
+    .filter(s => !g || ((g.reqJob === 0 || (g.reqJob & s.char.branchBit)) && (s.char.lv || 0) >= (g.reqLevel || 0)))
+    .sort((a, b) => (a.char.lv || 0) - (b.char.lv || 0));
+}
+function splitState(r) {
+  const k = splitKey(r);
+  if (!ui.fgSplit[k]) { const d = S.splitRule || {}; ui.fgSplit[k] = { pass: d.pass || 'lock', fail: d.fail || 'sell', to: '' }; }
+  return ui.fgSplit[k];
+}
+function forgeSplitHTML(r) {
+  if (r.split) return `<div class="fg-split dim">🔀 已分流（${clock(r.split.at)}）：${esc(r.split.summary)}</div>`;
+  const sg = splitGear(r), st = splitState(r), min = Number(r.minSucc) || 0;
+  if (!sg.pass.length && !sg.fail.length) return `<div class="fg-split dim">🔀 這些裝備已經不在 ${esc(r.charName || '')} 身上（可能已經處理過）</div>`;
+  const opts = (list, cur) => list.map(([k, t]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${esc(t)}</option>`).join('');
+  const tg = splitTargets(r, sg.pass);
+  if (st.pass === 'give' && !st.to && tg[0]) st.to = tg[0].char.id;
+  return `<div class="fg-split" data-fgsplit="${esc(splitKey(r))}"><b>🔀 分流</b>
+    <span class="${sg.pass.length ? 'good' : 'dim'}">及格${min ? `（+${min} 以上）` : ''} ${sg.pass.length} 件</span><select data-fgsp="pass" ${sg.pass.length ? '' : 'disabled'}>${opts([...SPLIT_PASS.slice(0, 2), ...forgeExtra.splitOpts, SPLIT_PASS[2]], st.pass)}</select>
+    ${st.pass === 'give' ? `<select data-fgspto>${tg.map((s, i) => `<option value="${s.char.id}" ${st.to === s.char.id ? 'selected' : ''}>${i === 0 ? '★ ' : ''}${esc(s.char.name)} Lv${s.char.lv} ${esc(s.char.jobName || '')}</option>`).join('') || '<option value="">（沒有可以穿的其他帳號角色）</option>'}</select>` : ''}
+    <span style="margin-left:10px">不及格 ${sg.fail.length} 件</span><select data-fgsp="fail" ${sg.fail.length ? '' : 'disabled'}>${opts([SPLIT_FAIL[0], ...forgeExtra.splitOpts, ...SPLIT_FAIL.slice(1)], st.fail)}</select>
+    <button class="btn primary sm" data-fgsprun="${esc(splitKey(r))}">執行分流</button></div>`;
+}
+async function runSplit(r) {
+  const sg = splitGear(r), st = splitState(r), exec = DATA.chars[r.charId];
+  if (!exec) throw new Error('找不到執行角色的資料');
+  const reqs = [], lines = [], label = x => x.name + (x.plus ? ' +' + x.plus : '');
+  const plan = (kind, list, what) => {
+    if (!list.length || kind === 'none') return;
+    const gear = list.map(x => ({ uid: x.uid, name: label(x), itemId: x.g.itemId }));
+    if (kind === 'lock') { reqs.push({ kind: 'lock', fromCharId: r.charId, batches: [{ items: [], gear }] }); lines.push(`${what} ${gear.length} 件：鎖定`); return; }
+    if (kind === 'sell') { const ok = list.filter(x => x.g.loc === '背包'); if (ok.length) { reqs.push({ kind: 'sell', fromCharId: r.charId, estimate: 0, batches: [{ items: [], gear: ok.map(x => ({ uid: x.uid, name: label(x) })) }] }); lines.push(`${what} ${ok.length} 件：賣給商店`); } return; }
+    if (kind === 'give') {
+      const to = DATA.chars[st.to]; if (!to) throw new Error('先選要交給哪隻角色');
+      const ok = list.filter(x => x.g.loc === '背包');
+      if (ok.length) { reqs.push({ kind: 'give', fromCharId: r.charId, toCharId: to.char.id, batches: toBatches([], ok.map(x => ({ uid: x.uid, name: label(x) })), 0) }); lines.push(`${what} ${ok.length} 件：交給 ${to.char.name}`); }
+      return;
+    }
+    const x = forgeExtra.splitReq(kind, r.charId, list.filter(y => y.g.loc === '背包'));
+    if (x) { reqs.push(x.req); lines.push(`${what} ${x.req.batches[0].gear.length} 件：${x.label}`); }
+  };
+  plan(st.pass, sg.pass, '及格'); plan(st.fail, sg.fail, '不及格');
+  if (!reqs.length) { if (!confirm('沒有要做的事（都選「不處理」或裝備不在背包）。要直接標成已分流嗎？')) return; }
+  else if (!confirm(`分流 ${esc(r.charName || '')} 的強化結果：\n${lines.join('\n')}\n\n賣出、交易要在「工作」確認後才會執行。`)) return;
+  if (reqs.length) {
+    const res = await api('/api/jobs', reqs);
+    for (const j of res.jobs) if (forgeExtra.autoApprove.has(j.kind)) await api(`/api/jobs/${j.id}/approve`);
+  }
+  await saveSettings({ splitRule: { pass: st.pass, fail: st.fail } });
+  await api('/api/forge/split', { jobId: r.jobId, at: r.at, summary: lines.join('；') || '不處理' });
+  await loadForge(true); renderForgeLog(); await poll(true); if (reqs.length) openJobs();
+}
+document.addEventListener('change', e => {
+  const t = e.target, box = t.closest && t.closest('[data-fgsplit]'); if (!box) return;
+  const r = (FORGE.log || []).find(x => splitKey(x) === box.dataset.fgsplit); if (!r) return;
+  const st = splitState(r);
+  if (t.dataset.fgsp) { st[t.dataset.fgsp] = t.value; if (t.value === 'give') st.to = ''; }
+  if (t.hasAttribute('data-fgspto')) st.to = t.value;
+  renderForgeLog();
+});
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('[data-fgsprun]'); if (!t) return;
+  const r = (FORGE.log || []).find(x => splitKey(x) === t.dataset.fgsprun); if (!r) return;
+  try { t.disabled = true; await runSplit(r); } catch (err) { alert('失敗：' + err.message); } finally { t.disabled = false; }
+});
 // ================= 點整列選取（勾選框仍然可以點；Shift＋點一次選一段） =================
 const PICK_ATTRS = ['data-gwpick', 'data-gdpick', 'data-fgpick'];
 let pickLast = null; // { attr, key }
@@ -3000,7 +3082,7 @@ document.addEventListener('click', e => {
 });
 // ================= 強化工坊 =================
 // 擴充點：私人版會補上其他來源的裝備／卷軸
-const forgeExtra = { label: '', gear: () => [], scrollQty: () => 0 };
+const forgeExtra = { label: '', gear: () => [], scrollQty: () => 0, splitOpts: [], splitReq: () => null, autoApprove: new Set() };
 let FORGE = { log: [] }, forgeLoadAt = 0;
 function fgState() {
   if (!ui.fg) { const sv = S.forge || {}; ui.fg = { charId: sv.charId || S.mainCharId || '', gearName: sv.gearName || '', item: sv.item || '', count: sv.count || 'all', stopAfter: sv.stopAfter || 0, stopOnFail: !!sv.stopOnFail, minSucc: sv.minSucc ?? 1, worn: !!sv.worn, extra: sv.extra !== false, off: new Set() }; }
@@ -3141,7 +3223,7 @@ function renderForgeLog() {
       <table><thead><tr><th class="nosort">裝備</th><th class="nosort num">衝完</th><th class="nosort num">這次成功／衝</th><th class="nosort">增加的素質</th><th class="nosort num">剩餘</th><th class="nosort">結果</th></tr></thead><tbody>${rows.map(x => `<tr><td>${esc(x.name)}</td>
         <td class="num">${x.destroyed ? '—' : `<b class="fg-plus ${plusCls(x.plus, min)}">+${x.plus}</b>`}</td><td class="num">${x.successes} / ${x.attempts}</td>
         <td>${x.gain && Object.keys(x.gain).length ? STAT_ORDER.filter(k => x.gain[k]).concat(Object.keys(x.gain).filter(k => !STAT_ORDER.includes(k))).map(k => `<span class="${x.gain[k] > 0 ? 'good' : 'bad'}">${esc(statNames[k] || k)} ${x.gain[k] > 0 ? '+' : ''}${x.gain[k]}</span>`).join(' ') : '<span class="dim">—</span>'}</td>
-        <td class="num">${x.destroyed ? '—' : x.slotsLeft}</td><td>${x.destroyed ? '<span class="bad">消失</span>' : x.pass ? '<span class="good">及格</span>' : min ? '不及格' : '—'}</td></tr>`).join('')}</tbody></table></details>`;
+        <td class="num">${x.destroyed ? '—' : x.slotsLeft}</td><td>${x.destroyed ? '<span class="bad">消失</span>' : x.pass ? '<span class="good">及格</span>' : min ? '不及格' : '—'}</td></tr>`).join('')}</tbody></table>${forgeSplitHTML(r)}</details>`;
   }).join('') : '<div class="dim">還沒有強化紀錄</div>';
 }
 document.addEventListener('change', e => {
