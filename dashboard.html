@@ -2713,6 +2713,27 @@ async function pollLoot() {
   } catch (_) {}
 }
 setInterval(pollLoot, 2500);
+// 沿著指定的線飛一個圖示（掉落動畫等共用）
+function flyIcon(wireKey, sink, o) {
+  const path = document.querySelector(`#facWires path[data-w="${CSS.escape(wireKey)}"]`);
+  const world = $('#facWorld'); if (!path || !world || ui.fac.flying > 30) return;
+  const len = path.getTotalLength(); if (!len) return;
+  const el = document.createElement('div');
+  el.className = 'loot' + (o.cls ? ' ' + o.cls : '');
+  const u = o.id ? itemImg(o.id) : '';
+  el.innerHTML = (u ? `<img src="${esc(u)}" alt="">` : `<span>${esc(String(o.name || '').slice(0, 2))}</span>`) + (o.qty > 1 ? `<b>${o.qty > 9999 ? short(o.qty) : o.qty}</b>` : '');
+  el.title = o.name + ' × ' + o.qty;
+  world.appendChild(el); ui.fac.flying++;
+  const dur = o.dur || 1800, t0 = performance.now();
+  const step = now => {
+    const k = Math.min(1, (now - t0) / dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    const p = path.getPointAtLength(e * len);
+    el.style.transform = `translate(${p.x - 14}px, ${p.y - 14}px)`;
+    if (k < 1) requestAnimationFrame(step);
+    else { el.remove(); ui.fac.flying--; const n = document.querySelector(`.fnode[data-fn="${sink}"]`); if (n) { n.classList.remove('pulse'); void n.offsetWidth; n.classList.add('pulse'); } }
+  };
+  requestAnimationFrame(step);
+}
 function flyLoot(ev, cfg) {
   const id = idOfName(ev.name), goal = !!id && (cfg.goals[ev.map] || []).map(String).includes(String(id));
   if (ui.fac.fx === 'goal' && !goal) return;
