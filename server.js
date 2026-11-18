@@ -345,7 +345,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true }); // 不特別存檔：下次其他資料存檔時一起寫入
     }
     if (req.method === 'GET' && url.pathname === '/api/data') {
-      return send(res, 200, { now: Date.now(), chars: db.chars, dps: db.dps || {}, settings: db.settings, jobs: db.jobs.slice(-100), idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo });
+      return send(res, 200, { now: Date.now(), chars: db.chars, dps: db.dps || {}, settings: db.settings, jobs: db.jobs.slice(-100), expTable: db.expTable || {}, idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo });
     }
 
     if (req.method === 'POST' && url.pathname === '/api/push') {
@@ -360,6 +360,11 @@ const server = http.createServer(async (req, res) => {
         if (snap.playerCode) snap.codeFromCache = true;
       }
       db.chars[snap.char.id] = snap;
+      // 經驗表：遊戲給的「這一級需要多少經驗」是精確值，記下來給升級時間估算用
+      if (snap.char.nextXpExact && snap.char.lv > 0 && snap.char.nextXp > 0) {
+        db.expTable = db.expTable || {};
+        if (db.expTable[snap.char.lv] !== snap.char.nextXp) db.expTable[snap.char.lv] = snap.char.nextXp;
+      }
       // 同帳號的另一隻角色：更新它在角色大廳看得到的基本資料（等級、是否掛機）
       for (const other of snap.accountChars || []) {
         const prev = db.chars[other.id];

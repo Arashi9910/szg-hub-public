@@ -272,6 +272,8 @@
         <div class="seg" id="ovMode"><button data-ovmode="all">全部角色</button><button data-ovmode="active">只看目前角色</button></div>
         <input id="ovSearch" placeholder="搜尋角色、帳號、地圖" style="width:180px" autocomplete="off">
         <label><input type="checkbox" id="ovMore"> 顯示更多欄位（藥水、裝備欄、道具、交易ID）</label>
+        <label title="填了之後多一欄，算出每隻角色練到這個等級要多久（用目前每小時經驗）">目標等級 Lv<input type="number" id="ovTarget" min="2" max="250" placeholder="例 120" style="width:64px"></label>
+        <details id="ovExpBox" style="display:inline-block"><summary class="dim sm" style="cursor:pointer">經驗表</summary><div id="ovExpOut" class="sm" style="margin-top:6px;max-height:320px;overflow:auto"></div></details>
       </div>
       <details class="ov-rules" id="idleCard"><summary><b>⚙ 掛機自動規則</b>　<span id="ipSummary" class="dim"></span></summary>
         <div class="rules-body">
@@ -677,6 +679,7 @@ function switchBtn(charId, accountId) {
 }
 // ================= 總覽 =================
 ui.ovOnlyActive = (() => { try { return localStorage.getItem('ovOnlyActive') === '1'; } catch (_) { return false; } })();
+ui.ovTarget = (() => { try { const v = Number(localStorage.getItem('ovTarget')); return v >= 2 && v <= 250 ? v : 0; } catch (_) { return 0; } })();
 ui.ovMore = (() => { try { return localStorage.getItem('ovMore') === '1'; } catch (_) { return false; } })();
 ui.ovQ = '';
 ui.ovOpen = new Set();
@@ -795,16 +798,19 @@ function renderOverview() {
   // 表格
   document.querySelectorAll('#ovMode button').forEach(b => b.classList.toggle('on', (b.dataset.ovmode === 'active') === ui.ovOnlyActive));
   $('#ovMore').checked = ui.ovMore;
+  if (document.activeElement !== $('#ovTarget')) $('#ovTarget').value = ui.ovTarget || '';
   const q = ui.ovQ.trim();
   let list = rows.filter(r => (!ui.ovOnlyActive || r.active) && (!q || [r.c.name, r.account, r.c.mapName, r.c.jobName].some(x => String(x || '').includes(q))));
   const k = ui.ovSort.key, d = ui.ovSort.dir;
-  const val = r => ({ account: r.account, name: r.c.name, lv: (r.c.lv || 0) * 1000 + (r.c.expPct || 0), hourly: r.c.hourlyExp, dps: (dpsOf(r.c.id) || {}).w5 ? dpsOf(r.c.id).w5.dps || dpsOf(r.c.id).w60.dps : -1, map: r.c.mapName, idle: r.missing ? null : (r.c.auto ? r.remain : -1), money: r.c.money, points: r.s && r.s.points, pot: r.missing ? null : Math.min(r.c.hpQty ?? 1e9, (r.c.mpQty ?? 1e9) * 2.5), upd: r.s ? -r.s.receivedAt : null }[k]);
+  const tgt = ui.ovTarget;
+  const lvT = r => r.missing ? null : lvTime(r.c, (r.c.lv || 0) + 1), tgT = r => r.missing || !tgt ? null : lvTime(r.c, tgt);
+  const val = r => ({ account: r.account, name: r.c.name, lv: (r.c.lv || 0) * 1000 + (r.c.expPct || 0), hourly: r.c.hourlyExp, tnext: (lvT(r) || {}).h ?? null, ttgt: (tgT(r) || {}).h ?? null, dps: (dpsOf(r.c.id) || {}).w5 ? dpsOf(r.c.id).w5.dps || dpsOf(r.c.id).w60.dps : -1, map: r.c.mapName, idle: r.missing ? null : (r.c.auto ? r.remain : -1), money: r.c.money, points: r.s && r.s.points, pot: r.missing ? null : Math.min(r.c.hpQty ?? 1e9, (r.c.mpQty ?? 1e9) * 2.5), upd: r.s ? -r.s.receivedAt : null }[k]);
   // 依帳號排序時，目前角色排前面
   list.sort((a, b) => cmp(val(a), val(b)) * d || cmp(a.account, b.account) || (b.active - a.active) || cmp(a.c.name, b.c.name));
   const more = ui.ovMore;
   const th = (key, label, cls = '') => `<th data-ovsort="${key}" class="${cls}">${label}${ui.ovSort.key === key ? (ui.ovSort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
-  const ncol = more ? 16 : 12;
-  let h = `<table class="sticky ov"><thead><tr><th class="nosort"><input type="checkbox" id="ovAll" title="全選"></th><th class="nosort"></th>${th('account', '帳號')}${th('name', '角色')}${th('lv', '等級')}${th('hourly', '每小時經驗', 'num')}${th('dps', '實戰 DPS', 'num')}${th('map', '地圖')}${th('idle', '掛機')}${th('money', '楓幣', 'num')}${th('points', '點數', 'num')}${more ? `${th('pot', '藥水 HP／MP', 'num')}<th class="nosort num">裝備欄</th>` + '<th class="nosort num">道具</th><th class="nosort">交易ID</th>' : ''}${th('upd', '更新')}</tr></thead><tbody>`;
+  const xcol = tgt ? 2 : 1, ncol = (more ? 16 : 12) + xcol;
+  let h = `<table class="sticky ov"><thead><tr><th class="nosort"><input type="checkbox" id="ovAll" title="全選"></th><th class="nosort"></th>${th('account', '帳號')}${th('name', '角色')}${th('lv', '等級')}${th('hourly', '每小時經驗', 'num')}${th('tnext', '升級還要', 'num')}${tgt ? th('ttgt', `到 Lv${tgt}`, 'num') : ''}${th('dps', '實戰 DPS', 'num')}${th('map', '地圖')}${th('idle', '掛機')}${th('money', '楓幣', 'num')}${th('points', '點數', 'num')}${more ? `${th('pot', '藥水 HP／MP', 'num')}<th class="nosort num">裝備欄</th>` + '<th class="nosort num">道具</th><th class="nosort">交易ID</th>' : ''}${th('upd', '更新')}</tr></thead><tbody>`;
   if (!rows.length) h += `<tr><td colspan="${ncol}" class="empty">還沒有資料。打開任一個設定檔的遊戲分頁，右下角出現「中控：已連線」就代表在回報了。</td></tr>`;
   else if (!list.length) h += `<tr><td colspan="${ncol}" class="empty">沒有符合的角色</td></tr>`;
   let lastAcc = null;
@@ -815,7 +821,7 @@ function renderOverview() {
     const accCell = k !== 'account' || newAcc ? `<input class="label-edit" data-acc="${esc(r.missing ? c.accountId : r.s.accountId)}" value="${esc(r.account)}">` : '';
     if (r.missing) {
       h += `<tr class="${cls}"><td><input type="checkbox" data-isel="${c.id}" ${sel ? 'checked' : ''}></td><td></td><td>${accCell}</td><td><div>${esc(c.name)}${switchBtn(c.id, c.accountId)}</div><div class="dim sm">${esc(c.job || '')}</div></td><td>Lv${c.lv}</td>
-        <td colspan="3" class="dim">尚未同步（按「⇄ 切換」一次就會出現）</td><td>${c.auto ? '<span class="good">● 掛機中</span>' : '<span class="bad">● 未掛機</span>'} ${autoToggle(c.id)}</td><td colspan="${ncol - 9}"></td></tr>`;
+        <td colspan="${3 + xcol}" class="dim">尚未同步（按「⇄ 切換」一次就會出現）</td><td>${c.auto ? '<span class="good">● 掛機中</span>' : '<span class="bad">● 未掛機</span>'} ${autoToggle(c.id)}</td><td colspan="${ncol - 9 - xcol}"></td></tr>`;
       continue;
     }
     const isMain = S.mainCharId === c.id, st = idleState(r);
@@ -830,6 +836,7 @@ function renderOverview() {
       <td><div><b class="cn">${esc(c.name)}</b>${isMain ? ' <span class="tag main">本尊</span>' : ''}${switchBtn(c.id, r.s.accountId)}</div><div class="dim sm">${esc(c.jobName || '')}</div></td>
       <td><span class="lvl">Lv <b>${c.lv}</b></span>${exp == null ? '' : `<span class="expbar" title="經驗 ${exp.toFixed(2)}%"><i style="width:${exp}%"></i></span><span class="dim sm">${exp.toFixed(1)}%</span>`}</td>
       <td class="num">${c.hourlyExp ? short(c.hourlyExp) : '<span class="dim">—</span>'}</td>
+      <td class="num">${lvTimeCell(lvT(r), c)}</td>${tgt ? `<td class="num">${lvTimeCell(tgT(r), c, tgt)}</td>` : ''}
       <td class="num">${dpsCell(c.id)}</td>
       <td>${esc(c.mapName)}</td>
       <td>${idle} <span class="sm">${autoToggle(c.id)}</span></td>
@@ -842,7 +849,62 @@ function renderOverview() {
   h += '</tbody></table>';
   $('#ovTable').innerHTML = h;
   renderOvBar();
+  if ($('#ovExpBox').open) renderExpTable();
 }
+// ===== 升級時間 =====
+// 原版（V113）經驗公式；遊戲有調整過倍率，實際以腳本回報的精確數字（DATA.expTable）為準
+const ORIG_EXP = (() => { const t = [0]; for (let lv = 1; lv <= 250; lv++) { let v; if (lv <= 5) v = (Math.floor(lv * lv / 2) + 15) * lv; else if (lv <= 50) { const q = Math.floor(lv * lv / 3); v = (q + 19) * q; } else v = Math.trunc(t[lv - 1] * 1.0548); t.push(v); } return t; })();
+// 還沒收集到時的倍率參考（實測過的等級）
+const EXP_MULT_HINT = [[50, 1.25], [65, 1.5], [83, 3], [100, 4], [250, 6]];
+function expTableNow() {
+  const t = { ...(DATA.expTable || {}) };
+  for (const s of Object.values(DATA.chars || {})) { const c = s.char || {}; if (c.nextXpExact && c.lv && c.nextXp && !t[c.lv]) t[c.lv] = c.nextXp; }
+  return t;
+}
+function expNeed(lv, tbl = expTableNow()) {
+  if (tbl[lv]) return { v: tbl[lv], exact: true };
+  const ks = Object.keys(tbl).map(Number).filter(k => ORIG_EXP[k]);
+  let mult;
+  if (ks.length) { const k = ks.reduce((a, b) => Math.abs(b - lv) < Math.abs(a - lv) ? b : a); mult = tbl[k] / ORIG_EXP[k]; }
+  else mult = (EXP_MULT_HINT.find(([l]) => lv <= l) || [0, 6])[1];
+  return { v: Math.round((ORIG_EXP[lv] || ORIG_EXP[250]) * mult), exact: false };
+}
+// 從目前等級+經驗到 target 等級需要多少經驗、多少小時
+function lvTime(c, target) {
+  if (!c || !c.lv || !target || target <= c.lv) return null;
+  const tbl = expTableNow();
+  let exact = true, total = 0;
+  for (let l = c.lv; l < target; l++) {
+    let need;
+    if (l === c.lv && c.nextXp) need = { v: c.nextXp, exact: true }; else need = expNeed(l, tbl);
+    if (!need.exact) exact = false;
+    total += l === c.lv ? Math.max(0, need.v - (c.xp || 0)) : need.v;
+  }
+  return { exp: total, exact, h: c.hourlyExp ? total / c.hourlyExp : null };
+}
+function dur(h) {
+  if (h == null || !isFinite(h)) return '—';
+  const m = Math.round(h * 60);
+  if (m < 60) return `${m} 分`;
+  if (m < 48 * 60) return `${Math.floor(m / 60)} 小時 ${m % 60} 分`;
+  const d = Math.floor(m / 1440), hh = Math.round((m % 1440) / 60);
+  return `${d} 天 ${hh} 小時`;
+}
+function lvTimeCell(t, c, target) {
+  if (!t) return target && c.lv >= target ? '<span class="good">已達成</span>' : '<span class="dim">—</span>';
+  const tip = `還需 ${fmt(t.exp)} 經驗${t.exact ? '' : '（部分等級用原版經驗×倍率估計）'}${t.h != null ? `\n預計 ${new Date(Date.now() + t.h * 3600e3).toLocaleString('zh-TW', { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 達成` : ''}`;
+  if (t.h == null) return `<span class="dim" title="${esc(tip)}">${short(t.exp)} 經驗</span>`;
+  return `<span title="${esc(tip)}">${dur(t.h)}</span>${t.exact ? '' : ' <span class="warn sm">估計</span>'}`;
+}
+function renderExpTable() {
+  const tbl = expTableNow(), ks = Object.keys(tbl).map(Number).sort((a, b) => a - b);
+  const el = $('#ovExpOut'); if (!el) return;
+  if (!ks.length) { el.innerHTML = '<span class="dim">還沒收集到。腳本更新後，每隻角色回報一次就會記下那個等級的精確數字。</span>'; return; }
+  el.innerHTML = `<div class="dim">已收集 ${ks.length} 個等級（角色升級時自動補上）。沒收集到的等級用原版經驗 × 最接近等級的倍率估計。</div>
+    <table><thead><tr><th>等級</th><th class="num">現在需要</th><th class="num">原版</th><th class="num">倍率</th></tr></thead><tbody>${ks.map(k => `<tr><td>Lv${k}</td><td class="num">${fmt(tbl[k])}</td><td class="num dim">${fmt(ORIG_EXP[k])}</td><td class="num">×${(tbl[k] / ORIG_EXP[k]).toFixed(2)}</td></tr>`).join('')}</tbody></table>`;
+}
+document.addEventListener('toggle', e => { if (e.target.id === 'ovExpBox' && e.target.open) renderExpTable(); }, true);
+document.addEventListener('input', e => { if (e.target.id === 'ovTarget') { const v = Math.floor(Number(e.target.value)); ui.ovTarget = v >= 2 && v <= 250 ? v : 0; try { localStorage.setItem('ovTarget', String(ui.ovTarget || '')); } catch (_) {} renderOverview(); } });
 // 總覽操作列的訊息：記下來，重畫操作列時一起畫回去（不然送出後馬上被洗掉，看起來像沒反應）
 function setIdleMsg(t) { ui.idleMsg = t; clearTimeout(ui.idleMsgTimer); ui.idleMsgTimer = setTimeout(() => { ui.idleMsg = ''; const el = $('#idleMsg'); if (el) el.textContent = ''; }, 20000); const el = $('#idleMsg'); if (el) el.textContent = t; }
 function ovGroupBtns() {
