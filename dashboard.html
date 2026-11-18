@@ -1223,7 +1223,7 @@ function renderJobs(sel, filterFn) {
       !bag && toS && toS.activeCharId && toS.activeCharId !== j.toCharId && `${j.toName} 不是目前角色`].filter(Boolean) : [];
     const detail = j.batches.map((b, i) => `<div>${bag ? '' : `<b>第 ${i + 1} 批</b>：`}${[...(b.items || []).map(x => esc(x.name) + (x.qty === 'ALL' ? '（全部，最多 9999）' : ' ×' + fmt(x.qty))), ...(b.gear || []).map(g => esc(g.name))].join('、') || '—'}${b.money ? '　＋' + (b.money === 'ALL' ? `楓幣（保留 ${b.keepPct || 0}%，其餘轉出）` : '楓幣 ' + fmt(b.money)) : ''}</div>`).join('');
     const logs = (j.log || []).slice(-30).reverse().map(l => `<div><span class="dim">${new Date(l.at).toLocaleTimeString('zh-TW')}</span> ${esc(l.msg)}${l.n > 1 ? ` <span class="dim">×${l.n}</span>` : ''}</div>`).join('');
-    h += `<tr><td class="dim">${clock(j.createdAt)}</td><td class="${j.kind === 'sell' ? 'warn' : ''}">${JOB_KIND[j.kind] || j.kind}</td><td>${bag ? esc(j.fromName) : `${esc(j.fromName)} → ${esc(j.toName)}`}</td>
+    h += `<tr><td class="dim">${clock(j.createdAt)}</td><td class="${/sell/i.test(j.kind) || j.kind === 'forge' ? 'warn' : ''}">${JOB_KIND[j.kind] || j.kind}</td><td>${bag ? esc(j.fromName) : `${esc(j.fromName)} → ${esc(j.toName)}`}</td>
       <td class="wrap">${[nItems && nItems + ' 種道具', nGear && nGear + ' 件裝備', money].filter(Boolean).join('、')}${j.estimate ? `<div class="${j.kind === 'forge' ? 'warn' : 'dim'}">${j.kind === 'forge' ? '最多花費' : '估計'} ${short(j.estimate)} 楓幣</div>` : ''}<details><summary class="dim">明細</summary>${detail}</details></td>
       <td class="num">${Math.min(j.batchIndex, j.batches.length)}/${j.batches.length}</td>
       <td class="${cls}">${st}</td>
@@ -1571,7 +1571,7 @@ document.addEventListener('click', async e => {
     }
     if (t.hasAttribute && t.hasAttribute('data-approve-all')) {
       const n = (DATA.jobs || []).filter(j => j.status === 'pending').length;
-      const sells = (DATA.jobs || []).filter(j => j.status === 'pending' && j.kind === 'sell').length;
+      const sells = (DATA.jobs || []).filter(j => j.status === 'pending' && /sell/i.test(j.kind)).length;
       if (sells && !confirm(`其中有 ${sells} 個「賣出」工作，賣出後無法復原。確定全部（${n} 個）確認執行？`)) return;
       const forges = (DATA.jobs || []).filter(j => j.status === 'pending' && j.kind === 'forge');
       if (forges.length && !confirm(`其中有 ${forges.length} 個「強化」工作，最多花費 ${short(forges.reduce((t, j) => t + (j.estimate || 0), 0))} 楓幣，衝卷無法復原。確定執行？`)) return;
