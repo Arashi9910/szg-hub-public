@@ -133,9 +133,20 @@ function currentJobFor(code) {
     if (lj && ACTIVE.has(lj.status)) return lj;
     delete locks[code];
   }
-  return db.jobs.filter(j => j.kind !== 'idle' && ACTIVE.has(j.status) && (j.fromCode === code || j.toCode === code))
-    .sort((a, b) => { const x = jobOrder(a), y = jobOrder(b); return x[0] - y[0] || x[1] - y[1]; })[0] || null;
+  const list = db.jobs.filter(j => j.kind !== 'idle' && ACTIVE.has(j.status) && (j.fromCode === code || j.toCode === code))
+    .sort((a, b) => { const x = jobOrder(a), y = jobOrder(b); return x[0] - y[0] || x[1] - y[1]; });
+  const head = list[0] || null;
+  // 排最前面的工作要的是同帳號「另一隻」角色（得先切換）時，先做目前角色自己的背包工作，不要卡在後面等
+  const cur = agentChar[code];
+  if (head && cur && needCharOf(head, code) !== cur) {
+    const mine = list.find(j => BAG_KINDS.has(j.kind) && j.fromCharId === cur);
+    if (mine) return mine;
+  }
+  return head;
 }
+// 遊戲分頁最後回報的「目前角色」（每次 /api/agent 輪詢更新）
+const agentChar = {};
+function needCharOf(j, code) { return BAG_KINDS.has(j.kind) || j.fromCode === code ? j.fromCharId : j.toCharId; }
 function lockJob(job) {
   locks[job.fromCode] = job.id;
   locks[job.toCode] = job.id;
@@ -157,6 +168,99 @@ function agentTooOld(job, code) {
   const snap = Object.values(db.chars).filter(s => s.playerCode === code).sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0))[0];
   return !snap || verLt(snap.scriptVersion, need) ? (snap ? snap.scriptVersion || '?' : '?') : false;
 }
+// 公會倉庫：存入、領取、查看都是「某隻角色在自己頁面執行」的背包工作
+for (const k of ['guildDeposit', 'guildWithdraw', 'guildView', 'guildSell']) BAG_KINDS.add(k);
+Object.assign(KIND_MIN_AGENT, { guildDeposit: '0.25.0', guildWithdraw: '0.25.0', guildView: '0.25.0', guildSell: '0.28.0' });
+// 查看公倉：找一隻在線而且是目前角色的（優先本尊），建立後直接排隊（只讀，不用確認）
+function createGuildView(charId) {
+  const live = Object.values(db.chars).filter(s => s.playerCode && Date.now() - (s.receivedAt || 0) < ONLINE_MS && (!s.activeCharId || s.activeCharId === s.char.id));
+  const owner = (charId && db.chars[charId]) || live.find(s => s.char.id === db.settings.mainCharId) || live[0];
+  if (!owner) throw new Error('沒有在線的遊戲分頁可以讀取公會倉庫');
+  const old = db.jobs.find(j => j.kind === 'guildView' && ['pending', 'approved', 'running'].includes(j.status));
+  if (old) return old;
+  const job = {
+    id: crypto.randomBytes(6).toString('hex'), kind: 'guildView', status: 'approved', createdAt: Date.now(), approvedAt: Date.now(),
+    fromCharId: owner.char.id, fromName: owner.char.name, fromCode: owner.playerCode,
+    toCharId: owner.char.id, toName: owner.char.name, toCode: owner.playerCode,
+    batches: [{ items: [], gear: [], money: 0 }], batchIndex: 0, log: [], lastMsg: '',
+  };
+  db.jobs.push(job); save();
+  return job;
+}
+// 自動存入：每 N 分鐘照「存入規則」的勾選與條件，替在線的目前角色建立存入工作（直接排隊，不用確認）
+// 設定：settings.guildAuto = { mode: 'off' | 'preview' | 'deposit', everyMin }；勾選與條件：settings.guildDep（cats 是整類，例如「卷軸」「裝備」）
+function guildRollPass(g, dep) {
+  const cs = (dep.conds || []).filter(c => c.k && c.min !== '' && c.min != null);
+  if (!cs.length) return true;
+  if (!g.baseStats || !g.cleanStats) return !!dep.unknown;
+  const d = k => (Number(g.cleanStats[k]) || 0) - (Number(g.baseStats[k]) || 0);
+  const sum = () => [...new Set([...Object.keys(g.baseStats), ...Object.keys(g.cleanStats)])].reduce((t, k) => t + d(k), 0);
+  const ok = cs.map(c => (c.k === '_sum' ? sum() : d(c.k)) >= Number(c.min));
+  return dep.mode === 'any' ? ok.some(Boolean) : ok.every(Boolean);
+}
+function guildPlanFor(snap, dep) {
+  const names = new Set(dep.names || []), cats = new Set(dep.cats || []), keep = Math.max(0, Number(dep.keep) || 0);
+  const items = [], gear = [];
+  for (const it of snap.items || []) {
+    if (it.loc !== '背包' || !(it.tradableQty > 0) || it.supply) continue;
+    if (!names.has('i:' + it.key) && !cats.has(it.kind)) continue;
+    const qty = it.tradableQty - keep;
+    if (qty > 0) items.push({ key: it.key, name: it.name, qty });
+  }
+  for (const g of snap.gear || []) {
+    if (g.loc !== '背包' || g.locked || !g.tradable) continue;
+    if (!names.has('g:' + g.name) && !cats.has('裝備')) continue;
+    if (guildRollPass(g, dep)) gear.push({ uid: g.uid, name: g.name });
+  }
+  return { items, gear };
+}
+function guildLog(msg) {
+  (db.guildLog || (db.guildLog = [])).push({ at: Date.now(), msg });
+  if (db.guildLog.length > 120) db.guildLog.splice(0, db.guildLog.length - 120);
+}
+function guildAutoTick(force) {
+  const a = db.settings.guildAuto || {};
+  if (!a.mode || a.mode === 'off') return;
+  const every = Math.max(10, Number(a.everyMin) || 30) * 60e3;
+  if (!force && Date.now() - (db.guildAutoAt || 0) < every) return;
+  db.guildAutoAt = Date.now();
+  const dep = db.settings.guildDep || {};
+  if (!(dep.names || []).length && !(dep.cats || []).length) { guildLog('自動存入：存入規則還沒設定要存什麼，略過'); save(); return; }
+  const g = db.guild && db.guild.data;
+  const usedKeys = new Set(Object.keys((g && g.items) || {}));
+  let gearUsed = ((g && g.gear) || []).length;
+  let made = 0, nItem = 0, nGear = 0;
+  const lines = [];
+  for (const snap of Object.values(db.chars)) {
+    if (!snap.playerCode || Date.now() - (snap.receivedAt || 0) > ONLINE_MS) continue;
+    if (snap.activeCharId && snap.activeCharId !== snap.char.id) continue;
+    if (Array.isArray(dep.chars) && !dep.chars.includes(snap.char.id)) continue;
+    const mine = db.jobs.filter(j => String(j.kind).startsWith('guild') && j.fromCharId === snap.char.id);
+    if (mine.some(j => ['pending', 'approved', 'running'].includes(j.status))) continue;
+    // 剛做完公倉工作、角色還沒回報新的背包資料：這份資料是舊的，等下一次
+    const lastDone = Math.max(0, ...mine.filter(j => j.kind !== 'guildView').map(j => ((j.log || []).slice(-1)[0] || {}).at || 0));
+    if (lastDone && (snap.receivedAt || 0) < lastDone + 2000) continue;
+    const plan = guildPlanFor(snap, dep);
+    if (!plan.items.length && !plan.gear.length) continue;
+    if (g && g.capacity) {
+      for (const it of plan.items) usedKeys.add(it.key);
+      gearUsed += plan.gear.length;
+      if (usedKeys.size > g.capacity.items || gearUsed > g.capacity.gear) { guildLog(`自動存入：公倉可能放不下（道具 ${usedKeys.size}/${g.capacity.items} 格、裝備 ${gearUsed}/${g.capacity.gear} 件），這次停止`); break; }
+    }
+    const q = plan.items.reduce((t, x) => t + x.qty, 0);
+    nItem += q; nGear += plan.gear.length;
+    lines.push(`${snap.char.name}（道具 ${q} 個、裝備 ${plan.gear.length} 件）`);
+    if (a.mode === 'deposit') {
+      const job = createBagJob({ kind: 'guildDeposit', fromCharId: snap.char.id, batches: [{ items: plan.items, gear: plan.gear }] });
+      job.status = 'approved'; job.approvedAt = Date.now(); job.auto = true; jobLog(job, '自動存入規則建立，直接排隊執行');
+      made++;
+    }
+  }
+  if (lines.length) guildLog(`${a.mode === 'deposit' ? '自動存入' : '試跑（不會存）'}：${lines.join('、')}，共道具 ${nItem} 個、裝備 ${nGear} 件${a.mode === 'deposit' ? `，建立 ${made} 個工作` : ''}`);
+  else if (force) guildLog('自動存入：目前沒有符合的東西');
+  save();
+}
+setInterval(() => { try { guildAutoTick(false); } catch (e) { console.warn('[公倉自動存入]', e); } }, 60 * 1000);
 
 // ================= 掛機控制 =================
 // 指令（開始／暫停／重新開始）依帳號分組，交給那個帳號目前在線的遊戲頁面執行；
@@ -260,6 +364,7 @@ function createBagJob(body) {
 
 function createJob(body) {
   if (body.kind === 'idle') throw new Error('掛機指令請用 /api/idle');
+  if (body.kind === 'guildView') return createGuildView(body.fromCharId);
   if (BAG_KINDS.has(body.kind)) return createBagJob(body);
   const from = db.chars[body.fromCharId], to = db.chars[body.toCharId];
   if (!from || !to) throw new Error('找不到角色資料');
@@ -406,6 +511,20 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ---- 交易工作 ----
+    // 公會倉庫內容：遊戲不會在同步時送，只在查看／存取後回傳，所以存最後一次看到的
+    if (req.method === 'GET' && url.pathname === '/api/guild') return send(res, 200, { ...(db.guild || { data: null }), log: (db.guildLog || []).slice(-40), autoAt: db.guildAutoAt || 0 });
+    if (req.method === 'POST' && url.pathname === '/api/guild/auto-run') { guildAutoTick(true); return send(res, 200, { ok: true, log: (db.guildLog || []).slice(-5) }); }
+    if (req.method === 'POST' && url.pathname === '/api/guild') {
+      const b = JSON.parse(await readBody(req));
+      if (!b || !b.data || typeof b.data !== 'object') return send(res, 400, { error: 'bad guild data' });
+      db.guild = { at: Date.now(), charId: b.charId || null, charName: b.charName || '', data: b.data };
+      save();
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/guild/refresh') {
+      try { const b = JSON.parse((await readBody(req)) || '{}'); return send(res, 200, { ok: true, job: createGuildView(b.charId) }); }
+      catch (e) { return send(res, 400, { error: e.message }); }
+    }
     // 強化工坊的結果（每件衝了幾次、成功幾次、是否及格），給面板和之後的分流用
     if (req.method === 'POST' && url.pathname === '/api/forge/result') {
       const r = JSON.parse(await readBody(req));
@@ -588,6 +707,8 @@ const server = http.createServer(async (req, res) => {
     // 腳本查詢：這個帳號現在要做什麼
     if (req.method === 'GET' && url.pathname === '/api/agent') {
       const code = url.searchParams.get('code') || '';
+      const pollChar = url.searchParams.get('charId') || '';
+      if (code && pollChar) agentChar[code] = pollChar;
       // 掛機指令馬上執行，不用排在交易後面
       const idleJob = db.jobs.find(j => j.kind === 'idle' && ACTIVE.has(j.status) && j.fromCode === code);
       if (idleJob) return send(res, 200, { job: idleJob, role: 'owner', peerReady: true });
