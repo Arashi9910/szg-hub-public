@@ -149,6 +149,14 @@ function jobLog(job, msg) {
 function publicJob(j) { return j; }
 
 const BAG_KINDS = new Set(['sell', 'lock', 'unlock', 'idle', 'forge']);
+// 新種類的工作要遊戲分頁的腳本夠新才看得懂：還沒換上新腳本的，工作先排隊等，不交給它（避免「未知的工作類型」直接失敗）
+const KIND_MIN_AGENT = { forge: '0.27.0' };
+const verLt = (a, b) => { const x = String(a || '0').split('.').map(Number), y = String(b || '0').split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); } return false; };
+function agentTooOld(job, code) {
+  const need = KIND_MIN_AGENT[job.kind]; if (!need) return false;
+  const snap = Object.values(db.chars).filter(s => s.playerCode === code).sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0))[0];
+  return !snap || verLt(snap.scriptVersion, need) ? (snap ? snap.scriptVersion || '?' : '?') : false;
+}
 
 // ================= 掛機控制 =================
 // 指令（開始／暫停／重新開始）依帳號分組，交給那個帳號目前在線的遊戲頁面執行；
@@ -562,6 +570,12 @@ const server = http.createServer(async (req, res) => {
       if (idleJob) return send(res, 200, { job: idleJob, role: 'owner', peerReady: true });
       const job = currentJobFor(code);
       if (!job) return send(res, 200, { job: null });
+      const old = agentTooOld(job, code);
+      if (old) {
+        const msg = `等待 ${job.fromName} 的遊戲分頁換上新腳本（目前 v${old}，需要 v${KIND_MIN_AGENT[job.kind]} 以上；太久沒換請手動重新整理那個分頁）`;
+        if (job.lastMsg !== msg) { jobLog(job, msg); job.lastMsg = msg; save(); }
+        return send(res, 200, { job: null, needUpdate: KIND_MIN_AGENT[job.kind] });
+      }
       if (BAG_KINDS.has(job.kind)) return send(res, 200, { job, role: 'owner', peerReady: true });
       const role = job.fromCode === code ? 'giver' : 'receiver';
       const peer = role === 'giver' ? job.toCode : job.fromCode;

@@ -1105,7 +1105,14 @@ function agentMain(ctx) {
         return report(job, { event: 'batchDone' });
       }
       if (job.kind === 'forge') return runForgeJob(job, c);
-      return report(job, { event: 'error', msg: '未知的工作類型：' + job.kind });
+      // 不認得的工作：多半是這個分頁的腳本太舊，重新整理一次拿新版（同一個工作只試一次）
+      if (GM_getValue('reloadForJob', '') !== job.id) {
+        GM_setValue('reloadForJob', job.id);
+        await report(job, { event: 'waiting', msg: `${c.name} 的腳本不認得這種工作，重新整理頁面換新腳本…` });
+        setTimeout(() => location.reload(), 1500);
+        return;
+      }
+      return report(job, { event: 'error', msg: '未知的工作類型：' + job.kind + '（重新整理後仍然不認得，請手動重新整理遊戲分頁）' });
     }
     // ---------- 強化工坊：用神匠之魂（artisanScroll）批次衝卷 ----------
     // 遊戲規則：每衝 1 次扣 1 張卷軸＋10 萬楓幣（失敗也扣格）；一次最多 10 件，多件時要「名稱相同、剩餘次數相同、沒鎖定」；
@@ -1167,6 +1174,12 @@ function agentMain(ctx) {
         const charId = sessionStorage.getItem('mapleCharacter');
         const res = await hub('GET', `/api/agent?code=${encodeURIComponent(account.playerCode)}&charId=${encodeURIComponent(charId)}`);
         const job = res && res.job;
+        if (!job && res && res.needUpdate && GM_getValue('reloadForUpdate', '') !== res.needUpdate) {
+          GM_setValue('reloadForUpdate', res.needUpdate);
+          setBadge(null, '有工作需要新版腳本，重新整理頁面…');
+          setTimeout(() => location.reload(), 1500);
+          return;
+        }
         if (!job) { if (agentBusy) { agentBusy = false; lastJobAt = Date.now(); setBadge('ok'); } return; }
         agentBusy = true;
         if (job.kind !== 'idle' && isIdleOffline()) { await wakePage('執行「' + ({ collect: '收集', give: '分發', sell: '賣出', lock: '鎖定', unlock: '解鎖' }[job.kind] || '工作') + '」前'); state = readState() || state; }
