@@ -1431,6 +1431,9 @@ function bagCharView(vis) {
   }
   return blocks.join('') || `<div class="card empty">${bagChars().length ? '沒有符合條件的物品' : '還沒有背包資料：打開遊戲分頁，約 10 秒後會出現。'}</div>`;
 }
+// 擴充點：其他版本可以在背包動作列加按鈕（data-bact）並接手處理
+let bagExtraActions = () => '';
+const bagActHooks = {};
 function renderBagBar() {
   if (document.activeElement && document.activeElement.id === 'bGiveTo') return; // 正在選目標角色時不要重畫
   const sel = bagSelected(), bar = $('#bagBar');
@@ -1447,7 +1450,7 @@ function renderBagBar() {
   bar.style.display = '';
   bar.innerHTML = `<span class="sum">已選 <b>${sel.length}</b> 項・<b>${chars.size}</b> 隻角色${est ? `・賣出約 <b class="good">${short(est)}</b> 楓幣` : ''}</span>
     ${notReady.length ? `<span class="warn" title="${esc(notReady.map(s => s.char.name).join('、'))}">⚠ ${notReady.length} 隻離線或不是目前角色，工作會等到它上線</span>` : ''}
-    <button class="btn primary" data-bact="sell" ${nSell ? '' : 'disabled'}>賣出${nSell < sel.length ? `（${nSell} 項可賣）` : ''}</button><button class="btn" data-bact="lock">鎖定</button><button class="btn" data-bact="unlock">解鎖</button>
+    <button class="btn primary" data-bact="sell" ${nSell ? '' : 'disabled'}>賣出${nSell < sel.length ? `（${nSell} 項可賣）` : ''}</button><button class="btn" data-bact="lock">鎖定</button><button class="btn" data-bact="unlock">解鎖</button>${bagExtraActions(sel)}
     <span class="give-grp"><span class="dim">給</span><select id="bGiveTo">${charOpt(ui.bag.giveTo || S.mainCharId || '', true).replace('（選擇角色）', '（選角色）')}</select><button class="btn" data-bact="give" title="把選取的東西交易給這隻角色（數量＝全部可交易的）">送出 ▸</button></span>
     <button class="btn" data-bquick="clear">清除選擇</button><span class="dim" id="bMsg"></span>`;
 }
@@ -1524,6 +1527,7 @@ document.addEventListener('click', async e => {
       else for (const s of bagVisibleChars()) for (const r of bagRows(s)) if (d.bquick === 'all' || r.sellable) ui.bagSel.add(bagSid(s.char.id, r.id));
       renderBagList(); return;
     }
+    if (d.bact && bagActHooks[d.bact]) { await bagActHooks[d.bact](); return; }
     if (d.bact === 'give') {
       const to = $('#bGiveTo').value; ui.bag.giveTo = to;
       const { reqs, skipped } = bagGiveJobs(to);
