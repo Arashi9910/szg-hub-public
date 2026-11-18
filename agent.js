@@ -29,25 +29,60 @@ function agentMain(ctx) {
       history.replaceState(history.state, '', u.pathname + u.search + u.hash);
     }
   } catch (_) {}
+  // 分頁編號：同一個分頁重新整理（F5、自動更新）沿用，新開的分頁（含「複製分頁」，它會連 sessionStorage 一起複製）換一個新的
+  const TAB_ID = (() => {
+    let nav = '';
+    try { nav = (performance.getEntriesByType('navigation')[0] || {}).type || ''; } catch (_) {}
+    let id = sessionStorage.getItem('szgTabId');
+    if (!id || nav !== 'reload') { id = PAGE_ID; sessionStorage.setItem('szgTabId', id); }
+    return id;
+  })();
   const myChar = () => sessionStorage.getItem('mapleCharacter') || '';
   const ck = k => k + ':' + myChar(); // 每隻角色（每個分頁）各自一份的設定鍵；同設定檔的分頁共用 GM 儲存空間
   // 這隻角色由哪個分頁負責：{page, at, hidden}。同一隻角色開了兩個分頁時，後開的那個暫停中控功能，避免同一件事做兩次
   const tabKey = id => 'charTab:' + id;
   const tabFresh = v => v && Date.now() - v.at < (v.hidden ? 100000 : 20000);
+  const isMe = v => v && (v.page === PAGE_ID || (v.tab && v.tab === TAB_ID)); // 同一個分頁重新整理前的自己
   let dupTab = false;
   function tabBeat() {
     const id = myChar(); if (!id) return;
     const v = GM_getValue(tabKey(id), null);
-    if (v && v.page !== PAGE_ID && tabFresh(v)) {
+    if (v && !isMe(v) && tabFresh(v)) {
       if (!dupTab) { dupTab = true; setBadge(null, '⚠ 這隻角色已經在另一個分頁開著：這個分頁先不執行中控工作（關掉其中一個就好）'); }
+      becomeOther();
       return;
     }
     if (dupTab) { dupTab = false; setBadge('ok'); }
-    GM_setValue(tabKey(id), { page: PAGE_ID, at: Date.now(), hidden: document.hidden });
+    GM_setValue(tabKey(id), { page: PAGE_ID, tab: TAB_ID, at: Date.now(), hidden: document.hidden });
   }
   // 別的分頁是否正在負責某隻角色（同帳號的另一隻有自己的分頁時，這個分頁就不幫它做事）
-  const otherTabHas = id => { const v = GM_getValue(tabKey(id), null); return !!(v && v.page !== PAGE_ID && tabFresh(v)); };
+  const otherTabHas = id => { const v = GM_getValue(tabKey(id), null); return !!(v && !isMe(v) && tabFresh(v)); };
   const passive = () => dupTab;
+  // 直接開新分頁時，遊戲會載入帳號「目前」那隻（通常是已經有分頁的 A）：
+  // 剛開的分頁發現這隻已經有人負責、同帳號另一隻沒有分頁 → 自動換成另一隻（等於按了「＋ 開 某某 的分頁」）
+  let becoming = false;
+  async function becomeOther() {
+    if (becoming || performance.now() > 90000) return; // 只處理剛開的分頁；開很久的分頁不自動換
+    const last = Number(sessionStorage.getItem('szgAutoOther') || 0);
+    if (Date.now() - last < 60000) return; // 剛換過還是重複：不要一直重新整理
+    becoming = true;
+    try {
+      await loadAccount().catch(() => null);
+      const st = readState();
+      const ids = (account && account.characterIds) || (st && (st.characters || []).map(c => c.id)) || [];
+      const me = myChar();
+      const free = ids.find(x => x && x !== me && !otherTabHas(x));
+      if (!free) return; // 兩隻都有分頁了：維持暫停並提示
+      sessionStorage.setItem('szgAutoOther', String(Date.now()));
+      sessionStorage.setItem('mapleCharacter', free);
+      sessionStorage.removeItem('mapleSessionView');
+      // 遊戲同步完會把 mapleCharacter 寫回畫面上的角色：重新整理前擋住
+      try { const SP = (W.Storage || Storage).prototype, orig = SP.setItem, ss = W.sessionStorage; SP.setItem = function (k, val) { if (this === ss && k === 'mapleCharacter' && val !== free) return; return orig.call(this, k, val); }; } catch (_) {}
+      W.addEventListener('pagehide', () => { try { sessionStorage.setItem('mapleCharacter', free); sessionStorage.removeItem('mapleSessionView'); } catch (_) {} });
+      setBadge(null, '這隻角色已經有分頁了，自動換成同帳號的另一隻…');
+      setTimeout(() => location.reload(), 300);
+    } finally { becoming = false; }
+  }
 
     // ---------- 共用 ----------
     function hub(method, path, body) {
@@ -160,7 +195,7 @@ function agentMain(ctx) {
           const keys = a ? Object.keys(a).filter(k => !/key|token|mail/i.test(k)).join(',') : '非 JSON';
           throw new Error(`回應沒有 ID（欄位：${keys}${a && a.status ? '，status=' + a.status : ''}）`);
         }
-        account = { playerCode: a.playerCode, activeCharacterId: a.activeCharacterId };
+        account = { playerCode: a.playerCode, activeCharacterId: a.activeCharacterId, characterIds: Array.isArray(a.characterIds) ? a.characterIds : null };
         rememberCode(a.playerCode);
         accountError = '';
       } catch (e) {
@@ -393,7 +428,7 @@ function agentMain(ctx) {
         el.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:99999;font:12px sans-serif;padding:3px 8px;border-radius:10px;opacity:.9;pointer-events:none;color:#fff;max-width:340px';
         document.body.appendChild(el);
       }
-      if (dupTab) { el.textContent = '⚠ 這隻角色已經在另一個分頁開著：這個分頁先不執行中控工作（關掉其中一個就好）'; el.style.background = '#8a2b2b'; return; }
+      if (dupTab && !text) { el.textContent = '⚠ 這隻角色已經在另一個分頁開著：這個分頁先不執行中控工作（關掉其中一個就好）'; el.style.background = '#8a2b2b'; return; }
       if (text) { el.textContent = text; el.style.background = '#7a5a12'; return; }
       if (agentBusy) return; // 交易進行中時保留交易狀態文字
       if (status === 'ok') { el.textContent = '中控：已連線'; el.style.background = '#1f7a3a'; }
