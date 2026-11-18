@@ -290,6 +290,7 @@
   <section id="gear">
     <div class="card gear-top">
       <div class="bar" style="margin:0">
+        <span class="vgBox"></span>
         <div class="seg" id="gViewSeg"><button data-gv="list">裝備清單</button><button data-gv="matrix">穿戴對照</button><button data-gv="auto">撿到自動處理</button></div>
         <div class="seg" id="gModeSeg" title="素質要看衝卷後的目前數值，還是衝卷前的原始數值"><button data-gm="stats">目前素質（含衝卷）</button><button data-gm="cleanStats">原始（未衝卷）</button></div>
         <span style="display:none"><input type="radio" name="gview" value="matrix"><input type="radio" name="gview" value="list" checked><input type="radio" name="gmode" value="stats" checked><input type="radio" name="gmode" value="cleanStats"></span>
@@ -347,6 +348,7 @@
   <!-- 資源 -->
   <!-- 交易 -->
   <section id="trade">
+    <div class="bar" style="margin-bottom:8px"><span class="dim">顯示</span><span class="vgBox"></span></div>
 
     <div class="card">
       <h3>收集：分身 → 本尊</h3>
@@ -600,12 +602,28 @@ function missingChars() {
   return out;
 }
 
-function allGear() {
+// ---- 檢視組別（裝備、交易分頁）：只顯示 A 組或 B 組的角色；自動＝跟著目前角色多的那一組 ----
+ui.vg = (() => { try { return localStorage.getItem('viewGroup') || 'auto'; } catch (_) { return 'auto'; } })();
+function viewGroup() { return ui.vg === 'A' || ui.vg === 'B' || ui.vg === 'all' ? ui.vg : boardGroupAuto(); }
+function inView(charId) { const g = viewGroup(); return g === 'all' || charGroup(charId) === g; }
+function snapsV() { return snaps().filter(s => inView(s.char.id)); }
+function renderVg() {
+  const g = viewGroup(), n = x => snaps().filter(s => charGroup(s.char.id) === x).length;
+  const h = `<div class="seg" title="每個帳號第 1 隻角色＝A 組、第 2 隻＝B 組（可在派工看板的角色節點改）">${[['A', 'A 組'], ['B', 'B 組'], ['all', '全部']].map(([k, t]) => `<button data-vg="${k}" class="${g === k ? 'on' : ''}">${t}${k !== 'all' ? ` <span class="dim sm">${n(k)}</span>` : ''}</button>`).join('')}<button data-vg="auto" class="${ui.vg === 'auto' ? 'on' : ''}" title="跟著目前角色比較多的那一組">自動</button></div>`;
+  document.querySelectorAll('.vgBox').forEach(b => { if (b.innerHTML !== h) b.innerHTML = h; });
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest && e.target.closest('[data-vg]'); if (!t) return;
+  ui.vg = t.dataset.vg; try { localStorage.setItem('viewGroup', ui.vg); } catch (_) {}
+  renderAll();
+});
+function allGear(viewOnly) {
   const latest = latestByAccount();
   const rows = [];
   for (const s of snaps()) {
     for (const g of s.gear || []) {
       if (g.loc === '倉庫' && latest[s.accountId] !== s) continue; // 倉庫只算一次
+      if (viewOnly && g.loc !== '倉庫' && !inView(s.char.id)) continue; // 帳號倉庫不分組，照常顯示
       rows.push({ ...g, charId: s.char.id, charName: g.loc === '倉庫' ? accountLabel(s.accountId, s) + '（倉庫）' : s.char.name, accountId: s.accountId });
     }
   }
@@ -613,7 +631,7 @@ function allGear() {
 }
 
 function wearers(g) {
-  return snaps().filter(s => (g.reqJob === 0 || (g.reqJob & s.char.branchBit)) && (s.char.lv || 0) >= (g.reqLevel || 0));
+  return snapsV().filter(s => (g.reqJob === 0 || (g.reqJob & s.char.branchBit)) && (s.char.lv || 0) >= (g.reqLevel || 0));
 }
 
 // ================= 掛機控制 =================
@@ -874,7 +892,7 @@ function renderSlotCfg() {
 
 function renderMatrix() {
   const mode = statMode();
-  const ss = snaps().slice().sort((a, b) => cmp(accountLabel(a.accountId, a), accountLabel(b.accountId, b)) || cmp(a.char.name, b.char.name));
+  const ss = snapsV().slice().sort((a, b) => cmp(accountLabel(a.accountId, a), accountLabel(b.accountId, b)) || cmp(a.char.name, b.char.name));
   const worn = ss.flatMap(s => (s.gear || []).filter(g => g.loc === '穿戴'));
   const cols = [...new Set(worn.map(g => g.slot === 'overall' ? 'top' : g.slot))].sort((a, b) => SLOT_ORDER.indexOf(a) - SLOT_ORDER.indexOf(b));
   if (!ss.length) { $('#gearOut').innerHTML = '<div class="empty">還沒有資料。</div>'; return; }
@@ -977,7 +995,7 @@ function gearMatch(g, f, mode, onlyItself) {
 }
 function filteredGear() {
   const f = ui.filter, mode = statMode();
-  return allGear().filter(g => gearMatch(g, f, mode, false));
+  return allGear(true).filter(g => gearMatch(g, f, mode, false));
 }
 
 function renderList() {
@@ -1258,7 +1276,7 @@ function renderTrade() {
     const checked = new Set([...document.querySelectorAll('#collectPick input[data-cpick]:checked')].map(i => i.dataset.cpick));
     const first = !document.querySelector('#collectPick input[data-cpick]');
     let c = `<table><thead><tr><th class="nosort"><input type="checkbox" id="cAll"></th><th class="nosort">角色</th><th class="nosort">狀態</th><th class="nosort num">楓幣</th><th class="nosort num">預計轉出</th><th class="nosort num">道具（種）</th><th class="nosort num">裝備（件）</th><th class="nosort num">交易次數</th><th class="nosort">說明</th></tr></thead><tbody>`;
-    const ss = snaps().filter(s => s.char.id !== S.mainCharId).sort((a, b) => cmp(a.char.name, b.char.name));
+    const ss = snapsV().filter(s => s.char.id !== S.mainCharId).sort((a, b) => cmp(a.char.name, b.char.name));
     for (const s of ss) {
       const p = collectPlan(s);
       const sameAcc = s.playerCode && s.playerCode === main.playerCode;
@@ -3168,6 +3186,7 @@ document.addEventListener('click', async e => {
 });
 function renderAll() {
   loadExt();
+  renderVg();
   renderJobsUI();
   const active = document.querySelector('nav button.on').dataset.tab;
   if (active === 'overview') { renderOverview(); renderIdleCard(); }
