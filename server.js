@@ -441,6 +441,15 @@ const server = http.createServer(async (req, res) => {
       save();
       return send(res, 200, { ok: true });
     }
+    // 一鍵清除：已完成、已取消（含掛機指令）；failed: true 時連失敗的也清。執行中、待確認的不動
+    if (req.method === 'POST' && url.pathname === '/api/jobs/clear') {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const st = new Set(b.failed ? ['failed'] : ['done', 'cancelled']);
+      const before = db.jobs.length;
+      db.jobs = db.jobs.filter(j => !st.has(j.status));
+      save();
+      return send(res, 200, { ok: true, removed: before - db.jobs.length });
+    }
     if (req.method === 'POST' && url.pathname === '/api/jobs/approve-all') {
       for (const j of db.jobs) if (j.status === 'pending') { j.status = 'approved'; j.approvedAt = Date.now(); jobLog(j, '已確認，排隊等待執行'); }
       save();

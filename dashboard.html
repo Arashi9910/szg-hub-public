@@ -1236,7 +1236,8 @@ function collectPlan(s) {
 function renderJobs(sel, filterFn) {
   const jobs = (DATA.jobs || []).filter(filterFn).slice().reverse();
   let h = '';
-  if (jobs.some(j => j.status === 'pending')) h += `<div class="bar"><button class="btn primary" data-approve-all>全部確認執行</button></div>`;
+  const nDone = jobs.filter(j => ['done', 'cancelled'].includes(j.status)).length, nFail = jobs.filter(j => j.status === 'failed').length;
+  if (jobs.some(j => j.status === 'pending') || nDone || nFail) h += `<div class="bar">${jobs.some(j => j.status === 'pending') ? '<button class="btn primary" data-approve-all>全部確認執行</button>' : ''}${nDone ? `<button class="btn" data-jobs-clear="done">🗑 清除已完成的（${nDone}）</button>` : ''}${nFail ? `<button class="btn" data-jobs-clear="failed">清除失敗的（${nFail}）</button>` : ''}</div>`;
   h += `<table><thead><tr><th class="nosort">建立</th><th class="nosort">類型</th><th class="nosort">角色</th><th class="nosort">內容</th><th class="nosort">進度</th><th class="nosort">狀態</th><th class="nosort">最新訊息</th><th class="nosort"></th></tr></thead><tbody>`;
   if (!jobs.length) h += '<tr><td colspan="8" class="empty">沒有工作</td></tr>';
   for (const j of jobs) {
@@ -1601,6 +1602,12 @@ document.addEventListener('click', async e => {
     if (t.dataset && t.dataset.job) {
       if (t.dataset.act === 'cancel' && !confirm('確定取消這個工作？')) return;
       await api(`/api/jobs/${t.dataset.job}/${t.dataset.act}`); await poll(true);
+    }
+    if (t.dataset && t.dataset.jobsClear) {
+      const failed = t.dataset.jobsClear === 'failed';
+      if (failed && !confirm('清除所有失敗的工作？（清掉就不能按「重試」了）')) return;
+      const r = await api('/api/jobs/clear', { failed });
+      await poll(true); return;
     }
     if (t.hasAttribute && t.hasAttribute('data-approve-all')) {
       const n = (DATA.jobs || []).filter(j => j.status === 'pending').length;
