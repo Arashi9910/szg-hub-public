@@ -176,7 +176,7 @@
   nav button.on { color: var(--text); background: var(--panel2); border-color: var(--line); }
   #status { color: var(--dim); font-size: 12px; }
   #updBox { margin-left: auto; display: flex; gap: 6px; align-items: center; font-size: 12px; }
-  main { padding: 14px 18px 40px; }
+  main { padding: 14px 18px 100px; } /* 底部留空：浮動的操作列不要蓋到最後幾列 */
   section { display: none; } section.on { display: block; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 0 0 10px; }
   .fg-split { margin: 6px 0 10px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 6px; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
@@ -242,6 +242,32 @@
   .gsteps { margin: 8px 0; padding-left: 22px; line-height: 1.9; }
   .gsteps li.done { color: var(--dim); }
   .gsteps li.done::marker { content: '✓ '; color: var(--good); }
+
+  /* ===== 窄螢幕（直式螢幕、Windows 縮放 125%／150%）===== */
+  header { flex-wrap: wrap; row-gap: 6px; }
+  header nav { display: flex; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
+  #updBox { white-space: nowrap; }
+  #updBox * { white-space: nowrap; }
+  #status { flex: 1 1 240px; min-width: 200px; }
+  .fac-hud { flex-wrap: wrap; right: 10px; max-width: calc(100% - 20px); }
+  .fac-hud > * { white-space: nowrap; }
+  .fac-hud .seg button { white-space: nowrap; }
+  @media (max-width: 1280px) {
+    /* 欄位多的表格：維持可讀寬度，放不下時在卡片裡左右捲動，不再把整個頁面撐破 */
+    main :has(> table) { overflow-x: auto; }
+    /* 表頭凍結的大表格：整張表在自己的捲動區裡（上下左右都能捲），表頭停在捲動區頂端 */
+    main :has(> table.sticky) { overflow: auto; max-height: calc(100vh - var(--hdr, 52px) - 16px); }
+    main :has(> table.sticky) > table.sticky thead th { top: 0; }
+    main table:has(> thead > tr > th:nth-child(9)) { min-width: 980px; }
+    main table:has(> thead > tr > th:nth-child(13)) { min-width: 1200px; }
+    #status { order: 9; flex-basis: 100%; }
+  }
+  @media (max-width: 900px) {
+    header { padding: 8px 10px; gap: 8px; }
+    main { padding: 10px 8px 100px; }
+    nav button { padding: 5px 8px; }
+    .card { padding: 10px; }
+  }
 </style>
 </head>
 <body>
@@ -280,7 +306,7 @@
         <div class="seg" id="ovMode"><button data-ovmode="all">全部角色</button><button data-ovmode="active">只看有分頁的</button></div>
         <input id="ovSearch" placeholder="搜尋角色、帳號、地圖" style="width:180px" autocomplete="off">
         <label><input type="checkbox" id="ovMore"> 顯示更多欄位（藥水、裝備欄、道具、交易ID）</label>
-        <label title="填了之後多一欄，算出每隻角色練到這個等級要多久（用目前每小時經驗）">目標等級 Lv<input type="number" id="ovTarget" min="2" max="250" placeholder="例 120" style="width:64px"></label>
+        <label title="填了之後多一欄，算出每隻角色練到這個等級要多久（用目前每小時經驗）">目標等級 Lv<input type="number" id="ovTarget" min="2" max="250" placeholder="例 120" style="width:76px"></label>
         <details id="ovExpBox" style="display:inline-block"><summary class="dim sm" style="cursor:pointer">經驗表</summary><div id="ovExpOut" class="sm" style="margin-top:6px;max-height:320px;overflow:auto"></div></details>
       </div>
       <details class="ov-rules" id="idleCard"><summary><b>⚙ 掛機自動規則</b>　<span id="ipSummary" class="dim"></span></summary>
