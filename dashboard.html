@@ -204,6 +204,8 @@
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .dim { color: var(--dim); } .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
   .stale td { opacity: .55; }
+  .tag.good { color: var(--good); border-color: var(--good); }
+  .tag.warn { color: var(--warn); border-color: var(--warn); }
   .tag { display: inline-block; padding: 0 6px; border-radius: 4px; background: var(--panel2); border: 1px solid var(--line); font-size: 12px; margin: 1px 3px 1px 0; }
   .tag.main { border-color: var(--main); color: var(--main); }
   .star { cursor: pointer; color: var(--dim); } .star.on { color: var(--main); }
@@ -262,7 +264,7 @@
   <div id="status">連線中…</div>
 </header>
 <aside id="jobDrawer" class="drawer" style="display:none">
-  <div class="dhd"><b>工作佇列</b><span class="dim" style="flex:1">待確認的要按「確認執行」才會開始；執行時那隻角色要是遊戲分頁的目前角色。</span><button class="btn" id="jobClose">關閉 ✕</button></div>
+  <div class="dhd"><b>工作佇列</b><span class="dim" style="flex:1">待確認的要按「確認執行」才會開始；執行時那隻角色要有自己的遊戲分頁（同一個帳號可以開兩個分頁）。</span><button class="btn" id="jobClose">關閉 ✕</button></div>
   <div id="jobOutAll"></div>
 </aside>
 <main>
@@ -273,9 +275,9 @@
       <details id="ovMoneyBox" style="margin-top:8px"><summary class="dim" style="cursor:pointer">楓幣分布（每隻角色、帳號倉庫）</summary><div id="mesoOut" style="margin-top:6px"></div></details></div>
     <div class="card">
       <h3>所有角色</h3>
-      <div class="dim help-src">★ 設定本尊（收集、分發的目的地）。帳號名稱可以直接點擊修改。「目前」是那個帳號遊戲分頁正在操作的角色，另一隻顯示較淡，按「⇄ 切換」可以換過去。灰色列＝超過 5 分鐘沒更新（那個設定檔的遊戲分頁可能沒開，或進入離線掛機）。勾選左邊的方塊後，畫面底部會出現批次操作列。</div>
+      <div class="dim help-src">★ 設定本尊（收集、分發的目的地）。帳號名稱可以直接點擊修改。「分頁」＝這隻角色有自己的遊戲分頁（資料即時、工作直接執行）；沒有分頁的顯示較淡，在遊戲伺服器上背景掛機。同一個帳號可以開兩個分頁讓 A、B 兩隻同時在線：在遊戲分頁右下角按「＋ 開 某某 的分頁」；或按「⇄ 切換」把現有分頁換成那隻。灰色列＝超過 5 分鐘沒更新（那個設定檔的遊戲分頁可能沒開，或進入離線掛機）。勾選左邊的方塊後，畫面底部會出現批次操作列。</div>
       <div class="bar">
-        <div class="seg" id="ovMode"><button data-ovmode="all">全部角色</button><button data-ovmode="active">只看目前角色</button></div>
+        <div class="seg" id="ovMode"><button data-ovmode="all">全部角色</button><button data-ovmode="active">只看有分頁的</button></div>
         <input id="ovSearch" placeholder="搜尋角色、帳號、地圖" style="width:180px" autocomplete="off">
         <label><input type="checkbox" id="ovMore"> 顯示更多欄位（藥水、裝備欄、道具、交易ID）</label>
         <label title="填了之後多一欄，算出每隻角色練到這個等級要多久（用目前每小時經驗）">目標等級 Lv<input type="number" id="ovTarget" min="2" max="250" placeholder="例 120" style="width:64px"></label>
@@ -391,7 +393,7 @@
   <section id="bag">
     <div class="card bag-top">
       <h3>背包</h3>
-      <div class="dim help-src">一次看所有角色的背包。上面的角色卡可以點選只看某幾隻；「依道具」看每樣東西在誰身上、共有多少，「依角色」用格子看每隻角色的背包。勾選後畫面底部會出現動作列，可以跨角色一起賣出／鎖定／解鎖。賣出會自動跳過已鎖定的、補給使用中的藥水；穿在身上的裝備不會出現在這裡。建立的工作要在右上角「工作」按「確認執行」才會開始，執行時那隻角色要是遊戲分頁的目前角色。</div>
+      <div class="dim help-src">一次看所有角色的背包。上面的角色卡可以點選只看某幾隻；「依道具」看每樣東西在誰身上、共有多少，「依角色」用格子看每隻角色的背包。勾選後畫面底部會出現動作列，可以跨角色一起賣出／鎖定／解鎖。賣出會自動跳過已鎖定的、補給使用中的藥水；穿在身上的裝備不會出現在這裡。建立的工作要在右上角「工作」按「確認執行」才會開始，執行時那隻角色要有自己的遊戲分頁（綠點）；同一個帳號可以開兩個分頁，兩隻同時在線。</div>
       <div class="bag-tools">
         <div class="seg" id="bView"><button data-bview="item">依道具</button><button data-bview="char">依角色</button></div>
         <input id="bSearch" placeholder="搜尋道具名稱" autocomplete="off">
@@ -428,7 +430,7 @@
     <div class="card" id="wMissing" style="display:none"><span class="warn">還沒有地圖資料：打開任一個遊戲分頁（腳本 v0.14 以上），約 10 秒後會自動上傳。</span></div>
     <div class="card">
       <h3>選角色</h3>
-      <div class="bar"><button class="btn" id="mpAll">全選</button><button class="btn" id="mpNone">清除</button><button class="btn" id="mpActive">只選各帳號目前角色</button><span class="dim" id="mpSelInfo"></span></div>
+      <div class="bar"><button class="btn" id="mpAll">全選</button><button class="btn" id="mpNone">清除</button><button class="btn" id="mpActive">只選有分頁的</button><span class="dim" id="mpSelInfo"></span></div>
       <div id="mpChars"></div>
     </div>
     <div class="card">
@@ -436,7 +438,7 @@
       <div class="bar"><span>把勾選的角色送到</span><select id="mpTarget" style="min-width:260px"></select><button class="btn primary" id="mpGo">換圖</button><span class="dim" id="mpMsg"></span></div>
       <details><summary class="dim">目前的隊伍</summary><div id="ptNow"></div></details>
       <details id="ptJobsBox" open><summary class="dim">最近的換圖進度</summary><div id="ptJobs"></div></details>
-      <div class="dim">遊戲標示「換圖只移動目前角色」：不是目前角色的，中控會嘗試直接指定；若被遊戲拒絕，紀錄會顯示失敗，請先「⇄ 切換」再換。等級低於地圖最低等級的會略過。</div>
+      <div class="dim">換圖交給那隻角色自己的遊戲分頁做；沒有分頁的，由同帳號的分頁直接指定（遊戲標示「換圖只移動目前角色」，被拒絕時紀錄會顯示失敗，請先開它的分頁或「⇄ 切換」再換）。等級低於地圖最低等級的會略過。</div>
     </div>
     <div class="card" id="effCard" style="display:none">
       <h3>練功效率提示</h3>
@@ -550,7 +552,7 @@
     <div class="card">
       <details id="gGuideBox"><summary style="cursor:pointer"><b>📘 第一次使用：公會倉庫怎麼設定</b>　<span id="gSetupState" class="sm"></span></summary>
         <ol class="gsteps" id="gSteps"></ol>
-        <div class="dim sm">中控只會動<b>背包裡</b>沒鎖定、可交易、不是補給設定中的道具和裝備；<b>不會動楓幣和點數</b>。存入、領取、賣出都是由那隻角色的遊戲分頁自己操作，所以那隻角色要是帳號的「目前角色」、遊戲分頁要開著。</div>
+        <div class="dim sm">中控只會動<b>背包裡</b>沒鎖定、可交易、不是補給設定中的道具和裝備；<b>不會動楓幣和點數</b>。存入、領取、賣出都是由那隻角色的遊戲分頁自己操作，所以那隻角色要有自己的遊戲分頁（同一個帳號可以開兩個分頁，A、B 各一個）。</div>
       </details>
     </div>
     <div class="card">
@@ -587,7 +589,7 @@
       <div class="bar"><span class="gd-lb">自動</span><select id="gaMode"><option value="off">關閉</option><option value="preview">試跑（只記錄會存哪些，不會存）</option><option value="deposit">自動存入（不用確認）</option></select>
         <span>每</span><input type="number" id="gaEvery" min="10" max="1440" style="width:70px"><span>分鐘檢查一次</span>
         <button class="btn" id="gaRun">立即檢查一次</button><span class="dim" id="gaInfo"></span></div>
-      <div class="sm" style="color:var(--dim)">自動存入只會替<b>在線而且是目前角色</b>的帳號建立工作，背景掛機的另一隻不會動；公倉快滿時會停下來。建議先用「試跑」看紀錄，確定沒問題再改成自動存入。</div>
+      <div class="sm" style="color:var(--dim)">自動存入只會替<b>有自己遊戲分頁</b>的角色建立工作，沒有分頁（背景掛機）的不會動；公倉快滿時會停下來。建議先用「試跑」看紀錄，確定沒問題再改成自動存入。</div>
       <details style="margin-top:6px"><summary class="dim" style="cursor:pointer">自動存入紀錄</summary><div id="gaLog"></div></details>
       <div id="gdPreview"></div>
     </div>
@@ -669,7 +671,7 @@ function missingChars() {
   return out;
 }
 
-// ---- 檢視組別（裝備、交易分頁）：只顯示 A 組或 B 組的角色；自動＝跟著目前角色多的那一組 ----
+// ---- 檢視組別（裝備、交易分頁）：只顯示 A 組或 B 組的角色；自動＝跟著有分頁的角色多的那一組 ----
 ui.vg = (() => { try { return localStorage.getItem('viewGroup') || 'auto'; } catch (_) { return 'auto'; } })();
 function viewGroup() { return ui.vg === 'A' || ui.vg === 'B' || ui.vg === 'all' ? ui.vg : boardGroupAuto(); }
 function inView(charId) { const g = viewGroup(); return g === 'all' || charGroup(charId) === g; }
@@ -733,13 +735,31 @@ function saveIdlePolicy() {
   return saveSettings({ idlePolicy: policy });
 }
 
+// ===== 遊戲分頁 =====
+// 同一個帳號可以開兩個遊戲分頁（A、B 角色各一個），兩隻同時在線、資料即時、工作各自執行。
+// 「有分頁」＝那隻角色有自己的遊戲分頁正在跑（中控依各分頁每 3 秒來問工作判斷）；沒有分頁的角色在遊戲伺服器上背景掛機，經驗照拿，但資料是舊的
+const tabOf = id => (DATA.tabs || {})[id] || null;
+const hasTab = id => !!tabOf(id);
+const accTabs = accountId => Object.keys(DATA.tabs || {}).filter(id => { const s = DATA.chars[id]; return s && s.accountId === accountId; });
+function accOfChar(id) { const s = DATA.chars[id] || snaps().find(x => (x.accountChars || []).some(c => c.id === id)); return s && s.accountId; }
+// 相容：帳號「主要」角色＝有分頁的那隻（兩隻都有時取最近回報的）
 function activeCharOf(accountId) {
+  const t = accTabs(accountId).map(id => DATA.chars[id]).sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0))[0];
+  if (t) return t.char.id;
   const s = latestByAccount()[accountId];
   return s ? (s.activeCharId || s.char.id) : null;
 }
+const TAB_HINT = '在這個帳號的遊戲分頁右下角按「＋ 開 某某 的分頁」，會開一個新視窗固定顯示那隻，兩隻同時在線';
+function tabTag(charId) {
+  const t = tabOf(charId);
+  if (!t) return '';
+  return t.hidden || t.off ? ` <span class="tag warn" title="這隻的遊戲分頁在背景或離線掛機中：遊戲會暫停更新畫面，資料慢一點、工作要等它醒來。把分頁拖成獨立視窗最好">分頁・背景</span>`
+    : ` <span class="tag good" title="這隻角色有自己的遊戲分頁：資料即時、工作直接執行">分頁</span>`;
+}
 function switchBtn(charId, accountId) {
-  return activeCharOf(accountId) === charId ? ' <span class="tag" title="這個帳號目前操作的角色">目前</span>'
-    : ` <button class="btn" data-switch="${charId}" title="切換成這個帳號的目前角色（遊戲分頁會自動重新整理）" style="padding:1px 6px">⇄ 切換</button>`;
+  if (hasTab(charId)) return tabTag(charId);
+  if (!accTabs(accountId).length) return ''; // 整個帳號都沒開分頁：沒有人能切
+  return ` <button class="btn" data-switch="${charId}" title="把這個帳號的遊戲分頁換成這隻（原本那隻轉背景掛機）。想兩隻同時在線：${TAB_HINT}" style="padding:1px 6px">⇄ 切換</button>`;
 }
 // ================= 總覽 =================
 ui.ovOnlyActive = (() => { try { return localStorage.getItem('ovOnlyActive') === '1'; } catch (_) { return false; } })();
@@ -787,7 +807,7 @@ function ovRows() {
     const c = s.char;
     const skew = (s.serverTime || s.at) - s.at;
     const remain = c.until ? c.until - (now + skew) : null;
-    return { s, c, account: accountLabel(s.accountId, s), remain, active: activeCharOf(s.accountId) === c.id, stale: now - (s.receivedAt || s.at) > STALE_MS };
+    return { s, c, account: accountLabel(s.accountId, s), remain, active: hasTab(c.id), stale: now - (s.receivedAt || s.at) > STALE_MS };
   });
   for (const m of missingChars()) rows.push({ missing: true, c: m, account: accountLabel(m.accountId, m.refSnap), active: false });
   return rows;
@@ -809,12 +829,16 @@ function renderAttention(rows) {
   if (soon.length) items.push({ lv: 'warn', icon: '⏳', text: `<b>${soon.length}</b> 隻 1 小時內掛機結束：${soon.map(r => `${esc(r.c.name)} <span class="dim">剩 ${hm(r.remain)}</span>`).join('、')}`, btn: idleBtn('restart', soon, '↻ 全部重新開始') });
   const offline = rows.filter(r => r.s && r.s.idleOffline && r.active);
   if (offline.length) items.push({ lv: 'warn', icon: '⏏', text: `<b>${offline.length}</b> 個帳號進入離線掛機（畫面暫停更新）：${nm(offline)}`, btn: idleBtn('wake', offline, '⏏ 全部領取') });
-  const notOpen = rows.filter(r => r.active && r.stale && !(r.s && r.s.idleOffline));
+  // 整個帳號都沒有開著的遊戲分頁、而且超過 5 分鐘沒回報（每個帳號列一隻）
+  const notOpen = Object.values(latestByAccount()).filter(s => !accTabs(s.accountId).length && Date.now() - (s.receivedAt || s.at) > STALE_MS && !s.idleOffline)
+    .map(s => rows.find(r => r.s === s)).filter(Boolean);
   if (notOpen.length) items.push({ lv: 'warn', icon: '📴', text: `<b>${notOpen.length}</b> 個帳號超過 5 分鐘沒回報（那個設定檔的遊戲分頁可能沒開）：${notOpen.map(r => `${esc(r.c.name)} <span class="dim">${ago(Date.now() - (r.s.receivedAt || r.s.at))}</span>`).join('、')}` });
   const js = (DATA.jobs || []).filter(j => j.kind !== 'idle');
   const pend = js.filter(j => j.status === 'pending').length, fail = js.filter(j => j.status === 'failed').length;
   if (pend) items.push({ lv: 'warn', icon: '📋', text: `<b>${pend}</b> 個工作等你確認執行`, btn: `<button class="btn primary" data-openjobs>開啟工作</button>` });
   if (fail) items.push({ lv: 'bad', icon: '⚠', text: `<b>${fail}</b> 個工作失敗`, btn: `<button class="btn" data-openjobs>查看</button>` });
+  const waitTab = js.filter(j => ['approved', 'running'].includes(j.status) && /分頁/.test(j.lastMsg || '') && /等待/.test(j.lastMsg || ''));
+  if (waitTab.length) items.push({ lv: 'warn', icon: '🗂', text: `<b>${waitTab.length}</b> 個工作在等角色的遊戲分頁：${[...new Set(waitTab.map(j => esc((j.lastMsg.match(/等待 (\S+) 的遊戲分頁/) || [])[1] || j.fromName)))].join('、')}　<span class="dim">在那個帳號的遊戲分頁右下角按「＋ 開 某某 的分頁」，或在下表按「⇄ 切換」</span>`, btn: `<button class="btn" data-openjobs>查看</button>` });
   // 腳本版本
   const want = DATA.scriptVersion;
   const old = snaps().filter(s => isOnline(s) && want && s.scriptVersion !== want);
@@ -843,11 +867,13 @@ function renderOverview() {
   const accLatest = Object.values(latestByAccount());
   const ptsKnown = accLatest.filter(s => typeof s.points === 'number');
   const totalPts = ptsKnown.reduce((a, s) => a + s.points, 0);
-  const hourly = live.filter(r => r.active).reduce((a, r) => a + (r.c.hourlyExp || 0), 0);
+  const hourly = live.reduce((a, r) => a + (r.c.hourlyExp || 0), 0);
+  const nTab = live.filter(r => r.active).length;
   $('#ovSummary').innerHTML = `
     <div class="stat"><b>${accLatest.length}</b><span>帳號（${live.length} 隻角色有資料）</span></div>
     <div class="stat"><b class="${idleOn < live.length ? 'warn' : 'good'}">${idleOn}<span class="dim" style="font-size:13px"> / ${live.length}</span></b><span>掛機中</span></div>
-    <div class="stat"><b>${short(hourly)}</b><span>每小時經驗合計（目前角色）</span></div>
+    <div class="stat"><b>${short(hourly)}</b><span>每小時經驗合計（沒有分頁的用最後一次的數字）</span></div>
+    <div class="stat" title="有自己遊戲分頁的角色：資料即時、工作直接執行。沒有分頁的在遊戲伺服器上背景掛機。${esc(TAB_HINT)}"><b class="${nTab < live.length ? '' : 'good'}">${nTab}<span class="dim" style="font-size:13px"> / ${live.length}</span></b><span>有遊戲分頁</span></div>
     <div class="stat"><b>${short(totalMoney)}</b><span>楓幣總和（含倉庫）</span></div>
     <div class="stat"><b>${fmt(totalPts)}</b><span>點數總和${ptsKnown.length < accLatest.length ? `（${ptsKnown.length}/${accLatest.length} 帳號有回報）` : ''}</span></div>`;
 
@@ -869,7 +895,7 @@ function renderOverview() {
   const tgt = ui.ovTarget;
   const lvT = r => r.missing ? null : lvTime(r.c, (r.c.lv || 0) + 1), tgT = r => r.missing || !tgt ? null : lvTime(r.c, tgt);
   const val = r => ({ account: r.account, name: r.c.name, lv: (r.c.lv || 0) * 1000 + (r.c.expPct || 0), hourly: r.c.hourlyExp, tnext: (lvT(r) || {}).h ?? null, ttgt: (tgT(r) || {}).h ?? null, dps: (dpsOf(r.c.id) || {}).w5 ? dpsOf(r.c.id).w5.dps || dpsOf(r.c.id).w60.dps : -1, map: r.c.mapName, idle: r.missing ? null : (r.c.auto ? r.remain : -1), money: r.c.money, points: r.s && r.s.points, pot: r.missing ? null : Math.min(r.c.hpQty ?? 1e9, (r.c.mpQty ?? 1e9) * 2.5), upd: r.s ? -r.s.receivedAt : null }[k]);
-  // 依帳號排序時，目前角色排前面
+  // 依帳號排序時，有分頁的排前面
   list.sort((a, b) => cmp(val(a), val(b)) * d || cmp(a.account, b.account) || (b.active - a.active) || cmp(a.c.name, b.c.name));
   const more = ui.ovMore;
   const th = (key, label, cls = '') => `<th data-ovsort="${key}" class="${cls}">${label}${ui.ovSort.key === key ? (ui.ovSort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
@@ -885,7 +911,7 @@ function renderOverview() {
     const accCell = k !== 'account' || newAcc ? `<input class="label-edit" data-acc="${esc(r.missing ? c.accountId : r.s.accountId)}" value="${esc(r.account)}">` : '';
     if (r.missing) {
       h += `<tr class="${cls}"><td><input type="checkbox" data-isel="${c.id}" ${sel ? 'checked' : ''}></td><td></td><td>${accCell}</td><td><div>${esc(c.name)}${switchBtn(c.id, c.accountId)}</div><div class="dim sm">${esc(c.job || '')}</div></td><td>Lv${c.lv}</td>
-        <td colspan="${3 + xcol}" class="dim">尚未同步（按「⇄ 切換」一次就會出現）</td><td>${c.auto ? '<span class="good">● 掛機中</span>' : '<span class="bad">● 未掛機</span>'} ${autoToggle(c.id)}</td><td colspan="${ncol - 9 - xcol}"></td></tr>`;
+        <td colspan="${3 + xcol}" class="dim">尚未同步（開它的遊戲分頁，或按「⇄ 切換」一次就會出現）</td><td>${c.auto ? '<span class="good">● 掛機中</span>' : '<span class="bad">● 未掛機</span>'} ${autoToggle(c.id)}</td><td colspan="${ncol - 9 - xcol}"></td></tr>`;
       continue;
     }
     const isMain = S.mainCharId === c.id, st = idleState(r);
@@ -972,7 +998,7 @@ document.addEventListener('input', e => { if (e.target.id === 'ovTarget') { cons
 // 總覽操作列的訊息：記下來，重畫操作列時一起畫回去（不然送出後馬上被洗掉，看起來像沒反應）
 function setIdleMsg(t) { ui.idleMsg = t; clearTimeout(ui.idleMsgTimer); ui.idleMsgTimer = setTimeout(() => { ui.idleMsg = ''; const el = $('#idleMsg'); if (el) el.textContent = ''; }, 20000); const el = $('#idleMsg'); if (el) el.textContent = t; }
 function ovGroupBtns() {
-  return ['A', 'B'].map(g => { const n = groupInactive(g).length; return n ? `<button class="btn" data-ovgswitch="${g}" title="把 ${g} 組全部切成目前角色">⇄ 全部切到 ${g} 組（${n} 隻）</button>` : `<span class="dim sm">目前是 ${g} 組</span>`; }).join('');
+  return ['A', 'B'].map(g => { const n = groupInactive(g).length; return n ? `<button class="btn" data-ovgswitch="${g}" title="把 ${g} 組沒有分頁的角色切過去（那些帳號的分頁換成 ${g} 組，另一隻轉背景掛機）。想兩組同時在線：${esc(TAB_HINT)}">⇄ 全部切到 ${g} 組（${n} 隻）</button>` : `<span class="dim sm">${g} 組都有分頁</span>`; }).join('');
 }
 document.addEventListener('click', async e => {
   const t = e.target.closest && e.target.closest('[data-ovgswitch]'); if (!t) return;
@@ -1228,7 +1254,11 @@ function gearGroupView(rows, mode) {
 
 // ================= 交易／背包 共用：物品篩選器 =================
 const ONLINE_MS = 90 * 1000;
-const isOnline = s => s && Date.now() - (s.receivedAt || 0) < ONLINE_MS;
+const isOnline = s => !!s && (hasTab(s.char.id) || Date.now() - (s.receivedAt || 0) < ONLINE_MS);
+// 角色狀態：tab＝有自己的遊戲分頁；bg＝帳號有開分頁但不是這隻（背景掛機，工作要等開分頁或切換）；off＝整個帳號都沒開
+function charState(s) { if (!s) return 'off'; if (hasTab(s.char.id)) return 'tab'; return accTabs(s.accountId).length ? 'bg' : 'off'; }
+function stateHtml(s) { const st = charState(s); return st === 'tab' ? `<span class="good">● 分頁中</span>${(tabOf(s.char.id) || {}).hidden ? ' <span class="warn sm">（背景）</span>' : ''}` : st === 'bg' ? '<span class="warn" title="沒有自己的遊戲分頁，在背景掛機；執行工作前要開它的分頁或切換過去">● 背景掛機</span>' : '<span class="bad">● 離線</span>'; }
+const stateSuffix = s => ({ tab: '', bg: '（背景掛機）', off: '（離線）' })[charState(s)];
 const JOB_STATUS = { pending: ['待確認', 'warn'], approved: ['排隊中', ''], running: ['執行中', 'good'], done: ['完成', 'good'], failed: ['失敗', 'bad'], cancelled: ['已取消', 'dim'] };
 const JOB_KIND = { collect: '收集', give: '分發', sell: '賣出', lock: '鎖定', unlock: '解鎖' };
 const BAG_KINDS = ['sell', 'lock', 'unlock', 'forge'];
@@ -1325,7 +1355,7 @@ function readFF(id) {
 
 function charOpt(sel, includeEmpty) {
   const ss = snaps().slice().sort((a, b) => cmp(a.char.name, b.char.name));
-  return (includeEmpty ? '<option value="">（選擇角色）</option>' : '') + ss.map(s => `<option value="${s.char.id}" ${sel === s.char.id ? 'selected' : ''}>${esc(s.char.name)}${isOnline(s) ? '' : '（離線）'}</option>`).join('');
+  return (includeEmpty ? '<option value="">（選擇角色）</option>' : '') + ss.map(s => `<option value="${s.char.id}" ${sel === s.char.id ? 'selected' : ''}>${esc(s.char.name)}${stateSuffix(s)}</option>`).join('');
 }
 // 交易每格最多 9999 個、每次最多 20 格；同一種道具超過 9999 個時拆成好幾份，分到不同批次
 const MAX_PER_SLOT = 9999;
@@ -1386,8 +1416,8 @@ function renderJobs(sel, filterFn) {
     const fromS = DATA.chars[j.fromCharId], toS = DATA.chars[j.toCharId];
     const warn = ['approved', 'running'].includes(j.status) ? [
       !isOnline(fromS) && `${j.fromName} 離線`, !bag && !isOnline(toS) && `${j.toName} 離線`,
-      fromS && fromS.activeCharId && fromS.activeCharId !== j.fromCharId && `${j.fromName} 不是目前角色`,
-      !bag && toS && toS.activeCharId && toS.activeCharId !== j.toCharId && `${j.toName} 不是目前角色`].filter(Boolean) : [];
+      isOnline(fromS) && !hasTab(j.fromCharId) && j.kind !== 'idle' && `${j.fromName} 沒有自己的遊戲分頁（開分頁或切換過去）`,
+      !bag && isOnline(toS) && !hasTab(j.toCharId) && `${j.toName} 沒有自己的遊戲分頁（開分頁或切換過去）`].filter(Boolean) : [];
     const detail = j.batches.map((b, i) => `<div>${bag ? '' : `<b>第 ${i + 1} 批</b>：`}${[...(b.items || []).map(x => esc(x.name) + (x.qty === 'ALL' ? '（全部，最多 9999）' : ' ×' + fmt(x.qty))), ...(b.gear || []).map(g => esc(g.name))].join('、') || '—'}${b.money ? '　＋' + (b.money === 'ALL' ? `楓幣（保留 ${b.keepPct || 0}%，其餘轉出）` : '楓幣 ' + fmt(b.money)) : ''}</div>`).join('');
     const logs = (j.log || []).slice(-30).reverse().map(l => `<div><span class="dim">${new Date(l.at).toLocaleTimeString('zh-TW')}</span> ${esc(l.msg)}${l.n > 1 ? ` <span class="dim">×${l.n}</span>` : ''}</div>`).join('');
     h += `<tr><td class="dim">${clock(j.createdAt)}</td><td class="${/sell/i.test(j.kind) || j.kind === 'forge' ? 'warn' : ''}">${JOB_KIND[j.kind] || j.kind}</td><td>${bag ? esc(j.fromName) : `${esc(j.fromName)} → ${esc(j.toName)}`}</td>
@@ -1411,7 +1441,7 @@ function renderTrade() {
     $('#collectHead').innerHTML = '<span class="warn">先到「總覽」點 ★ 設定本尊。</span>';
     $('#collectPick').innerHTML = '';
   } else {
-    $('#collectHead').innerHTML = `本尊：<b>${esc(main.char.name)}</b>　12 碼 ID：<span class="dim">${esc(main.playerCode || '尚未回報')}</span>　${isOnline(main) ? '<span class="good">● 在線</span>' : '<span class="bad">● 離線</span>'}`;
+    $('#collectHead').innerHTML = `本尊：<b>${esc(main.char.name)}</b>　12 碼 ID：<span class="dim">${esc(main.playerCode || '尚未回報')}</span>　${stateHtml(main)}`;
     const checked = new Set([...document.querySelectorAll('#collectPick input[data-cpick]:checked')].map(i => i.dataset.cpick));
     const first = !document.querySelector('#collectPick input[data-cpick]');
     let c = `<table><thead><tr><th class="nosort"><input type="checkbox" id="cAll"></th><th class="nosort">角色</th><th class="nosort">狀態</th><th class="nosort num">楓幣</th><th class="nosort num">預計轉出</th><th class="nosort num">道具（種）</th><th class="nosort num">裝備（件）</th><th class="nosort num">交易次數</th><th class="nosort">說明</th></tr></thead><tbody>`;
@@ -1421,10 +1451,10 @@ function renderTrade() {
       const sameAcc = s.playerCode && s.playerCode === main.playerCode;
       const notes = [sameAcc && '與本尊同帳號（請用倉庫）',
         !s.playerCode && (s.accountError ? `拿不到 12 碼 ID：${esc(s.accountError)}。可以在那個分頁打開「人物」頁一次，腳本會從畫面讀取` : '還沒拿到 12 碼 ID（剛開頁面時正常，約 30 秒內會補上）'),
-        s.activeCharId && s.activeCharId !== s.char.id && '執行時需切到這隻角色'].filter(Boolean);
+        !hasTab(s.char.id) && '執行時要有它的遊戲分頁（開分頁或切換過去）'].filter(Boolean);
       const dis = sameAcc || !s.playerCode;
       c += `<tr><td><input type="checkbox" data-cpick="${s.char.id}" ${dis ? 'disabled' : ''} ${!dis && (first || checked.has(s.char.id)) ? 'checked' : ''}></td>
-        <td>${esc(s.char.name)}</td><td>${isOnline(s) ? '<span class="good">在線</span>' : '<span class="dim">離線</span>'}</td>
+        <td>${esc(s.char.name)}</td><td>${stateHtml(s)}</td>
         <td class="num">${short(s.char.money)}</td><td class="num">${p.moneyOut ? short(p.moneyOut) : '<span class="dim">—</span>'}</td><td class="num" title="${esc(p.items.map(i => i.name).join('、'))}">${p.items.length}</td><td class="num" title="${esc(p.gear.map(gearLabel).join('、'))}">${p.gear.length}</td><td class="num">${p.batches.length}</td>
         <td class="dim wrap">${notes.join('、')}</td></tr>`;
     }
@@ -1513,10 +1543,10 @@ function renderBagList() {
     const rows = bagRows(s, true), on = !b.chars.size || b.chars.has(s.char.id), filtering = b.q.trim() || b.sellOnly || b.hideLocked;
     const nSel = bagRows(s, true, true).filter(r => ui.bagSel.has(bagSid(s.char.id, r.id))).length;
     const val = rows.reduce((a, r) => a + r.value, 0), nG = rows.filter(r => r.t === 'g').length, nI = rows.length - nG;
-    const online = isOnline(s), active = !s.activeCharId || s.activeCharId === s.char.id;
+    const online = isOnline(s), active = hasTab(s.char.id);
     return `<div class="ccard ${b.chars.has(s.char.id) ? 'on' : ''} ${on ? '' : 'off'} ${filtering && !rows.length ? 'none' : ''}" data-bchar="${s.char.id}" title="${esc(accountLabel(s.accountId, s))}・點一下只看這隻；按住 Ctrl 可多選">
       <div><span class="dot" style="background:${online && active ? 'var(--good)' : online ? 'var(--warn)' : 'var(--bad)'}"></span><span class="nm">${esc(s.char.name)}</span>${S.mainCharId === s.char.id ? ' <span class="tag main">本尊</span>' : ''}</div>
-      <div class="sub">Lv${s.char.lv}・${!online ? '離線 ' + ago(Date.now() - (s.receivedAt || s.at)) : active ? '在線' : '非目前角色'}</div>
+      <div class="sub">Lv${s.char.lv}・${!online ? '離線 ' + ago(Date.now() - (s.receivedAt || s.at)) : active ? '在線' : '背景掛機（沒有分頁）'}</div>
       <div class="cnt"><span>道具 <b>${nI}</b></span><span>裝備 <b>${nG}</b></span>${val ? `<span class="dim">可賣 ${short(val)}</span>` : ''}${nSel ? `<span class="good">已選 ${nSel}</span>` : ''}</div></div>`;
   }).join('') + (b.chars.size ? `<div class="ccard" data-bchar="*" style="display:flex;align-items:center;justify-content:center"><span class="dim">顯示全部角色</span></div>` : '');
   $('#bagOut').innerHTML = b.view === 'char' ? bagCharView(vis) : bagItemView(vis);
@@ -1606,10 +1636,10 @@ function renderBagBar() {
   const chars = new Set(sel.map(x => x.s.char.id));
   const est = sel.reduce((a, x) => a + (x.r.sellable ? x.r.value : 0), 0);
   const nSell = sel.filter(x => x.r.sellable).length;
-  const notReady = [...chars].map(id => DATA.chars[id]).filter(s => !isOnline(s) || (s.activeCharId && s.activeCharId !== s.char.id));
+  const notReady = [...chars].map(id => DATA.chars[id]).filter(s => !isOnline(s) || !hasTab(s.char.id));
   bar.style.display = '';
   bar.innerHTML = `<span class="sum">已選 <b>${sel.length}</b> 項・<b>${chars.size}</b> 隻角色${est ? `・賣出約 <b class="good">${short(est)}</b> 楓幣` : ''}</span>
-    ${notReady.length ? `<span class="warn" title="${esc(notReady.map(s => s.char.name).join('、'))}">⚠ ${notReady.length} 隻離線或不是目前角色，工作會等到它上線</span>` : ''}
+    ${notReady.length ? `<span class="warn" title="${esc(notReady.map(s => s.char.name).join('、'))}">⚠ ${notReady.length} 隻沒有自己的遊戲分頁，工作會等到它有分頁（開分頁或切換過去）</span>` : ''}
     <button class="btn primary" data-bact="sell" ${nSell ? '' : 'disabled'}>賣出${nSell < sel.length ? `（${nSell} 項可賣）` : ''}</button><button class="btn" data-bact="lock">鎖定</button><button class="btn" data-bact="unlock">解鎖</button>${bagExtraActions(sel)}
     <span class="give-grp"><span class="dim">給</span><select id="bGiveTo">${charOpt(ui.bag.giveTo || S.mainCharId || '', true).replace('（選擇角色）', '（選角色）')}</select><button class="btn" data-bact="give" title="把選取的東西交易給這隻角色（數量＝全部可交易的）">送出 ▸</button></span>
     <button class="btn" data-bquick="clear">清除選擇</button><span class="dim" id="bMsg"></span>`;
@@ -1804,13 +1834,12 @@ document.addEventListener('click', async e => {
       const action = t.dataset.idle;
       let ids = [...ui.idleSel];
       if (action === 'switch') {
-        // 已經是目前角色的不用切；同帳號兩隻都勾了，切到「不是目前的那隻」
-        const accOf = id => { const s = DATA.chars[id] || snaps().find(x => (x.accountChars || []).some(c => c.id === id)); return s && s.accountId; };
-        ids = ids.filter(id => { const a = accOf(id); return a && activeCharOf(a) !== id; });
-        if (!ids.length) { setIdleMsg('勾選的角色都已經是目前角色了。要切到另一隻，請勾另一隻，或用「⇄ 全部切到 A 組／B 組」。'); return; }
+        // 已經有自己分頁的不用切；同帳號兩隻都勾了，切到「沒有分頁的那隻」
+        ids = ids.filter(id => accOfChar(id) && !hasTab(id));
+        if (!ids.length) { setIdleMsg('勾選的角色都已經有自己的遊戲分頁了，不用切換。'); return; }
       }
       const r = await api('/api/idle', { targets: ids.map(charId => ({ charId, action })) });
-      setIdleMsg(action === 'switch' ? `已送出切換：${ids.length} 隻（${r.jobs.length} 個帳號），遊戲分頁約 10 秒內重新整理${ids.length < ui.idleSel.size ? `；其他 ${ui.idleSel.size - ids.length} 隻本來就是目前角色` : ''}` : `已送出 ${ids.length} 隻（${r.jobs.length} 個帳號），幾秒內會生效`);
+      setIdleMsg(action === 'switch' ? `已送出切換：${ids.length} 隻（${r.jobs.length} 個帳號），遊戲分頁約 10 秒內重新整理${ids.length < ui.idleSel.size ? `；其他 ${ui.idleSel.size - ids.length} 隻本來就有分頁` : ''}${(r.skipped || []).length ? '；' + r.skipped.join('、') : ''}` : `已送出 ${ids.length} 隻（${r.jobs.length} 個帳號），幾秒內會生效`);
       await poll(true);
     }
     // 收集
@@ -2284,7 +2313,7 @@ function renderMaps() {
   $('#wMissing').style.display = 'none';
   // 角色勾選
   const cs = mapCandidates();
-  $('#mpChars').innerHTML = `<div class="chips">${cs.map(c => { const m = mapOf(c.map); return `<label title="${esc(m ? m.name : '')}"><input type="checkbox" data-mpsel="${c.id}" ${ui.mpSel.has(c.id) ? 'checked' : ''}>${esc(c.name)} <span class="dim">Lv${c.lv}${m ? '・' + esc(m.name) : ''}${activeCharOf(c.accountId) === c.id ? '' : '（非目前）'}</span></label>`; }).join('')}</div>`;
+  $('#mpChars').innerHTML = `<div class="chips">${cs.map(c => { const m = mapOf(c.map); return `<label title="${esc(m ? m.name : '')}"><input type="checkbox" data-mpsel="${c.id}" ${ui.mpSel.has(c.id) ? 'checked' : ''}>${esc(c.name)} <span class="dim">Lv${c.lv}${m ? '・' + esc(m.name) : ''}${hasTab(c.id) ? '' : '（沒分頁）'}</span></label>`; }).join('')}</div>`;
   $('#mpSelInfo').textContent = `已選 ${ui.mpSel.size} 隻`;
   renderEffHints();
   if (!$('#mpTarget').options.length) {
@@ -2343,7 +2372,7 @@ function renderEffHints() {
   const out = [];
   for (const s of snaps()) {
     const d = dpsOf(s.char.id), m = mapOf(s.char.map);
-    if (!d || !m || d.w60.span < 5 * 60000 || !d.w60.dmg || (s.activeCharId && s.activeCharId !== s.char.id)) continue;
+    if (!d || !m || d.w60.span < 5 * 60000 || !d.w60.dmg || !hasTab(s.char.id)) continue;
     const eff = d.w60.eff / d.w60.dmg;
     if (eff >= 0.75) continue;
     const c = { id: s.char.id, name: s.char.name, lv: s.char.lv, job: s.char.job, jobName: s.char.jobName, kcap: 2400, power: d.w60.dps * 3600 / hitFactor(s.char.lv, m) };
@@ -2464,7 +2493,7 @@ document.addEventListener('click', async e => {
   if (t.dataset && t.dataset.wsort) { const k = t.dataset.wsort; ui.wSort = { key: k, dir: ui.wSort.key === k ? -ui.wSort.dir : 1 }; renderWorldMaps(); return; }
   if (t.id === 'mpAll') { mapCandidates().forEach(c => ui.mpSel.add(c.id)); renderMaps(); }
   if (t.id === 'mpNone') { ui.mpSel.clear(); renderMaps(); }
-  if (t.id === 'mpActive') { ui.mpSel.clear(); mapCandidates().filter(c => activeCharOf(c.accountId) === c.id).forEach(c => ui.mpSel.add(c.id)); renderMaps(); }
+  if (t.id === 'mpActive') { ui.mpSel.clear(); mapCandidates().filter(c => hasTab(c.id)).forEach(c => ui.mpSel.add(c.id)); renderMaps(); }
   if (t.id === 'ppRun') runPlanner();
   const sendMoves = async (list, map) => {
     const ok = list.filter(c => c.lv >= map.minLevel), low = list.filter(c => c.lv < map.minLevel);
@@ -2515,7 +2544,7 @@ document.addEventListener('click', async e => {
 const LANES = [['train', '練功', '經驗'], ['scroll', '打卷軸', '卷軸'], ['gear', '打裝備', '裝備']];
 ui.board = { pick: null, sellEdit: null, goalEdit: null, dragging: false, sellDraft: null, q: '' };
 // ---- 派工分組：每個帳號第 1 隻角色＝A 組、第 2 隻＝B 組（可以單獨改），每組各有一份看板設定 ----
-// 切換角色後，另一隻在背景掛機；看板預設跟著「目前角色多的那一組」
+// 沒有分頁的角色在背景掛機；看板預設跟著「有分頁的角色多的那一組」
 ui.board.group = (() => { try { return localStorage.getItem('boardGroup') || 'auto'; } catch (_) { return 'auto'; } })();
 function charGroup(id) {
   const g = (S.charGroup || {})[id]; if (g) return g;
@@ -2526,15 +2555,15 @@ function groupChars(g) { const ids = new Set(); for (const s of snaps()) for (co
 function boardGroupAuto() {
   const act = { A: 0, B: 0 };
   // 只看有兩隻角色的帳號（只有一隻的不管切不切都在 A 組）
-  for (const s of Object.values(latestByAccount())) { if ((s.accountChars || []).length < 2) continue; const id = s.activeCharId || s.char.id; act[charGroup(id)] = (act[charGroup(id)] || 0) + 1; }
+  for (const id of Object.keys(DATA.tabs || {})) { const s = DATA.chars[id]; if (!s || (s.accountChars || []).length < 2) continue; act[charGroup(id)] = (act[charGroup(id)] || 0) + 1; }
   return act.B > act.A ? 'B' : 'A';
 }
 function boardGroup() { return ui.board.group === 'A' || ui.board.group === 'B' ? ui.board.group : boardGroupAuto(); }
 function boardGroupSeg() {
-  const g = boardGroup(), info = x => { const ids = groupChars(x), act = ids.filter(id => { const s = DATA.chars[id]; return s && activeCharOf(s.accountId) === id; }).length; return `${ids.length} 隻・目前 ${act}`; };
-  const inact = groupChars(g).filter(id => { const s = DATA.chars[id] || snaps().find(x => (x.accountChars || []).some(c => c.id === id)); return s && activeCharOf(s.accountId) !== id; });
+  const g = boardGroup(), info = x => { const ids = groupChars(x), act = ids.filter(id => hasTab(id)).length; return `${ids.length} 隻・分頁 ${act}`; };
+  const inact = groupInactive(g);
   return `<div class="seg" title="每個帳號第 1 隻角色＝A 組、第 2 隻＝B 組；兩組各有一份派工設定">${['A', 'B'].map(x => `<button data-bdgroup="${x}" class="${g === x ? 'on' : ''}">${x} 組 <span class="dim sm">${info(x)}</span></button>`).join('')}<button data-bdgroup="auto" class="${ui.board.group === 'auto' ? 'on' : ''}" title="跟著目前角色比較多的那一組">自動</button></div>`
-    + (inact.length ? `<button class="btn sm" data-bdgswitch="${g}" title="把這一組不是目前角色的，切換成目前角色（另一組會轉成背景掛機）">⇄ ${g} 組切成目前角色（${inact.length} 隻）</button>` : '');
+    + (inact.length ? `<button class="btn sm" data-bdgswitch="${g}" title="把這一組沒有分頁的角色切過去（那些帳號的分頁換成這一組，另一隻轉背景掛機）。想兩組同時在線：${esc(TAB_HINT)}">⇄ ${g} 組沒分頁的切過去（${inact.length} 隻）</button>` : '');
 }
 function boardCfg() {
   const all = S.boards || { A: S.board || {} };
@@ -2552,9 +2581,9 @@ function saveBoard(cfg) {
 }
 const isScrollId = id => Math.floor(Number(id) / 10000) === 204;
 const sellRows = mapId => ((WORLD && WORLD.autoSellDrops) || {})[mapId] || [];
-// 看板上的角色：每個帳號的目前角色（換圖只能動目前角色），另一隻列在最後供參考
+// 看板上的角色：有自己遊戲分頁的排前面（換圖由它自己的分頁做），沒有分頁的（背景掛機）列在後面，可以先排派工
 function boardChars() {
-  const list = snaps().map(s => ({ id: s.char.id, name: s.char.name, lv: s.char.lv, job: s.char.job, jobName: s.char.jobName, map: s.char.map, hourly: s.char.hourlyExp, accountId: s.accountId, active: activeCharOf(s.accountId) === s.char.id, group: charGroup(s.char.id), s }));
+  const list = snaps().map(s => ({ id: s.char.id, name: s.char.name, lv: s.char.lv, job: s.char.job, jobName: s.char.jobName, map: s.char.map, hourly: s.char.hourlyExp, accountId: s.accountId, active: hasTab(s.char.id), group: charGroup(s.char.id), s }));
   // 還沒同步過的角色（一直在背景掛機）：用帳號角色清單的資料顯示，可以先排派工
   const have = new Set(list.map(c => c.id));
   for (const s of Object.values(latestByAccount())) for (const x of s.accountChars || []) if (!have.has(x.id)) { have.add(x.id); list.push({ id: x.id, name: x.name, lv: x.lv, job: x.job, jobName: (s.statNames && null) || x.jobName || '', map: null, accountId: s.accountId, active: false, group: charGroup(x.id), s: null, unsynced: true }); }
@@ -2607,7 +2636,7 @@ function renderBoard() {
 function boardCard(c, cfg) {
   const d = dpsOf(c.id), cur = mapOf(c.map), to = cfg.assign[c.id] && cfg.assign[c.id] !== c.map ? mapOf(cfg.assign[c.id]) : null;
   return `<div class="bcard ${c.active ? '' : 'inactive'} ${ui.board.pick === c.id ? 'picked' : ''}" draggable="true" data-bdchar="${c.id}" title="拖到地圖上派工；也可以點一下選取，再點地圖">
-    <div><b>${esc(c.name)}</b> <span class="dim sm">Lv${c.lv}・${esc(c.jobName || '')}</span>${c.active ? '' : ' <span class="tag" title="不是目前角色，換圖可能被遊戲拒絕">非目前</span>'}</div>
+    <div><b>${esc(c.name)}</b> <span class="dim sm">Lv${c.lv}・${esc(c.jobName || '')}</span>${c.active ? '' : ' <span class="tag" title="沒有自己的遊戲分頁（背景掛機），換圖可能被遊戲拒絕">背景</span>'}</div>
     <div class="dim sm">${to ? `<span class="warn">${esc(cur ? cur.name : '?')} → ${esc(to.name)}</span>` : esc(cur ? cur.name : '—')}${d ? `・DPS ${short(d.w5.dps || d.w60.dps)}` : ''}</div></div>`;
 }
 function boardMapCard(lane, m, here, cfg) {
@@ -2719,11 +2748,11 @@ document.addEventListener('click', async e => {
       for (const c of chars) {
         const to = cfg.assign[c.id]; if (!to || to === '__pool') continue;
         const m = mapOf(to); if (!m) continue;
-        if (!c.active) { if (to !== c.map) skipped.push(`${c.name}（背景掛機中，要先切成目前角色）`); continue; }
+        if (!c.active) { if (to !== c.map) skipped.push(`${c.name}（背景掛機中，要先開它的遊戲分頁或切換過去）`); continue; }
         const sell = cfg.sell[to];
         if (to !== c.map) {
           if (c.lv < m.minLevel) { skipped.push(`${c.name}（等級不足 ${m.minLevel}）`); continue; }
-          targets.push({ charId: c.id, action: 'map', map: to, mapName: m.name, sell }); lines.push(`${c.name}：${(mapOf(c.map) || {}).name || '?'} → ${m.name}${sell ? '（＋自動販售）' : ''}${c.active ? '' : '　⚠ 非目前角色'}`);
+          targets.push({ charId: c.id, action: 'map', map: to, mapName: m.name, sell }); lines.push(`${c.name}：${(mapOf(c.map) || {}).name || '?'} → ${m.name}${sell ? '（＋自動販售）' : ''}${c.active ? '' : '　⚠ 沒有分頁'}`);
         } else if (sell) {
           const sa = (c.s || {}).autoSell, same = sa && sa.map === to && sa.enabled === sell.enabled && sa.itemIds.length === sell.itemIds.length && sell.itemIds.every(id => sa.itemIds.includes(id));
           if (!same && c.active) { targets.push({ charId: c.id, action: 'autosell', map: to, mapName: m.name, sell }); lines.push(`${c.name}：更新 ${m.name} 的自動販售`); }
@@ -2796,7 +2825,7 @@ function renderFactory() {
   let html = '';
   for (const c of chars) {
     const to = where(c), pend = cfg.assign[c.id] && cfg.assign[c.id] !== '__pool' && cfg.assign[c.id] !== c.map, d = dpsOf(c.id);
-    html += node('c:' + c.id, 'fchar' + (pend ? ' pend' : '') + (c.active ? '' : ' bgc'), FN_W.c, `<div class="fn-hd" data-fdrag><b>${esc(c.name)}</b><span class="dim sm">Lv${c.lv}</span>${c.active ? '' : '<span class="tag sm" title="不是目前角色，在背景掛機；可以先排，套用時會略過">背景掛機</span>'}<a class="sm dim" data-bdmovegrp="${c.id}" title="把這隻移到另一組">→${grp === 'A' ? 'B' : 'A'}</a></div>
+    html += node('c:' + c.id, 'fchar' + (pend ? ' pend' : '') + (c.active ? '' : ' bgc'), FN_W.c, `<div class="fn-hd" data-fdrag><b>${esc(c.name)}</b><span class="dim sm">Lv${c.lv}</span>${c.active ? '' : '<span class="tag sm" title="沒有自己的遊戲分頁，在背景掛機；可以先排，套用時會略過（開它的分頁或切換過去就能套用）">背景掛機</span>'}<a class="sm dim" data-bdmovegrp="${c.id}" title="把這隻移到另一組">→${grp === 'A' ? 'B' : 'A'}</a></div>
       <div class="fn-bd sm"><span class="dim">${esc(c.jobName || '')}</span>${d ? ` ・DPS ${short(d.w5.dps || d.w60.dps)}` : ''}<div class="dim">${pend ? `<span class="warn">${esc((mapOf(c.map) || {}).name || '?')} → ${esc((mapOf(to) || {}).name || '')}</span> <a data-funassign="${c.id}" title="取消派工">✕</a>` : esc((mapOf(c.map) || {}).name || '—')}</div></div>
       <span class="port out" data-fport="${c.id}" title="拖曳連到地圖＝派工"></span>`);
   }
@@ -2837,11 +2866,12 @@ function renderFactory() {
   requestAnimationFrame(() => { drawWires(); renderRecent(); });
 }
 // ---- 整組切成目前角色（總覽、派工看板共用） ----
-function groupInactive(g) { return groupChars(g).filter(id => { const s = DATA.chars[id] || snaps().find(x => (x.accountChars || []).some(c => c.id === id)); return s && activeCharOf(s.accountId) !== id; }); }
+// 這一組裡沒有自己分頁、但帳號有開分頁（可以切過去）的角色
+function groupInactive(g) { return groupChars(g).filter(id => { const a = accOfChar(id); return a && !hasTab(id) && accTabs(a).length > 0; }); }
 async function switchGroup(g) {
   const ids = groupInactive(g);
-  if (!ids.length) { alert(`${g} 組的角色都已經是目前角色了`); return null; }
-  if (!confirm(`把 ${g} 組的 ${ids.length} 隻角色切成目前角色？另一組會轉成背景掛機。需要那些帳號的遊戲分頁開著。`)) return null;
+  if (!ids.length) { alert(`${g} 組的角色都已經有自己的遊戲分頁了`); return null; }
+  if (!confirm(`把 ${g} 組沒有分頁的 ${ids.length} 隻切過去？那些帳號現在的分頁會換成 ${g} 組角色，原本那隻轉背景掛機。\n\n想兩組同時在線、不用再切換：${TAB_HINT}。`)) return null;
   const r = await api('/api/idle', { targets: ids.map(charId => ({ charId, action: 'switch' })) });
   setTimeout(() => poll(true), 8000);
   return r;
@@ -3320,7 +3350,7 @@ function renderForge() {
   const f = fgState(), ae = document.activeElement;
   const snap = DATA.chars[f.charId];
   if (ae !== $('#fgChar')) $('#fgChar').innerHTML = charOpt(f.charId, true);
-  $('#fgCharInfo').innerHTML = snap ? `楓幣 <b>${short(snap.char.money)}</b>　${isOnline(snap) ? '<span class="good">在線</span>' : '<span class="bad">離線</span>'}${snap.activeCharId && snap.activeCharId !== snap.char.id ? '　<span class="warn">不是目前角色（執行時要先切換）</span>' : ''}` : '';
+  $('#fgCharInfo').innerHTML = snap ? `楓幣 <b>${short(snap.char.money)}</b>　${stateHtml(snap)}` : '';
   $('#fgPreset').innerHTML = '<option value="">（未選擇）</option>' + (S.forgeRules || []).map((r, i) => `<option value="${i}">${esc(r.name)}</option>`).join('');
   $('#fgExtraBox').style.display = forgeExtra.label ? '' : 'none'; $('#fgExtraLabel').textContent = forgeExtra.label; $('#fgExtra').checked = f.extra;
   $('#fgWorn').checked = f.worn;
@@ -3564,7 +3594,7 @@ function renderGuildOut() {
     <div class="bar" style="margin:2px 0"><button class="btn sm" id="gwAddCond">＋ 浮動條件</button>${ui.gw.conds.length > 1 ? `<select id="gwMode"><option value="all" ${ui.gw.mode === 'all' ? 'selected' : ''}>全部符合</option><option value="any" ${ui.gw.mode === 'any' ? 'selected' : ''}>符合任一</option></select>` : ''}
       <label><input type="checkbox" id="gwFresh" ${ui.gw.fresh ? 'checked' : ''}> 只看沒衝過卷的</label>
       <span class="dim">列出 ${rows.length} 件</span><button class="btn sm" id="gwPickShown">勾選目前列出的</button></div></div></div>`;
-  const opt = (sel, fits) => '<option value="">（不領）</option>' + snaps().slice().sort((a, b) => cmp(a.char.name, b.char.name)).map(s => `<option value="${s.char.id}" ${sel === s.char.id ? 'selected' : ''}>${fits && fits[0] === s.char.id ? '★ ' : ''}${esc(s.char.name)} Lv${s.char.lv} ${esc(s.char.jobName || s.char.branch || '')}${fits && !fits.includes(s.char.id) ? '（不能穿）' : ''}${isOnline(s) ? '' : '（離線）'}</option>`).join('');
+  const opt = (sel, fits) => '<option value="">（不領）</option>' + snaps().slice().sort((a, b) => cmp(a.char.name, b.char.name)).map(s => `<option value="${s.char.id}" ${sel === s.char.id ? 'selected' : ''}>${fits && fits[0] === s.char.id ? '★ ' : ''}${esc(s.char.name)} Lv${s.char.lv} ${esc(s.char.jobName || s.char.branch || '')}${fits && !fits.includes(s.char.id) ? '（不能穿）' : ''}${stateSuffix(s)}</option>`).join('');
   let h = `<table><thead><tr><th class="nosort" style="width:24px"></th><th class="nosort">名稱</th>${ui.gw.tab === 'item' ? '<th class="nosort num">公倉數量</th><th class="nosort">領幾個</th>' : '<th class="nosort">強化／剩餘</th><th class="nosort">掉落浮動</th><th class="nosort">需求</th>'}<th class="nosort">給誰</th></tr></thead><tbody>`;
   if (!rows.length) h += `<tr><td colspan="6" class="empty">${ui.gw.tab === 'item' ? '沒有道具' : '沒有裝備'}</td></tr>`;
   for (const r of rows.slice(0, 400)) {

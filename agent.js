@@ -16,6 +16,39 @@ function agentMain(ctx) {
   let account = null;          // { playerCode, activeCharacterId }
   let accountAt = 0;
 
+  // ---------- 同一個帳號開兩個分頁（A、B 角色各一個）----------
+  // 每次載入頁面一個新的 PAGE_ID；網址帶 ?szgChar=<角色ID> 時，這個分頁固定顯示那隻角色
+  // （document-start 就改 sessionStorage，遊戲程式載入時就會用這隻），改完把參數拿掉，之後在遊戲裡切換也不會被拉回來
+  const PAGE_ID = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)).slice(0, 12);
+  try {
+    const u = new URL(location.href), want = u.searchParams.get('szgChar');
+    if (want) {
+      sessionStorage.setItem('mapleCharacter', want);
+      sessionStorage.removeItem('mapleSessionView');
+      u.searchParams.delete('szgChar');
+      history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+    }
+  } catch (_) {}
+  const myChar = () => sessionStorage.getItem('mapleCharacter') || '';
+  const ck = k => k + ':' + myChar(); // 每隻角色（每個分頁）各自一份的設定鍵；同設定檔的分頁共用 GM 儲存空間
+  // 這隻角色由哪個分頁負責：{page, at, hidden}。同一隻角色開了兩個分頁時，後開的那個暫停中控功能，避免同一件事做兩次
+  const tabKey = id => 'charTab:' + id;
+  const tabFresh = v => v && Date.now() - v.at < (v.hidden ? 100000 : 20000);
+  let dupTab = false;
+  function tabBeat() {
+    const id = myChar(); if (!id) return;
+    const v = GM_getValue(tabKey(id), null);
+    if (v && v.page !== PAGE_ID && tabFresh(v)) {
+      if (!dupTab) { dupTab = true; setBadge(null, '⚠ 這隻角色已經在另一個分頁開著：這個分頁先不執行中控工作（關掉其中一個就好）'); }
+      return;
+    }
+    if (dupTab) { dupTab = false; setBadge('ok'); }
+    GM_setValue(tabKey(id), { page: PAGE_ID, at: Date.now(), hidden: document.hidden });
+  }
+  // 別的分頁是否正在負責某隻角色（同帳號的另一隻有自己的分頁時，這個分頁就不幫它做事）
+  const otherTabHas = id => { const v = GM_getValue(tabKey(id), null); return !!(v && v.page !== PAGE_ID && tabFresh(v)); };
+  const passive = () => dupTab;
+
     // ---------- 共用 ----------
     function hub(method, path, body) {
       return new Promise((resolve, reject) => {
@@ -60,10 +93,10 @@ function agentMain(ctx) {
         const msg = (j && (j.error || j.message)) || ('HTTP ' + r.status);
         if (/遊戲已更新|重新整理後/.test(msg)) {
           // 5 分鐘內最多自動重整一次，避免一直重整
-          const last = GM_getValue('gameUpdateReloadAt', 0);
+          const last = GM_getValue(ck('gameUpdateReloadAt'), 0);
           if (!reloadingForGameUpdate && Date.now() - last > 5 * 60 * 1000) {
             reloadingForGameUpdate = true;
-            GM_setValue('gameUpdateReloadAt', Date.now());
+            GM_setValue(ck('gameUpdateReloadAt'), Date.now());
             setBadge(null, '遊戲有新版本，3 秒後自動重新整理頁面');
             setTimeout(() => location.reload(), 3000);
             const e = new Error(msg); e.gameUpdated = true; throw e;
@@ -296,6 +329,7 @@ function agentMain(ctx) {
         v: 3, at: Date.now(), serverTime: state.serverTime || Date.now(),
         scriptVersion: AGENT_VERSION,
         scriptMode: ctx.mode,
+        page: PAGE_ID, hidden: document.hidden,
         accountId, accountChars: chars, statNames: catalog.statNames,
         playerCode: (account && account.playerCode) || rememberedCode() || scrapeCode() || undefined,
         accountError: accountError || undefined,
@@ -342,6 +376,7 @@ function agentMain(ctx) {
         el.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:99999;font:12px sans-serif;padding:3px 8px;border-radius:10px;opacity:.9;pointer-events:none;color:#fff;max-width:340px';
         document.body.appendChild(el);
       }
+      if (dupTab) { el.textContent = '⚠ 這隻角色已經在另一個分頁開著：這個分頁先不執行中控工作（關掉其中一個就好）'; el.style.background = '#8a2b2b'; return; }
       if (text) { el.textContent = text; el.style.background = '#7a5a12'; return; }
       if (agentBusy) return; // 交易進行中時保留交易狀態文字
       if (status === 'ok') { el.textContent = '中控：已連線'; el.style.background = '#1f7a3a'; }
@@ -351,6 +386,8 @@ function agentMain(ctx) {
 
     async function tick() {
       try {
+        tabBeat();
+        if (passive()) return;
         const state = readState();
         if (!state) return;
         await loadCatalog();
@@ -455,8 +492,8 @@ function agentMain(ctx) {
     const isIdleOffline = () => !!document.getElementById('idleOffline');
     let offlineSince = 0;
     function trackOffline() {
-      if (isIdleOffline()) { if (!offlineSince) offlineSince = GM_getValue('offlineSince', 0) || Date.now(); GM_setValue('offlineSince', offlineSince); }
-      else if (offlineSince) { offlineSince = 0; GM_setValue('offlineSince', 0); }
+      if (isIdleOffline()) { if (!offlineSince) offlineSince = GM_getValue(ck('offlineSince'), 0) || Date.now(); GM_setValue(ck('offlineSince'), offlineSince); }
+      else if (offlineSince) { offlineSince = 0; GM_setValue(ck('offlineSince'), 0); }
       return offlineSince;
     }
     // 幫忙按「點一下繼續」，等遊戲把最新資料同步回來
@@ -499,6 +536,7 @@ function agentMain(ctx) {
     async function runIdleJob(job) {
       const done = [], failed = [];
       let switchTo = null;
+      const oldChar = myChar();
       // 掛機指令先做，切換角色放最後（切換後頁面要重新整理）
       const targets = ((job.batches[0] && job.batches[0].targets) || []).slice().sort((a, b) => (a.action === 'switch') - (b.action === 'switch'));
       for (const t of targets) {
@@ -561,6 +599,9 @@ function agentMain(ctx) {
         try { W.addEventListener('pagehide', pin); } catch (_) {}
         pin();
         setBadge(null, '已切換角色，重新整理頁面…');
+        // 告訴中控：這個分頁不再負責舊角色（不然要等 90 秒才知道），並放掉舊角色的分頁標記
+        try { GM_setValue(tabKey(oldChar), { page: PAGE_ID, at: 0 }); } catch (_) {}
+        await hub('POST', '/api/agent/leave', { code: account && account.playerCode, charId: oldChar, page: PAGE_ID }).catch(() => {});
         setTimeout(() => location.reload(), 50);
       }
     }
@@ -571,6 +612,7 @@ function agentMain(ctx) {
     const H = 3600 * 1000, IDLE_CAP = 24 * H;
     async function idleTick() {
       try {
+        if (passive()) return;
         const state = readState();
         if (!state || !account || !account.playerCode) return;
         // 先記下同帳號其他角色目前是否在掛機（不論規則有沒有開，才看得出「從掛機變成停止」）
@@ -610,6 +652,7 @@ function agentMain(ctx) {
         // 同帳號的其他角色：只知道是否在掛機，看到「從掛機變成停止」而且不是從面板暫停的，就重新開始
         for (const sib of state.characters || []) {
           if (sib.id === c.id) continue;
+          if (otherTabHas(sib.id)) continue; // 它有自己的分頁，由那個分頁處理
           const prev = sibPrev[sib.id];
           if (excluded[sib.id] || !p.autoRenew || p.stopAfterHours) continue;
           if (prev === true && !sib.auto && !panelStopped(sib.id)) await act(sib.id, sib.name, 'start', '掛機已停止（可能到期）');
@@ -653,7 +696,7 @@ function agentMain(ctx) {
     const statText = g => Object.entries(g.stats || {}).filter(([, v]) => v).map(([k, v]) => (STAT_SHORT[k] || k) + v).join(' ');
     let asRunning = false;
     async function autoSellTick() {
-      if (asRunning) return;
+      if (asRunning || passive()) return;
       asRunning = true;
       try {
         const state = readState();
@@ -719,8 +762,24 @@ function agentMain(ctx) {
       return j && j.market;
     }
     let mktBusy = false;
+    // 市場（掃描、攤位、自動上架）是整個帳號的事：同帳號開了兩個分頁時只由其中一個（優先看得到的那個）負責
+    async function amLeader() {
+      if (passive()) return false;
+      const code = account && account.playerCode; if (!code) return false;
+      const k = 'lead:' + code, now = Date.now();
+      const v = GM_getValue(k, null);
+      const mine = v && v.page === PAGE_ID;
+      const stale = !v || now - v.at > (v.hidden ? 100000 : 30000);
+      const steal = v && !mine && v.hidden && !document.hidden;
+      if (!mine && !stale && !steal) return false;
+      GM_setValue(k, { page: PAGE_ID, at: now, hidden: document.hidden });
+      if (mine) return true;
+      await sleep(400 + Math.random() * 400); // 兩個分頁同時搶：等一下再確認誰的寫入留下來
+      const w = GM_getValue(k, null);
+      return !!(w && w.page === PAGE_ID);
+    }
     async function marketScanTick() {
-      if (mktBusy || agentBusy) return;
+      if (mktBusy || agentBusy || !(await amLeader())) return;
       const state = readState(); if (!state || !state.character || !account) return;
       mktBusy = true;
       try {
@@ -752,6 +811,7 @@ function agentMain(ctx) {
     let lastStallAt = 0;
     async function stallTick(force) {
       if (agentBusy || (!force && Date.now() - lastStallAt < 5 * 60 * 1000)) return null;
+      if (!(await amLeader())) return null;
       const state = readState(); if (!state || !state.character || !account) return null;
       lastStallAt = Date.now();
       const charId = state.character.id;
@@ -771,7 +831,7 @@ function agentMain(ctx) {
     let lastPlanHash = '';
     async function autoListTick() {
       for (let i = 0; i < 20 && mktBusy; i++) await sleep(3000); // 掃描中就等它做完，不要整輪跳過
-      if (mktBusy || agentBusy) return;
+      if (mktBusy || agentBusy || !(await amLeader())) return;
       const state = readState(); if (!state || !state.character || !account || !catalog) return;
       mktBusy = true;
       const charId = state.character.id;
@@ -922,6 +982,7 @@ function agentMain(ctx) {
       return { span, ...a };
     }
     async function dpsReport() {
+      if (passive()) return;
       const ids = Object.keys(dpsData);
       if (!ids.length) return;
       const cat = await loadCatalog().catch(() => null);
@@ -985,6 +1046,7 @@ function agentMain(ctx) {
     const qstep = st => { quizDbg.step = st; quizDbg.at = Date.now(); };
     async function quizTick() {
       if (quizRunning) { if (Date.now() - quizDbg.at > 5 * 60 * 1000) { quizDbg.err = '卡在 ' + quizDbg.step + ' 超過 5 分鐘，重設'; quizRunning = false; } return; }
+      if (passive()) return;
       quizDbg.ticks++;
       // 只在真的有交易／背包工作時讓路（agentRunning 只是每 3 秒查一次工作，背景分頁會跟這裡同時醒來）
       if (agentBusy) { quizDbg.why = '交易/背包工作中'; return; }
@@ -1011,8 +1073,14 @@ function agentMain(ctx) {
         qstep('已同步');
         if (!cfg.auto || !k || !k.ready) { quizDbg.why = !cfg.auto ? '未開啟' : !k ? '同步沒有知識王資料' : '知識王未開放'; return; }
         const log = msg => hub('POST', '/api/quiz/log', { charId, msg }).catch(() => {});
+        // 同一個帳號開了兩個分頁：一次只讓一個分頁作答（知識王若是整個帳號共用一輪，兩邊同時答會互相打亂）
+        const qlk = 'quizLock:' + ((account && account.playerCode) || charId);
+        const holdQuiz = () => { const v = GM_getValue(qlk, null); if (v && v.page !== PAGE_ID && Date.now() - v.at < 2 * 60 * 1000) return false; GM_setValue(qlk, { page: PAGE_ID, at: Date.now() }); return true; };
+        if (!holdQuiz()) { quizDbg.why = '同帳號另一個分頁正在作答'; return; }
+        quizLockHeld = qlk;
         let waitNext = 0;
         for (let guard = 0; guard < 40; guard++) {
+          if (!holdQuiz()) { quizDbg.why = '同帳號另一個分頁正在作答'; return; }
           const r = k.round;
           if (!r || r.done) {
             if (!(k.remaining > 0)) { quizDbg.why = '今日次數用完'; return; }
@@ -1056,14 +1124,18 @@ function agentMain(ctx) {
           const st = readState();
           hub('POST', '/api/quiz/log', { charId: st && st.character && st.character.id, msg: '自動作答出錯：' + e.message }).catch(() => {});
         }
-      } finally { quizRunning = false; qstep('閒置'); }
+      } finally {
+        quizRunning = false; qstep('閒置');
+        if (quizLockHeld) { try { const v = GM_getValue(quizLockHeld, null); if (v && v.page === PAGE_ID) GM_setValue(quizLockHeld, { page: PAGE_ID, at: 0 }); } catch (_) {} quizLockHeld = ''; }
+      }
     }
+    let quizLockHeld = '';
 
     async function runBagJob(job, state, charId) {
       if (job.kind === 'idle') return runIdleJob(job);
       if (charId !== job.fromCharId) {
-        setBadge(null, `背包工作等待中：請切到「${job.fromName}」`);
-        return report(job, { event: 'waiting', msg: `等待切換到 ${job.fromName}` });
+        setBadge(null, `背包工作等待中：「${job.fromName}」要有自己的遊戲分頁（按右下角「＋ 開 ${job.fromName} 的分頁」，或切換過去）`);
+        return report(job, { event: 'waiting', msg: `等待 ${job.fromName} 的遊戲分頁（開它自己的分頁，或切換過去）` });
       }
       const c = state.character;
       const stackOk = new Map((c.inventoryStacks || []).map(s => [s.uid, s]));
@@ -1113,8 +1185,8 @@ function agentMain(ctx) {
       if (job.kind === 'guildDeposit' || job.kind === 'guildWithdraw' || job.kind === 'guildView') return runGuildJob(job, c);
       if (job.kind === 'guildSell') return runGuildSell(job, c);
       // 不認得的工作：多半是這個分頁的腳本太舊，重新整理一次拿新版（同一個工作只試一次）
-      if (GM_getValue('reloadForJob', '') !== job.id) {
-        GM_setValue('reloadForJob', job.id);
+      if (GM_getValue(ck('reloadForJob'), '') !== job.id) {
+        GM_setValue(ck('reloadForJob'), job.id);
         await report(job, { event: 'waiting', msg: `${c.name} 的腳本不認得這種工作，重新整理頁面換新腳本…` });
         setTimeout(() => location.reload(), 1500);
         return;
@@ -1306,18 +1378,19 @@ function agentMain(ctx) {
       } catch (e) { console.warn('[szg-hub] guild hook failed', e); }
     })();
 
+    const pollQs = charId => `code=${encodeURIComponent((account && account.playerCode) || '')}&charId=${encodeURIComponent(charId || '')}&page=${PAGE_ID}&hidden=${document.hidden ? 1 : 0}&off=${isIdleOffline() ? 1 : 0}`;
     async function agentTick() {
-      if (agentRunning) return;
+      if (agentRunning || passive()) return;
       agentRunning = true;
       try {
         await loadAccount().catch(() => null);
         let state = readState();
         if (!account || !state) return;
         const charId = sessionStorage.getItem('mapleCharacter');
-        const res = await hub('GET', `/api/agent?code=${encodeURIComponent(account.playerCode)}&charId=${encodeURIComponent(charId)}`);
+        const res = await hub('GET', '/api/agent?' + pollQs(charId));
         const job = res && res.job;
-        if (!job && res && res.needUpdate && GM_getValue('reloadForUpdate', '') !== res.needUpdate) {
-          GM_setValue('reloadForUpdate', res.needUpdate);
+        if (!job && res && res.needUpdate && GM_getValue(ck('reloadForUpdate'), '') !== res.needUpdate) {
+          GM_setValue(ck('reloadForUpdate'), res.needUpdate);
           setBadge(null, '有工作需要新版腳本，重新整理頁面…');
           setTimeout(() => location.reload(), 1500);
           return;
@@ -1325,6 +1398,8 @@ function agentMain(ctx) {
         if (!job) { if (agentBusy) { agentBusy = false; lastJobAt = Date.now(); setBadge('ok'); } return; }
         agentBusy = true;
         if (job.kind !== 'idle' && isIdleOffline()) { await wakePage('執行「' + ({ collect: '收集', give: '分發', sell: '賣出', lock: '鎖定', unlock: '解鎖' }[job.kind] || '工作') + '」前'); state = readState() || state; }
+        // 分頁在背景（同帳號開兩個分頁時常見）：遊戲畫面暫停更新，背包資料可能是舊的 → 工作前直接向遊戲要一份最新的
+        if (job.kind !== 'idle' && (document.hidden || isIdleOffline())) { try { const j = await game({ type: 'sync' }); if (j && j.character && j.character.id === charId) state = j; } catch (_) {} }
         if (res.role === 'owner') return await runBagJob(job, state, charId);
         const role = res.role; // 'giver' | 'receiver'
         const batch = job.batches[job.batchIndex];
@@ -1333,8 +1408,9 @@ function agentMain(ctx) {
 
         const wantChar = role === 'giver' ? job.fromCharId : job.toCharId;
         if (job.strictChar && wantChar && charId !== wantChar) {
-          setBadge(null, `交易等待中：請切到「${role === 'giver' ? job.fromName : job.toName}」`);
-          return report(job, { event: 'waiting', msg: `等待切換到 ${role === 'giver' ? job.fromName : job.toName}` });
+          const nm = role === 'giver' ? job.fromName : job.toName;
+          setBadge(null, `交易等待中：「${nm}」要有自己的遊戲分頁（按右下角「＋ 開 ${nm} 的分頁」，或切換過去）`);
+          return report(job, { event: 'waiting', msg: `等待 ${nm} 的遊戲分頁（開它自己的分頁，或切換過去）` });
         }
         if (!res.peerReady) {
           // 排隊中（對方正在和別人交易）或對方離線：重設計時，輪到自己時才開始算逾時
@@ -1456,7 +1532,7 @@ function agentMain(ctx) {
         console.warn('[szg-hub agent]', e);
         setBadge(null, e && e.gameUpdated ? '遊戲有新版本，正在重新整理頁面…' : '交易錯誤：' + e.message);
         try {
-          const res = await hub('GET', `/api/agent?code=${encodeURIComponent(account && account.playerCode || '')}&charId=`);
+          const res = await hub('GET', '/api/agent?' + pollQs(myChar()) + '&peek=1');
           if (res && res.job) await report(res.job, { event: 'log', msg: e && e.gameUpdated ? '遊戲有新版本，頁面自動重新整理中' : '遊戲回應錯誤：' + e.message });
         } catch (_) {}
       } finally {
@@ -1464,7 +1540,43 @@ function agentMain(ctx) {
       }
     }
 
+    // 「開另一隻角色的分頁」按鈕：同帳號的另一隻沒有自己的分頁時，在右下角提示；按了開一個新視窗固定顯示那隻
+    // （分頁被藏到背景時遊戲會進離線掛機、資料暫停，所以用獨立視窗，兩個視窗都看得到最好）
+    function renderOpenOther() {
+      if (!document.body) return;
+      let box = document.getElementById('szg-hub-open');
+      const st = readState();
+      const me = myChar();
+      const others = passive() || !st ? [] : (st.characters || []).filter(c => c.id && c.id !== me && !otherTabHas(c.id));
+      const hideKey = 'hideOpenOther:' + ((account && account.playerCode) || '');
+      if (!others.length || Date.now() - (Number(GM_getValue(hideKey, 0)) || 0) < 7 * 86400e3) { if (box) box.remove(); return; }
+      if (!box) {
+        box = document.createElement('div');
+        box.id = 'szg-hub-open';
+        box.style.cssText = 'position:fixed;right:8px;bottom:34px;z-index:99999;font:12px sans-serif;display:flex;gap:4px;align-items:center';
+        document.body.appendChild(box);
+      }
+      const html = others.map(c => `<button data-szgopen="${c.id}" style="font:12px sans-serif;padding:3px 8px;border-radius:10px;border:1px solid #2c6e8f;background:#163a4d;color:#dff;cursor:pointer" title="開一個新視窗固定顯示 ${c.name}，兩隻同時在線（同一個帳號開兩個分頁）">＋ 開 ${c.name} 的分頁</button>`).join('')
+        + `<button data-szghide="1" style="font:11px sans-serif;padding:2px 6px;border-radius:10px;border:1px solid #555;background:#222;color:#aaa;cursor:pointer" title="7 天內不再顯示這個按鈕">✕</button>`;
+      if (box.dataset.h !== html) { box.innerHTML = html; box.dataset.h = html; }
+      box.onclick = e => {
+        const b = e.target.closest('button'); if (!b) return;
+        if (b.dataset.szghide) { GM_setValue(hideKey, Date.now()); box.remove(); return; }
+        const id = b.dataset.szgopen;
+        W.open(location.origin + '/game/?szgChar=' + encodeURIComponent(id), 'szg_' + id, 'popup=yes,width=1280,height=860,noopener');
+      };
+    }
+    // 離開頁面（重新整理、關分頁）時放掉這隻角色的分頁標記，新頁面或另一個分頁可以馬上接手
+    W.addEventListener('pagehide', () => {
+      try { const v = GM_getValue(tabKey(myChar()), null); if (v && v.page === PAGE_ID) GM_setValue(tabKey(myChar()), { page: PAGE_ID, at: 0 }); } catch (_) {}
+      try { const code = account && account.playerCode; const v = code && GM_getValue('lead:' + code, null); if (v && v.page === PAGE_ID) GM_setValue('lead:' + code, { page: PAGE_ID, at: 0 }); } catch (_) {}
+    });
+
     function start() {
+      tabBeat();
+      setInterval(tabBeat, 5000);
+      setInterval(renderOpenOther, 5000);
+      setTimeout(renderOpenOther, 6000);
       setTimeout(tick, 3000);
       setInterval(tick, SCAN_MS);
       setInterval(agentTick, AGENT_MS);

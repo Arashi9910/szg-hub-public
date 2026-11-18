@@ -118,7 +118,7 @@ const ONLINE_MS = 90 * 1000; // 這段時間內有回報資料，才算對方在
 
 function codeOf(charId) { const s = db.chars[charId]; return s && s.playerCode; }
 function onlineCode(code) {
-  return Object.values(db.chars).some(s => s.playerCode === code && Date.now() - (s.receivedAt || 0) < ONLINE_MS);
+  return liveTabs(code).length > 0 || Object.values(db.chars).some(s => s.playerCode === code && Date.now() - (s.receivedAt || 0) < ONLINE_MS);
 }
 // 某個帳號目前應該處理的工作：最早建立、還沒結束、而且牽涉到它的那一個
 // 排程規則：
@@ -126,27 +126,72 @@ function onlineCode(code) {
 //  2. 沒有鎖的時候，依「按下確認執行」的先後排隊（同時確認的，依建立順序）
 const locks = {}; // 帳號代碼 -> 工作 id
 function jobOrder(j) { return [j.approvedAt || j.createdAt, db.jobs.indexOf(j)]; }
-function currentJobFor(code) {
+// ===== 遊戲分頁 =====
+// 同一個帳號可以開兩個遊戲分頁（A、B 角色各一個，兩隻同時在線）。每個分頁每 3 秒來問一次工作（/api/agent），
+// 用這個記下「哪隻角色現在有自己的分頁」：工作交給要做事的那隻角色自己的分頁；它沒有分頁時，交給同帳號另一個分頁去顯示「等待」
+const TAB_LIVE_MS = 90 * 1000; // 背景分頁的計時器會被瀏覽器放慢到約 1 分鐘一次，所以抓寬一點
+const tabs = {}; // 帳號代碼 -> { 角色 id: { page, at, hidden, off } }
+function seenTab(code, charId, q) {
+  if (!code || !charId) return;
+  const t = tabs[code] || (tabs[code] = {});
+  t[charId] = { page: q.page || '', at: Date.now(), hidden: q.hidden === '1', off: q.off === '1' };
+}
+function tabOf(code, charId) {
+  const t = code && charId && tabs[code] && tabs[code][charId];
+  return t && Date.now() - t.at < TAB_LIVE_MS ? t : null;
+}
+// 這個帳號現在開著的分頁（看得到的、最近問過的排前面）
+function liveTabs(code) {
+  return Object.entries(tabs[code] || {}).filter(([, t]) => Date.now() - t.at < TAB_LIVE_MS)
+    .sort((a, b) => (a[1].hidden - b[1].hidden) || (b[1].at - a[1].at)).map(([id]) => id);
+}
+function charHasTab(charId) {
+  const s = db.chars[charId];
+  const code = (s && s.playerCode) || (Object.values(db.chars).find(x => x.playerCode && (x.accountChars || []).some(c => c.id === charId)) || {}).playerCode;
+  return !!tabOf(code, charId);
+}
+// 這個工作在這個帳號要由哪隻角色做：背包工作＝那隻角色；交易＝送出方／收貨方；掛機指令＝指定的分頁（沒指定＝哪個都可以）
+function needCharOf(j, code) {
+  if (j.kind === 'idle') return j.needChar || null;
+  if (BAG_KINDS.has(j.kind)) return j.fromCharId;
+  if (!j.strictChar) return null;
+  return j.fromCode === code ? j.fromCharId : j.toCharId;
+}
+// 交給哪個分頁：要做事的角色有分頁就給它；沒有的話交給同帳號的某個分頁（只會顯示「等待」），並記住，不要每次換
+function routeOf(job, code) {
+  const need = needCharOf(job, code);
+  if (need && tabOf(code, need)) return need;
+  job.route = job.route || {};
+  const cur = job.route[code];
+  if (cur && tabOf(code, cur)) return cur;
+  const lt = liveTabs(code);
+  if (!lt.length) return null;
+  job.route[code] = lt[0];
+  return lt[0];
+}
+const jobCmp = (a, b) => { const x = jobOrder(a), y = jobOrder(b); return x[0] - y[0] || x[1] - y[1]; };
+// 帳號目前的交易（交易一次只能跟一個人）：鎖住的那個，否則最早確認的那個
+function tradeHead(code) {
   const lockedId = locks[code];
   if (lockedId) {
     const lj = db.jobs.find(j => j.id === lockedId);
     if (lj && ACTIVE.has(lj.status)) return lj;
     delete locks[code];
   }
-  const list = db.jobs.filter(j => j.kind !== 'idle' && ACTIVE.has(j.status) && (j.fromCode === code || j.toCode === code))
-    .sort((a, b) => { const x = jobOrder(a), y = jobOrder(b); return x[0] - y[0] || x[1] - y[1]; });
-  const head = list[0] || null;
-  // 排最前面的工作要的是同帳號「另一隻」角色（得先切換）時，先做目前角色自己的背包工作，不要卡在後面等
-  const cur = agentChar[code];
-  if (head && cur && needCharOf(head, code) !== cur) {
-    const mine = list.find(j => BAG_KINDS.has(j.kind) && j.fromCharId === cur);
-    if (mine) return mine;
-  }
-  return head;
+  return db.jobs.filter(j => !BAG_KINDS.has(j.kind) && ACTIVE.has(j.status) && (j.fromCode === code || j.toCode === code)).sort(jobCmp)[0] || null;
 }
-// 遊戲分頁最後回報的「目前角色」（每次 /api/agent 輪詢更新）
-const agentChar = {};
-function needCharOf(j, code) { return BAG_KINDS.has(j.kind) || j.fromCode === code ? j.fromCharId : j.toCharId; }
+// 某個分頁現在要做的工作：交給它的工作裡，它自己就能做的排前面（依確認先後）；要等別隻角色的排最後
+function headFor(code, charId) {
+  const th = tradeHead(code);
+  const mine = db.jobs.filter(j => j.kind !== 'idle' && ACTIVE.has(j.status) && (j.fromCode === code || j.toCode === code) && (BAG_KINDS.has(j.kind) || j === th))
+    .sort(jobCmp).filter(j => routeOf(j, code) === charId);
+  return mine.find(j => { const n = needCharOf(j, code); return !n || n === charId; }) || mine[0] || null;
+}
+// 舊的「帳號目前工作」：給面板與相容用（帳號任一分頁的頭一個）
+function currentJobFor(code) {
+  for (const id of liveTabs(code)) { const j = headFor(code, id); if (j) return j; }
+  return tradeHead(code);
+}
 function lockJob(job) {
   locks[job.fromCode] = job.id;
   locks[job.toCode] = job.id;
@@ -163,17 +208,17 @@ const BAG_KINDS = new Set(['sell', 'lock', 'unlock', 'idle', 'forge']);
 // 新種類的工作要遊戲分頁的腳本夠新才看得懂：還沒換上新腳本的，工作先排隊等，不交給它（避免「未知的工作類型」直接失敗）
 const KIND_MIN_AGENT = { forge: '0.27.0' };
 const verLt = (a, b) => { const x = String(a || '0').split('.').map(Number), y = String(b || '0').split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); } return false; };
-function agentTooOld(job, code) {
+function agentTooOld(job, code, charId) {
   const need = KIND_MIN_AGENT[job.kind]; if (!need) return false;
-  const snap = Object.values(db.chars).filter(s => s.playerCode === code).sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0))[0];
+  const snap = (charId && db.chars[charId]) || Object.values(db.chars).filter(s => s.playerCode === code).sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0))[0];
   return !snap || verLt(snap.scriptVersion, need) ? (snap ? snap.scriptVersion || '?' : '?') : false;
 }
 // 公會倉庫：存入、領取、查看都是「某隻角色在自己頁面執行」的背包工作
 for (const k of ['guildDeposit', 'guildWithdraw', 'guildView', 'guildSell']) BAG_KINDS.add(k);
 Object.assign(KIND_MIN_AGENT, { guildDeposit: '0.25.0', guildWithdraw: '0.25.0', guildView: '0.25.0', guildSell: '0.28.0' });
-// 查看公倉：找一隻在線而且是目前角色的（優先本尊），建立後直接排隊（只讀，不用確認）
+// 查看公倉：找一隻有自己分頁的角色（優先本尊），建立後直接排隊（只讀，不用確認）
 function createGuildView(charId) {
-  const live = Object.values(db.chars).filter(s => s.playerCode && Date.now() - (s.receivedAt || 0) < ONLINE_MS && (!s.activeCharId || s.activeCharId === s.char.id));
+  const live = Object.values(db.chars).filter(s => s.playerCode && tabOf(s.playerCode, s.char.id));
   const owner = (charId && db.chars[charId]) || live.find(s => s.char.id === db.settings.mainCharId) || live[0];
   if (!owner) throw new Error('沒有在線的遊戲分頁可以讀取公會倉庫');
   const old = db.jobs.find(j => j.kind === 'guildView' && ['pending', 'approved', 'running'].includes(j.status));
@@ -187,7 +232,7 @@ function createGuildView(charId) {
   db.jobs.push(job); save();
   return job;
 }
-// 自動存入：每 N 分鐘照「存入規則」的勾選與條件，替在線的目前角色建立存入工作（直接排隊，不用確認）
+// 自動存入：每 N 分鐘照「存入規則」的勾選與條件，替有自己遊戲分頁的角色建立存入工作（直接排隊，不用確認）
 // 設定：settings.guildAuto = { mode: 'off' | 'preview' | 'deposit', everyMin }；勾選與條件：settings.guildDep（cats 是整類，例如「卷軸」「裝備」）
 function guildRollPass(g, dep) {
   const cs = (dep.conds || []).filter(c => c.k && c.min !== '' && c.min != null);
@@ -233,7 +278,8 @@ function guildAutoTick(force) {
   const lines = [];
   for (const snap of Object.values(db.chars)) {
     if (!snap.playerCode || Date.now() - (snap.receivedAt || 0) > ONLINE_MS) continue;
-    if (snap.activeCharId && snap.activeCharId !== snap.char.id) continue;
+    if (!tabOf(snap.playerCode, snap.char.id)) continue; // 沒有自己分頁的角色（背景掛機）資料是舊的，也沒有人能替它存
+
     if (Array.isArray(dep.chars) && !dep.chars.includes(snap.char.id)) continue;
     const mine = db.jobs.filter(j => String(j.kind).startsWith('guild') && j.fromCharId === snap.char.id);
     if (mine.some(j => ['pending', 'approved', 'running'].includes(j.status))) continue;
@@ -280,19 +326,25 @@ function charName(charId) {
   for (const s of Object.values(db.chars)) { const c = (s.accountChars || []).find(c => c.id === charId); if (c) return c.name; }
   return charId;
 }
-function routeForAccount(accountId) {
-  // 優先：最近回報、而且是帳號目前角色的那個頁面
+function routeForAccount(accountId, preferChar) {
+  // 優先：指定的角色有自己的分頁 → 它；否則帳號開著的分頁（看得到的優先）；都沒有就用最近回報的
   const list = Object.values(db.chars).filter(s => s.accountId === accountId && s.playerCode)
     .sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0));
-  return list.find(s => s.activeCharId === s.char.id) || list[0];
+  if (!list.length) return null;
+  const code = list[0].playerCode;
+  if (preferChar && tabOf(code, preferChar) && db.chars[preferChar]) return db.chars[preferChar];
+  const lt = liveTabs(code).map(id => db.chars[id]).filter(Boolean);
+  return lt[0] || list[0];
 }
 function createIdleJobs(body) {
   const targets = (body.targets || []).filter(t => t && t.charId && IDLE_ACTIONS.has(t.action));
   if (!targets.length) throw new Error('沒有選擇角色');
-  const byAcc = {};
+  const byAcc = {}, skipped = [];
   for (const t of targets) {
     const acc = accountOfChar(t.charId);
     if (!acc) continue;
+    // 已經有自己分頁的角色不用切換（切了反而會讓兩個分頁變成同一隻）
+    if (t.action === 'switch' && charHasTab(t.charId)) { skipped.push(`${charName(t.charId)} 已經有自己的分頁`); continue; }
     if (t.action === 'switch') {
       // 切換角色：每個帳號只能有一隻是目前角色，同帳號勾了兩隻就以最後一隻為準
       byAcc[acc] = (byAcc[acc] || []).filter(x => x.action !== 'switch');
@@ -300,8 +352,8 @@ function createIdleJobs(body) {
       continue;
     }
     if (t.action === 'wake') {
-      // 領取離線收益是整個頁面的動作，一個帳號做一次就好
-      if (!(byAcc[acc] || []).some(x => x.action === 'wake')) (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'wake' });
+      // 領取離線收益是整個頁面的動作：每個分頁（每隻有分頁的角色）做一次
+      if (!(byAcc[acc] || []).some(x => x.action === 'wake' && x.charId === t.charId)) (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'wake' });
       continue;
     }
     if (t.action === 'map') {
@@ -317,24 +369,38 @@ function createIdleJobs(body) {
     (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: t.action });
     db.settings.idleLast = { ...(db.settings.idleLast || {}), [t.charId]: { action: t.action, at: Date.now(), by: 'panel' } };
   }
-  const jobs = [];
+  // 再依「交給哪個分頁」分組：角色有自己的分頁 → 交給它自己（畫面馬上更新；領取離線收益只能由自己的分頁做）；
+  // 沒有分頁的 → 帳號的任一分頁代做（遊戲允許用 characterId 指定同帳號的另一隻）；切換＝換掉某個分頁顯示的角色
+  const groups = [];
   for (const [acc, list] of Object.entries(byAcc)) {
-    const route = routeForAccount(acc);
+    const by = {};
+    for (const t of list) {
+      const own = t.action !== 'switch' && charHasTab(t.charId) ? t.charId : '';
+      if (t.action === 'wake' && !own) continue; // 沒有分頁的角色沒有畫面可以「繼續」
+      (by[own] || (by[own] = [])).push(t);
+    }
+    for (const [own, ts] of Object.entries(by)) groups.push([acc, own, ts]);
+  }
+  const jobs = [];
+  for (const [acc, own, list] of groups) {
+    const route = routeForAccount(acc, own);
     if (!route) continue;
-    if (list.some(t => t.action === 'switch') && db.jobs.some(j => j.kind !== 'idle' && ACTIVE.has(j.status) && (j.fromCode === route.playerCode || j.toCode === route.playerCode))) {
-      throw new Error(`${route.char.name} 的帳號有交易／背包工作還沒完成，先不要切換角色`);
+    if (list.some(t => t.action === 'switch') && db.jobs.some(j => j.kind !== 'idle' && ACTIVE.has(j.status) && (j.fromCode === route.playerCode || j.toCode === route.playerCode) && routeOf(j, route.playerCode) === route.char.id)) {
+      throw new Error(`${route.char.name} 的分頁有交易／背包工作還沒完成，先不要切換角色`);
     }
     const job = {
       id: crypto.randomBytes(6).toString('hex'), kind: 'idle', status: 'approved', createdAt: Date.now(), approvedAt: Date.now(),
       fromCharId: route.char.id, fromName: route.char.name, fromCode: route.playerCode,
       toCharId: route.char.id, toName: route.char.name, toCode: route.playerCode,
+      needChar: own || null,
       batches: [{ targets: list, items: [], gear: [], money: 0 }], batchIndex: 0, log: [], lastMsg: '',
     };
     jobLog(job, '已送出：' + list.map(t => `${t.name} ${({ start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換為目前角色', wake: '領取離線掛機收益', map: '前往 ' + (t.mapName || '') + (t.sell ? '（套用自動販售）' : ''), autosell: '套用 ' + (t.mapName || '') + ' 的自動販售' })[t.action]}`).join('、'));
     db.jobs.push(job);
     jobs.push(job);
   }
-  if (!jobs.length) throw new Error('找不到可執行的遊戲頁面（那些帳號的遊戲分頁要開著）');
+  if (!jobs.length) throw new Error(skipped.length ? skipped.join('、') + '，不用切換' : '找不到可執行的遊戲頁面（那些帳號的遊戲分頁要開著）');
+  if (skipped.length) jobs.skipped = skipped;
   save();
   return jobs;
 }
@@ -450,7 +516,8 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true }); // 不特別存檔：下次其他資料存檔時一起寫入
     }
     if (req.method === 'GET' && url.pathname === '/api/data') {
-      return send(res, 200, { now: Date.now(), chars: db.chars, dps: db.dps || {}, settings: db.settings, jobs: db.jobs.slice(-100), expTable: db.expTable || {}, idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo });
+      const tabsOut = {}; for (const [code, m] of Object.entries(tabs)) for (const [id, t] of Object.entries(m)) if (Date.now() - t.at < TAB_LIVE_MS) tabsOut[id] = { code, at: t.at, hidden: t.hidden, off: t.off };
+      return send(res, 200, { now: Date.now(), tabs: tabsOut, chars: db.chars, dps: db.dps || {}, settings: db.settings, jobs: db.jobs.slice(-100), expTable: db.expTable || {}, idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo });
     }
 
     if (req.method === 'POST' && url.pathname === '/api/push') {
@@ -475,6 +542,8 @@ const server = http.createServer(async (req, res) => {
         const prev = db.chars[other.id];
         if (prev && other.id !== snap.char.id) {
           if (snap.playerCode) prev.playerCode = snap.playerCode;
+          prev.accountId = snap.accountId;
+          if (tabOf(snap.playerCode, other.id)) continue; // 它有自己的分頁，自己回報的比較新
           prev.char.lv = other.lv;
           prev.char.auto = !!other.auto;
           prev.accountId = snap.accountId;
@@ -688,7 +757,7 @@ const server = http.createServer(async (req, res) => {
     // ---- 掛機控制 ----
     if (req.method === 'POST' && url.pathname === '/api/idle') {
       const jobs = createIdleJobs(JSON.parse(await readBody(req)));
-      return send(res, 200, { ok: true, jobs });
+      return send(res, 200, { ok: true, jobs, skipped: jobs.skipped || [] });
     }
     if (req.method === 'GET' && url.pathname === '/api/idle-policy') {
       const p = db.settings.idlePolicy || {};
@@ -708,13 +777,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/agent') {
       const code = url.searchParams.get('code') || '';
       const pollChar = url.searchParams.get('charId') || '';
-      if (code && pollChar) agentChar[code] = pollChar;
-      // 掛機指令馬上執行，不用排在交易後面
-      const idleJob = db.jobs.find(j => j.kind === 'idle' && ACTIVE.has(j.status) && j.fromCode === code);
+      const peek = url.searchParams.get('peek') === '1';
+      if (!peek) seenTab(code, pollChar, Object.fromEntries(url.searchParams));
+      // 掛機指令馬上執行，不用排在交易後面（交給指定的分頁；沒指定就給帳號的任一分頁）
+      const idleJob = db.jobs.filter(j => j.kind === 'idle' && ACTIVE.has(j.status) && j.fromCode === code).sort(jobCmp).find(j => routeOf(j, code) === pollChar);
       if (idleJob) return send(res, 200, { job: idleJob, role: 'owner', peerReady: true });
-      const job = currentJobFor(code);
+      const job = headFor(code, pollChar);
       if (!job) return send(res, 200, { job: null });
-      const old = agentTooOld(job, code);
+      const old = agentTooOld(job, code, pollChar);
       if (old) {
         const msg = `等待 ${job.fromName} 的遊戲分頁換上新腳本（目前 v${old}，需要 v${KIND_MIN_AGENT[job.kind]} 以上；太久沒換請手動重新整理那個分頁）`;
         if (job.lastMsg !== msg) { jobLog(job, msg); job.lastMsg = msg; save(); }
@@ -723,11 +793,18 @@ const server = http.createServer(async (req, res) => {
       if (BAG_KINDS.has(job.kind)) return send(res, 200, { job, role: 'owner', peerReady: true });
       const role = job.fromCode === code ? 'giver' : 'receiver';
       const peer = role === 'giver' ? job.toCode : job.fromCode;
-      // 對方帳號也必須以這個工作為優先，才開始（避免同時跟兩個人交易）
-      const peerJob = currentJobFor(peer);
-      const peerReady = !!peerJob && peerJob.id === job.id && onlineCode(peer);
-      if (peerReady) lockJob(job);
+      // 對方帳號也必須以這個工作為優先（而且是要交易的那隻角色的分頁在處理），才開始（避免同時跟兩個人交易）
+      const peerTab = routeOf(job, peer);
+      const peerReady = !!peerTab && headFor(peer, peerTab) === job && tradeHead(code) === job;
+      if (peerReady && !peek) lockJob(job);
       return send(res, 200, { job, role, peerReady });
+    }
+    // 分頁要換角色（切換）或關閉前通知：這個分頁不再負責那隻角色
+    if (req.method === 'POST' && url.pathname === '/api/agent/leave') {
+      const b = JSON.parse(await readBody(req) || '{}');
+      const t = tabs[b.code] && tabs[b.code][b.charId];
+      if (t && (!b.page || t.page === b.page)) delete tabs[b.code][b.charId];
+      return send(res, 200, { ok: true });
     }
     // 收貨方發現遊戲裡已經有某個帳號的邀請：如果那個帳號正好有工作要交給我，就改成先處理它
     if (req.method === 'POST' && url.pathname === '/api/agent/claim') {
@@ -735,7 +812,7 @@ const server = http.createServer(async (req, res) => {
       const job = db.jobs.filter(j => ACTIVE.has(j.status) && !BAG_KINDS.has(j.kind) && j.fromCode === inviterCode && j.toCode === code)
         .sort((a, b) => { const x = jobOrder(a), y = jobOrder(b); return x[0] - y[0] || x[1] - y[1]; })[0];
       if (!job) return send(res, 200, { ok: false });
-      const cur = currentJobFor(code);
+      const cur = tradeHead(code);
       if (cur && cur.id !== job.id) jobLog(cur, `${job.fromName} 的邀請已經送到，先處理它，這個工作稍後再繼續`);
       for (const k of Object.keys(locks)) if (locks[k] === (cur && cur.id)) delete locks[k];
       lockJob(job);
