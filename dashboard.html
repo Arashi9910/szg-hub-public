@@ -179,6 +179,10 @@
   main { padding: 14px 18px 40px; }
   section { display: none; } section.on { display: block; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 0 0 10px; }
+  tr.pickrow { cursor: pointer; user-select: none; }
+  tr.pickrow:hover td { background: rgba(255,255,255,.04); }
+  tr.pickrow.picked td { background: rgba(91,141,239,.16); }
+  tr.pickrow.picked:hover td { background: rgba(91,141,239,.24); }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
   .card h3 { margin: 0 0 8px; font-size: 13px; color: var(--dim); font-weight: 600; }
   .stats-row { display: flex; gap: 24px; flex-wrap: wrap; }
@@ -2885,6 +2889,32 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#jobDrawer').style.display = 'none'; });
 
+// ================= 點整列選取（勾選框仍然可以點；Shift＋點一次選一段） =================
+const PICK_ATTRS = ['data-gwpick', 'data-gdpick', 'data-fgpick'];
+let pickLast = null; // { attr, key }
+function pickBox(tr) { for (const a of PICK_ATTRS) { const b = tr.querySelector(`input[type=checkbox][${a}]`); if (b) return [b, a]; } return [null, null]; }
+function pickSet(attr, key, want) {
+  const b = document.querySelector(`input[type=checkbox][${attr}="${CSS.escape(key)}"]`);
+  if (!b || b.disabled || b.checked === want) return;
+  b.checked = want; b.dispatchEvent(new Event('change', { bubbles: true }));
+}
+document.addEventListener('click', e => {
+  const tr = e.target.closest && e.target.closest('tr.pickrow'); if (!tr) return;
+  if (e.target.closest('input, select, button, a, label, textarea, summary')) {
+    // 直接點勾選框：記住位置，給 Shift 選一段用
+    const [b, a] = pickBox(tr); if (b && e.target === b) pickLast = { attr: a, key: b.getAttribute(a) };
+    return;
+  }
+  const [box, attr] = pickBox(tr); if (!box || box.disabled) return;
+  const key = box.getAttribute(attr), want = !box.checked;
+  if (e.shiftKey && pickLast && pickLast.attr === attr) {
+    const keys = [...tr.parentElement.querySelectorAll(`input[type=checkbox][${attr}]`)].map(b => b.getAttribute(attr));
+    const i = keys.indexOf(pickLast.key), j = keys.indexOf(key);
+    if (i >= 0 && j >= 0) { for (const k of keys.slice(Math.min(i, j), Math.max(i, j) + 1)) pickSet(attr, k, want); pickLast = { attr, key }; return; }
+  }
+  pickSet(attr, key, want);
+  pickLast = { attr, key };
+});
 // ================= 強化工坊 =================
 // 擴充點：私人版會補上其他來源的裝備／卷軸
 const forgeExtra = { label: '', gear: () => [], scrollQty: () => 0 };
@@ -3003,7 +3033,7 @@ function renderForge() {
     h += `<table style="margin-top:6px"><thead><tr><th class="nosort"></th><th class="nosort">裝備</th><th class="nosort">在哪</th><th class="nosort num">已衝／剩</th><th class="nosort num">這次最多</th><th class="nosort num">預估次數</th><th class="nosort num">及格機率</th>${sc[3] ? '<th class="nosort num">消失機率</th>' : ''}</tr></thead><tbody>`;
     for (const r of pl.pieces) {
       const x = (pl.rows || []).find(y => y.uid === r.uid), on = !f.off.has(r.uid);
-      h += `<tr class="${on ? '' : 'dim'}"><td><input type="checkbox" data-fgpick="${esc(r.uid)}" ${on ? 'checked' : ''}></td><td>${esc(r.name)}${r.plus ? ' +' + r.plus : ''}</td><td>${esc(r.src)}</td><td class="num">${r.plus} / ${r.slots}</td>
+      h += `<tr class="pickrow ${on ? 'picked' : 'dim'}"><td><input type="checkbox" data-fgpick="${esc(r.uid)}" ${on ? 'checked' : ''}></td><td>${esc(r.name)}${r.plus ? ' +' + r.plus : ''}</td><td>${esc(r.src)}</td><td class="num">${r.plus} / ${r.slots}</td>
         <td class="num">${x ? x.n : '—'}</td><td class="num">${x ? x.expAtt.toFixed(1) : '—'}</td><td class="num">${x ? Math.round(x.pPass * 100) + '%' : '—'}</td>${sc[3] ? `<td class="num bad">${x ? Math.round(x.pLost * 100) + '%' : '—'}</td>` : ''}</tr>`;
     }
     h += '</tbody></table>';

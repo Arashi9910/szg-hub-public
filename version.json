@@ -1,6 +1,6 @@
 {
-  "version": "0.28.0",
-  "notes": "工作清單的小調整",
+  "version": "0.28.1",
+  "notes": "強化試跑的裝備清單改成點整列就能選取／取消（Shift＋點一次選一段）",
   "files": [
     "server.js",
     "market.js",
