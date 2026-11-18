@@ -1151,7 +1151,9 @@ function agentMain(ctx) {
           const succ = destroyed ? ((it && it.successes) || 0) : (g1.successes || 0) - (g0.successes || 0);
           const att = destroyed ? ((it && (it.attempts || []).length) || 1) : (g0.slots || 0) - (g1.slots || 0);
           fee += att * FORGE_FEE;
-          results.push({ uid: u, name: g0.name, attempts: att, successes: succ, destroyed, slotsLeft: destroyed ? 0 : g1.slots, plus: destroyed ? 0 : g1.successes, pass: !destroyed && (g1.successes || 0) >= (Number(f.minSucc) || 0) });
+          const gain = {};
+          if (!destroyed) for (const k of new Set([...Object.keys(g0.stats || {}), ...Object.keys(g1.stats || {})])) { const v = (Number((g1.stats || {})[k]) || 0) - (Number((g0.stats || {})[k]) || 0); if (v) gain[k] = v; }
+          results.push({ uid: u, name: g0.name, attempts: att, successes: succ, destroyed, slotsLeft: destroyed ? 0 : g1.slots, plus: destroyed ? 0 : g1.successes, pass: !destroyed && (g1.successes || 0) >= (Number(f.minSucc) || 0), gain, stats: destroyed ? null : g1.stats });
         });
         c = after;
         await sleepP(800);
@@ -1159,7 +1161,9 @@ function agentMain(ctx) {
       const pass = results.filter(r => r.pass).length, lost = results.filter(r => r.destroyed).length;
       hub('POST', '/api/forge/result', { jobId: job.id, charId: c.id, charName: c.name, item: f.item, itemName: f.itemName, minSucc: Number(f.minSucc) || 0, results, fee, stop }).catch(() => {});
       if (skipped.length) await report(job, { event: 'log', msg: '略過：' + skipped.join('、') });
-      await report(job, { event: 'log', msg: `衝了 ${results.length} 件、共 ${results.reduce((t, r) => t + r.attempts, 0)} 次，成功 ${results.reduce((t, r) => t + r.successes, 0)} 次；及格 ${pass} 件${lost ? `、消失 ${lost} 件` : ''}；花費 ${fee.toLocaleString()} 楓幣${stop ? '；' + stop + '，提前停止' : ''}` });
+      const dist = {}; for (const r of results) if (!r.destroyed) dist[r.plus] = (dist[r.plus] || 0) + 1;
+      const distTxt = Object.keys(dist).map(Number).sort((a, b) => b - a).map(k => `+${k} ×${dist[k]}`).join('、');
+      await report(job, { event: 'log', msg: `衝了 ${results.length} 件：${distTxt}${lost ? `、消失 ${lost} 件` : ''}；及格 ${pass} 件；共 ${results.reduce((t, r) => t + r.attempts, 0)} 次、花費 ${fee.toLocaleString()} 楓幣${stop ? '；' + stop + '，提前停止' : ''}` });
       if (!results.length && stop) return report(job, { event: 'error', msg: stop });
       return report(job, { event: 'batchDone' });
     }

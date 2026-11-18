@@ -179,6 +179,9 @@
   main { padding: 14px 18px 40px; }
   section { display: none; } section.on { display: block; }
   .bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 0 0 10px; }
+  .fg-chip { display: inline-block; border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; margin: 0 3px 2px 0; font-size: 12px; }
+  .fg-chip.good { border-color: var(--good); color: var(--good); } .fg-chip.bad { border-color: var(--bad); color: var(--bad); }
+  .fg-res > summary { cursor: pointer; padding: 4px 0; } .fg-plus { font-size: 14px; }
   tr.pickrow { cursor: pointer; user-select: none; }
   tr.pickrow:hover td { background: rgba(255,255,255,.04); }
   tr.pickrow.picked td { background: rgba(91,141,239,.16); }
@@ -2601,7 +2604,7 @@ function renderFactory() {
   html += node('bag', 'fsink', FN_W.s, `<div class="fn-hd" data-fdrag><b>🎒 背包／倉庫</b></div><div class="fn-bd sm">${gl.length ? gl.slice(0, 6).map(([id, r]) => `<div class="fgoal">${iname(id, wName(id))} <b>${rate(r)}</b></div>`).join('') : '<div class="dim">在打卷軸／打裝備的圖設定 🎯 目標後，這裡會顯示每小時的預估收穫</div>'}<div class="recent" data-recent="bag"></div></div><span class="port in"></span><span class="port out2"></span>`);
   { const last = (FORGE.log || []).slice(-1)[0], run = (DATA.jobs || []).find(j => j.kind === 'forge' && ['approved', 'running'].includes(j.status));
     if (!forgeLoadAt) loadForge();
-    html += node('forge', 'fsink', FN_W.s, `<div class="fn-hd" data-fdrag><b>🔨 強化工坊</b><a data-goto="forge" class="sm">開啟 ›</a></div><div class="fn-bd sm">${run ? `<div class="good">執行中：${esc(run.fromName)}</div>` : ''}${last ? `<div>上次 ${clock(last.at)}・${esc(last.itemName || '')}</div><div>衝 ${last.results.length} 件，<b class="good">及格 ${last.results.filter(x => x.pass).length}</b>${last.results.some(x => x.destroyed) ? `、<b class="bad">消失 ${last.results.filter(x => x.destroyed).length}</b>` : ''}</div>` : '<div class="dim">還沒衝過。到「強化」分頁設定規則、試跑</div>'}</div><span class="port in"></span><span class="port out2"></span>`); }
+    html += node('forge', 'fsink', FN_W.s, `<div class="fn-hd" data-fdrag><b>🔨 強化工坊</b><a data-goto="forge" class="sm">開啟 ›</a></div><div class="fn-bd sm">${run ? `<div class="good">執行中：${esc(run.fromName)}</div>` : ''}${last ? `<div>上次 ${clock(last.at)}・${esc(last.itemName || '')}</div><div>衝 ${last.results.length} 件：${forgeDist(last.results).map(d => `+${d.plus}×${d.n}`).join(' ')}</div><div><b class="good">及格 ${last.results.filter(x => x.pass).length}</b>${last.results.some(x => x.destroyed) ? `、<b class="bad">消失 ${last.results.filter(x => x.destroyed).length}</b>` : ''}</div>` : '<div class="dim">還沒衝過。到「強化」分頁設定規則、試跑</div>'}</div><span class="port in"></span><span class="port out2"></span>`); }
   html += node('out', 'fsink soon', FN_W.s, `<div class="fn-hd" data-fdrag><b>🔀 分流</b></div><div class="fn-bd sm dim">規劃中：及格→鎖定／穿上<br>不及格→商店／市場</div><span class="port in"></span>`);
   const W = 6000, H = Math.max(4000, 600 + Math.max(...Object.values(pos).map(p => p[1])));
   if (!ui.fac.pan) ui.fac.pan = { x: 10, y: 10 };
@@ -3041,12 +3044,24 @@ function renderForge() {
   $('#fgPlan').innerHTML = h;
   $('#fgCreate').disabled = !(snap && sc && pl.use && pl.use.length);
 }
+// 強化結果的「+幾」分布，例如 +5 ×1、+4 ×6
+function forgeDist(results) {
+  const dist = {}; for (const x of results) if (!x.destroyed) dist[x.plus] = (dist[x.plus] || 0) + 1;
+  return Object.keys(dist).map(Number).sort((a, b) => b - a).map(k => ({ plus: k, n: dist[k] }));
+}
+const plusCls = (p, min) => p >= min && min > 0 ? 'good' : '';
 function renderForgeLog() {
   const log = (FORGE.log || []).slice().reverse();
-  $('#fgLog').innerHTML = log.length ? log.slice(0, 15).map(r => {
+  $('#fgLog').innerHTML = log.length ? log.slice(0, 15).map((r, idx) => {
     const pass = r.results.filter(x => x.pass).length, lost = r.results.filter(x => x.destroyed).length;
-    return `<details><summary><span class="dim">${clock(r.at)}</span> ${esc(r.charName || '')}・${esc(r.itemName || r.item)}：衝 ${r.results.length} 件，<b class="good">及格 ${pass}</b>${lost ? `、<b class="bad">消失 ${lost}</b>` : ''}、花 ${short(r.fee)} 楓幣${r.stop ? `<span class="warn">（${esc(r.stop)}）</span>` : ''}</summary>
-      <table><thead><tr><th class="nosort">裝備</th><th class="nosort num">衝</th><th class="nosort num">成功</th><th class="nosort num">目前強化</th><th class="nosort num">剩餘</th><th class="nosort">結果</th></tr></thead><tbody>${r.results.map(x => `<tr><td>${esc(x.name)}</td><td class="num">${x.attempts}</td><td class="num">${x.successes}</td><td class="num">${x.destroyed ? '—' : '+' + x.plus}</td><td class="num">${x.destroyed ? '—' : x.slotsLeft}</td><td>${x.destroyed ? '<span class="bad">消失</span>' : x.pass ? '<span class="good">及格</span>' : '不及格'}</td></tr>`).join('')}</tbody></table></details>`;
+    const min = Number(r.minSucc) || 0;
+    const chips = forgeDist(r.results).map(d => `<span class="fg-chip ${plusCls(d.plus, min)}">+${d.plus} <b>×${d.n}</b></span>`).join('') + (lost ? `<span class="fg-chip bad">消失 <b>×${lost}</b></span>` : '');
+    const rows = r.results.slice().sort((a, b) => (a.destroyed - b.destroyed) || (b.plus - a.plus) || cmp(a.name, b.name));
+    return `<details class="fg-res" ${idx === 0 ? 'open' : ''}><summary><span class="dim">${clock(r.at)}</span> <b>${esc(r.charName || '')}</b>・${esc(r.itemName || r.item)}・${r.results.length} 件　${chips}　<span class="dim">${min ? `及格（+${min} 以上）${pass} 件・` : ''}花 ${short(r.fee)} 楓幣</span>${r.stop ? `<span class="warn">（${esc(r.stop)}）</span>` : ''}</summary>
+      <table><thead><tr><th class="nosort">裝備</th><th class="nosort num">衝完</th><th class="nosort num">這次成功／衝</th><th class="nosort">增加的素質</th><th class="nosort num">剩餘</th><th class="nosort">結果</th></tr></thead><tbody>${rows.map(x => `<tr><td>${esc(x.name)}</td>
+        <td class="num">${x.destroyed ? '—' : `<b class="fg-plus ${plusCls(x.plus, min)}">+${x.plus}</b>`}</td><td class="num">${x.successes} / ${x.attempts}</td>
+        <td>${x.gain && Object.keys(x.gain).length ? STAT_ORDER.filter(k => x.gain[k]).concat(Object.keys(x.gain).filter(k => !STAT_ORDER.includes(k))).map(k => `<span class="${x.gain[k] > 0 ? 'good' : 'bad'}">${esc(statNames[k] || k)} ${x.gain[k] > 0 ? '+' : ''}${x.gain[k]}</span>`).join(' ') : '<span class="dim">—</span>'}</td>
+        <td class="num">${x.destroyed ? '—' : x.slotsLeft}</td><td>${x.destroyed ? '<span class="bad">消失</span>' : x.pass ? '<span class="good">及格</span>' : min ? '不及格' : '—'}</td></tr>`).join('')}</tbody></table></details>`;
   }).join('') : '<div class="dim">還沒有強化紀錄</div>';
 }
 document.addEventListener('change', e => {
