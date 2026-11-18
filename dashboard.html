@@ -2371,11 +2371,14 @@ function boardCfg() {
   const b = all[boardGroup()] || {};
   return { lanes: { train: [...((b.lanes || {}).train || [])], scroll: [...((b.lanes || {}).scroll || [])], gear: [...((b.lanes || {}).gear || [])] }, assign: { ...(b.assign || {}) }, sell: { ...(b.sell || {}) }, goals: { ...(b.goals || {}) }, pos: { ...(b.pos || {}) } };
 }
-let boardSaveTimer = null;
+let boardSaveTimer = null, boardPending = null;
 function saveBoard(cfg) {
   const g = boardGroup(), all = { ...(S.boards || { A: S.board || {} }) };
   all[g] = cfg; S.boards = all; if (g === 'A') S.board = cfg;
-  clearTimeout(boardSaveTimer); boardSaveTimer = setTimeout(() => saveSettings({ boards: S.boards, ...(g === 'A' ? { board: cfg } : {}) }), 300);
+  // 存「現在這一份」（不要等計時器到了才讀 S：中間 poll 會把 S 換成伺服器上的舊設定）；存完之前 poll 也保留本機的看板設定
+  const patch = { boards: all, ...(g === 'A' ? { board: cfg } : {}) };
+  boardPending = patch;
+  clearTimeout(boardSaveTimer); boardSaveTimer = setTimeout(async () => { try { await saveSettings(patch); } finally { if (boardPending === patch) boardPending = null; } }, 300);
 }
 const isScrollId = id => Math.floor(Number(id) / 10000) === 204;
 const sellRows = mapId => ((WORLD && WORLD.autoSellDrops) || {})[mapId] || [];
@@ -3182,7 +3185,7 @@ async function poll(force) {
   try {
     const r = await fetch('/api/data');
     DATA = await r.json();
-    S = { accountLabels: {}, mainCharId: null, presets: [], slotStats: {}, ...DATA.settings };
+    S = { accountLabels: {}, mainCharId: null, presets: [], slotStats: {}, ...DATA.settings, ...(typeof boardPending !== 'undefined' && boardPending ? boardPending : {}) };
     const anyNames = snaps().find(s => s.statNames);
     if (anyNames) statNames = { ...DEFAULT_STAT_NAMES, ...anyNames.statNames };
     const ver = DATA.scriptVersion || (DATA.update && DATA.update.current) || '?';
