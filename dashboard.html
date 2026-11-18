@@ -268,6 +268,8 @@
     nav button { padding: 5px 8px; }
     .card { padding: 10px; }
   }
+  .fg-cap { margin: 4px 0 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); line-height: 1.9; }
+  .fg-cap .btn { margin-left: 6px; }
 </style>
 </head>
 <body>
@@ -3341,17 +3343,31 @@ function fgCandidates(snap) {
 }
 function fgPlan() {
   const f = fgState(), snap = DATA.chars[f.charId];
-  const all = fgCandidates(snap), pieces = all.filter(r => r.name === f.gearName);
+  // 同名裝備：沒衝過、剩餘次數多的排前面（「只選前 N 件」「依卷軸數量選」都照這個順序）
+  const all = fgCandidates(snap), pieces = all.filter(r => r.name === f.gearName).sort((a, b) => (a.plus - b.plus) || (b.slots - a.slots) || (a.extra ? 1 : 0) - (b.extra ? 1 : 0));
   const sc = WORLD && WORLD.scrolls && WORLD.scrolls[f.item];
   const charQty = snap ? ((snap.items || []).filter(i => i.key === f.item && i.loc === '背包').reduce((t, i) => t + i.qty, 0)) : 0;
   const extraQty = f.extra ? forgeExtra.scrollQty(f.item) : 0;
   const use = pieces.filter(r => !f.off.has(r.uid));
-  if (!sc || !use.length) return { all, pieces, use, sc, charQty, extraQty };
+  if (!sc || !pieces.length) return { all, pieces, use, sc, charQty, extraQty };
   const p = sc[2] / 100, c = (sc[3] || 0) / 100, k = Number(f.stopAfter) || 0, minS = Number(f.minSucc) || 0;
+  const simCache = {}, simOf = n => simCache[n] || (simCache[n] = forgeSim(n, p, k, f.stopOnFail, c));
+  const nOf = r => Math.min(10, r.slots, f.count === 'all' ? r.slots : Number(f.count) || 1);
+  // 現有卷軸、楓幣最多能衝幾次 → 照上面的順序，保證能衝完幾件（每件都用到最多次數）、照預估大約能衝完幾件
+  const money = snap ? snap.char.money || 0 : 0;
+  const budget = Math.min(charQty + extraQty, Math.floor(money / 100000));
+  let cumMax = 0, cumExp = 0, canSure = 0, canExp = 0;
+  for (const r of pieces) {
+    const n = nOf(r), e = simOf(n).expAtt;
+    if (cumMax + n <= budget) { cumMax += n; canSure++; } else cumMax = Infinity;
+    if (cumExp + e <= budget + 1e-9) { cumExp += e; canExp++; } else cumExp = Infinity;
+  }
+  const cap = { budget, scrolls: charQty + extraQty, moneyAtt: Math.floor(money / 100000), canSure, canExp };
+  if (!use.length) return { all, pieces, use, sc, charQty, extraQty, cap };
   let maxAtt = 0, expAtt = 0, expPass = 0, expLost = 0;
   const rows = use.map(r => {
-    const n = Math.min(10, r.slots, f.count === 'all' ? r.slots : Number(f.count) || 1);
-    const sim = forgeSim(n, p, k, f.stopOnFail, c);
+    const n = nOf(r);
+    const sim = simOf(n);
     // 及格看的是衝完的總成功次數（含之前已經衝過的）
     const pPass = sim.dist.reduce((t, v, i) => t + ((r.plus + i) >= minS ? (v || 0) : 0), 0);
     maxAtt += n; expAtt += sim.expAtt; expPass += pPass; expLost += sim.pLost;
@@ -3362,7 +3378,10 @@ function fgPlan() {
   const bySlots = {}; for (const r of rows) (bySlots[r.slots] || (bySlots[r.slots] = [])).push(r.uid);
   for (const [sl, uids] of Object.entries(bySlots)) for (let i = 0; i < uids.length; i += 10) groups.push({ slots: Number(sl), uids: uids.slice(i, i + 10) });
   const needFromExtra = Math.max(0, Math.min(extraQty, maxAtt - charQty));
-  return { all, pieces, use, sc, rows, groups, maxAtt, expAtt, expPass, expLost, charQty, extraQty, needFromExtra, maxFee: maxAtt * 100000, expFee: Math.round(expAtt) * 100000, money: snap ? snap.char.money || 0 : 0 };
+  // 照順序累加預估次數，超過現有卷軸／楓幣的那幾件「可能輪不到」
+  let acc = 0; for (const r of rows) { acc += r.expAtt; r.maybeShort = acc > budget + 1e-9; }
+  const expPassAvail = rows.filter(r => !r.maybeShort).reduce((t, r) => t + r.pPass, 0); // 只算現有卷軸／楓幣衝得到的
+  return { all, pieces, use, sc, rows, groups, maxAtt, expAtt, expPass, expLost, charQty, extraQty, needFromExtra, maxFee: maxAtt * 100000, expFee: Math.round(expAtt) * 100000, money, cap, expPassAvail };
 }
 async function loadForge(force) {
   if (!force && Date.now() - forgeLoadAt < 5000) return FORGE;
@@ -3372,7 +3391,9 @@ async function loadForge(force) {
 }
 function renderForge() {
   if (!WORLD) loadWorld().then(() => WORLD && renderForge());
-  loadForge().then(renderForgeLog);
+  // 強化工作剛做完：馬上重抓結果（不用等下一輪）
+  const lastDone = Math.max(0, ...(DATA.jobs || []).filter(j => j.kind === 'forge' && ['done', 'failed'].includes(j.status)).map(j => ((j.log || []).slice(-1)[0] || {}).at || 0));
+  loadForge(lastDone > forgeLoadAt).then(renderForgeLog);
   const f = fgState(), ae = document.activeElement;
   const snap = DATA.chars[f.charId];
   if (ae !== $('#fgChar')) $('#fgChar').innerHTML = charOpt(f.charId, true);
@@ -3399,8 +3420,20 @@ function renderForge() {
   if (!snap) h = '<div class="dim">先選執行角色。</div>';
   else if (!f.gearName) h = '<div class="dim">選要衝的裝備。</div>';
   else if (!sc) h = '<div class="dim">選卷軸。</div>';
-  else if (!pl.use.length) h = '<div class="dim">沒有可以衝的裝備（已鎖定、格數用完的不會列出）。</div>';
+  else if (!pl.pieces.length) h = '<div class="dim">沒有可以衝的裝備（已鎖定、格數用完的不會列出）。</div>';
   else {
+    // 選幾件：全選／全不選／只選前 N 件／依現有卷軸、楓幣選
+    const cap = pl.cap || {};
+    h += `<div class="bar fg-pickbar"><span>已選 <b>${pl.use.length}</b> / ${pl.pieces.length} 件</span>
+      <button class="btn sm" data-fgsel="all">全選</button><button class="btn sm" data-fgsel="none">全不選</button>
+      <span class="dim">只選前</span><input type="number" id="fgTopN" min="1" max="${pl.pieces.length}" value="${pl.use.length || ''}" style="width:64px"><span class="dim">件</span><button class="btn sm" data-fgsel="top">套用</button>
+      <span class="dim">（沒衝過、剩餘次數多的排前面；也可以點每一列個別勾選／取消，Shift＋點選一段）</span></div>
+      <div class="fg-cap">現有卷軸 <b>${fmt(cap.scrolls || 0)}</b> 張、楓幣夠衝 <b>${fmt(cap.moneyAtt || 0)}</b> 次 → 最多能衝 <b>${fmt(cap.budget || 0)}</b> 次：
+        <b class="good">保證衝完 ${cap.canSure || 0} 件</b>（每件都衝到最多次數也夠）・照預估約能衝完 <b>${cap.canExp || 0}</b> 件
+        ${cap.canSure ? `<button class="btn sm" data-fgsel="sure">只選保證的 ${cap.canSure} 件</button>` : ''}${cap.canExp && cap.canExp !== cap.canSure ? `<button class="btn sm" data-fgsel="exp">選預估的 ${cap.canExp} 件</button>` : ''}</div>`;
+  }
+  if (snap && f.gearName && sc && pl.pieces.length && !pl.use.length) h += '<div class="dim">還沒選裝備：點表格的列或用上面的按鈕選。</div>';
+  if (snap && f.gearName && sc && pl.use.length) {
     const short2 = n => short(n);
     const enoughScroll = pl.charQty + pl.extraQty >= pl.maxAtt, enoughMoney = pl.money >= pl.maxFee;
     h += `<div class="stats-row" style="display:flex;gap:18px;flex-wrap:wrap">
@@ -3408,19 +3441,22 @@ function renderForge() {
       <div>衝卷次數 最多 <b>${pl.maxAtt}</b>・預估 <b>${pl.expAtt.toFixed(1)}</b></div>
       <div>卷軸 最多用 <b>${pl.maxAtt}</b> 張／有 <b class="${enoughScroll ? '' : 'warn'}">${fmt(pl.charQty + pl.extraQty)}</b>${pl.extraQty ? `（身上 ${fmt(pl.charQty)}＋${esc(forgeExtra.short || '')} ${fmt(pl.extraQty)}）` : ''}</div>
       <div>楓幣 最多 <b class="${enoughMoney ? '' : 'warn'}">${short2(pl.maxFee)}</b>・預估 ${short2(pl.expFee)}／有 ${short2(pl.money)}</div>
-      <div>預估及格 <b class="good">${pl.expPass.toFixed(1)}</b> 件${pl.expLost > 0.005 ? `・<b class="bad">預估消失 ${pl.expLost.toFixed(1)} 件</b>` : ''}</div></div>`;
-    if (!enoughScroll || !enoughMoney) h += `<div class="warn">卷軸或楓幣不夠全部衝滿：用完就會停，後面的裝備可能衝不到。</div>`;
+      <div>預估及格 <b class="good">${pl.expPassAvail.toFixed(1)}</b> 件${pl.expPassAvail + 0.05 < pl.expPass ? `<span class="dim">（卷軸、楓幣都夠的話 ${pl.expPass.toFixed(1)} 件）</span>` : ''}${pl.expLost > 0.005 ? `・<b class="bad">預估消失 ${pl.expLost.toFixed(1)} 件</b>` : ''}</div></div>`;
+    const nShort = (pl.rows || []).filter(r => r.maybeShort).length;
+    if (!enoughScroll || !enoughMoney) h += `<div class="warn">卷軸或楓幣不夠全部衝滿：用完就會停。${nShort ? `照預估，最後 <b>${nShort}</b> 件可能輪不到（表格標「可能輪不到」）；` : ''}要衝得完，按上面的「只選保證的 ${pl.cap.canSure} 件」。</div>`;
     if (pl.needFromExtra) h += `<div class="dim">執行時會先${esc(forgeExtra.take || '')}：卷軸 ${fmt(pl.needFromExtra)} 張${pl.use.some(r => r.extra) ? `、裝備 ${pl.use.filter(r => r.extra).length} 件` : ''}。</div>`;
     else if (pl.use.some(r => r.extra)) h += `<div class="dim">執行時會先${esc(forgeExtra.take || '')}：裝備 ${pl.use.filter(r => r.extra).length} 件。</div>`;
-    h += `<table style="margin-top:6px"><thead><tr><th class="nosort"></th><th class="nosort">裝備</th><th class="nosort">在哪</th><th class="nosort num">已衝／剩</th><th class="nosort num">這次最多</th><th class="nosort num">預估次數</th><th class="nosort num">及格機率</th>${sc[3] ? '<th class="nosort num">消失機率</th>' : ''}</tr></thead><tbody>`;
+  }
+  if (snap && f.gearName && sc && pl.pieces.length) {
+    h += `<table style="margin-top:6px"><thead><tr><th class="nosort"><input type="checkbox" id="fgAllBox" title="全選／全不選" ${pl.use.length === pl.pieces.length ? 'checked' : ''}></th><th class="nosort">裝備</th><th class="nosort">在哪</th><th class="nosort num">已衝／剩</th><th class="nosort num">這次最多</th><th class="nosort num">預估次數</th><th class="nosort num">及格機率</th>${sc[3] ? '<th class="nosort num">消失機率</th>' : ''}</tr></thead><tbody>`;
     for (const r of pl.pieces) {
       const x = (pl.rows || []).find(y => y.uid === r.uid), on = !f.off.has(r.uid);
-      h += `<tr class="pickrow ${on ? 'picked' : 'dim'}"><td><input type="checkbox" data-fgpick="${esc(r.uid)}" ${on ? 'checked' : ''}></td><td>${esc(r.name)}${r.plus ? ' +' + r.plus : ''}</td><td>${esc(r.src)}</td><td class="num">${r.plus} / ${r.slots}</td>
+      h += `<tr class="pickrow ${on ? 'picked' : 'dim'}"><td><input type="checkbox" data-fgpick="${esc(r.uid)}" ${on ? 'checked' : ''}></td><td>${esc(r.name)}${r.plus ? ' +' + r.plus : ''}${x && x.maybeShort ? ' <span class="warn sm">可能輪不到</span>' : ''}</td><td>${esc(r.src)}</td><td class="num">${r.plus} / ${r.slots}</td>
         <td class="num">${x ? x.n : '—'}</td><td class="num">${x ? x.expAtt.toFixed(1) : '—'}</td><td class="num">${x ? Math.round(x.pPass * 100) + '%' : '—'}</td>${sc[3] ? `<td class="num bad">${x ? Math.round(x.pLost * 100) + '%' : '—'}</td>` : ''}</tr>`;
     }
     h += '</tbody></table>';
   }
-  $('#fgPlan').innerHTML = h;
+  if (!(document.activeElement && document.activeElement.id === 'fgTopN')) $('#fgPlan').innerHTML = h; // 正在輸入件數時先不要重畫
   $('#fgCreate').disabled = !(snap && sc && pl.use && pl.use.length);
 }
 // 強化結果的「+幾」分布，例如 +5 ×1、+4 ×6
@@ -3456,6 +3492,8 @@ document.addEventListener('change', e => {
   if (t.id === 'fgWorn') f.worn = t.checked;
   if (t.id === 'fgExtra') f.extra = t.checked;
   if (t.dataset.fgpick) { if (t.checked) f.off.delete(t.dataset.fgpick); else f.off.add(t.dataset.fgpick); }
+  if (t.id === 'fgAllBox') { if (t.checked) f.off.clear(); else f.off = new Set(fgPlan().pieces.map(r => r.uid)); }
+  if (t.id === 'fgTopN') { const ids = fgPlan().pieces.map(r => r.uid); f.off = new Set(ids.slice(Math.max(0, Math.floor(Number(t.value) || 0)))); }
   if (t.id === 'fgPreset' && t.value !== '') { const r = (S.forgeRules || [])[Number(t.value)]; if (r) Object.assign(f, { gearName: r.gearName, item: r.item, count: r.count, stopAfter: r.stopAfter, stopOnFail: r.stopOnFail, minSucc: r.minSucc }); f.off.clear(); }
   fgSave(); renderForge();
 });
@@ -3469,6 +3507,16 @@ document.addEventListener('click', async e => {
       const name = prompt('規則名稱', `${f.gearName}・${sc ? sc[0] : f.item}・成功 ${f.minSucc} 次及格`); if (!name) return;
       const rules = (S.forgeRules || []).filter(r => r.name !== name).concat([{ name, gearName: f.gearName, item: f.item, count: f.count, stopAfter: f.stopAfter, stopOnFail: f.stopOnFail, minSucc: f.minSucc }]);
       await saveSettings({ forgeRules: rules }); renderForge(); return;
+    }
+    if (t.dataset.fgsel) {
+      const pl = fgPlan(), ids = pl.pieces.map(r => r.uid), v = t.dataset.fgsel;
+      const keep = n => { f.off = new Set(ids.slice(n)); };
+      if (v === 'all') f.off.clear();
+      else if (v === 'none') f.off = new Set(ids);
+      else if (v === 'top') keep(Math.max(0, Math.floor(Number($('#fgTopN').value) || 0)));
+      else if (v === 'sure') keep(pl.cap.canSure);
+      else if (v === 'exp') keep(pl.cap.canExp);
+      renderForge(); return;
     }
     if (t.id === 'fgPresetDel') { const i = $('#fgPreset').value; if (i === '') return; const rules = (S.forgeRules || []).slice(); rules.splice(Number(i), 1); await saveSettings({ forgeRules: rules }); renderForge(); return; }
     if (t.id === 'fgCreate') {
@@ -4023,6 +4071,8 @@ function initHelp() {
 initHelp();
 poll();
 setInterval(poll, 10000);
+// 有工作在執行時每 3 秒更新一次，做完的結果（強化結果、背包變化）馬上看得到
+setInterval(() => { if (!document.hidden && (DATA.jobs || []).some(j => ['approved', 'running'].includes(j.status))) poll(); }, 3000);
 </script>
 </body>
 </html>
