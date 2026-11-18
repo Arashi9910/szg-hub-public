@@ -111,11 +111,28 @@ function agentMain(ctx) {
       }
     }
 
+    // 遊戲頁面自己存的狀態（畫面上的角色）。背包、倉庫這些欄位頁面不一定會即時更新（實測：中控鎖定道具後，
+    // 另一個分頁的頁面資料一直是舊的），所以另外定時（45 秒）和每次做完工作後直接向遊戲要一份，背包相關欄位用比較新的那份
+    const OWN_KEYS = ['inventoryStacks', 'inventory', 'equipmentBag', 'gear', 'warehouse', 'warehouseGear', 'warehouseMesos', 'supply', 'autoSell'];
+    let ownState = null, ownStateAt = 0;
+    async function refreshOwnState(force) {
+      if (!force && Date.now() - ownStateAt < 45000) return;
+      const id = myChar(); if (!id) return;
+      ownStateAt = Date.now();
+      try {
+        const j = await game({ type: 'sync' });
+        if (j && j.character && j.character.id === id && Array.isArray(j.character.inventoryStacks)) { ownState = j; lastHash = ''; }
+      } catch (_) {}
+    }
     function readState() {
       const raw = sessionStorage.getItem('mapleSessionView');
       if (!raw) return null;
       const v = JSON.parse(raw);
-      return v && v.state && v.state.character ? v.state : null;
+      const page = v && v.state && v.state.character ? v.state : null;
+      if (!page || !ownState || ownState.character.id !== page.character.id || Date.now() - ownStateAt > 120000) return page;
+      const ch = { ...page.character };
+      for (const k of OWN_KEYS) if (k in ownState.character) ch[k] = ownState.character[k];
+      return { ...page, character: ch };
     }
 
     // 帳號資訊（12 碼 ID、目前角色）。查詢失敗時沿用上次成功的結果，並記下失敗原因回報給面板。
@@ -388,6 +405,7 @@ function agentMain(ctx) {
       try {
         tabBeat();
         if (passive()) return;
+        if (!agentBusy) await refreshOwnState(false);
         const state = readState();
         if (!state) return;
         await loadCatalog();
@@ -1395,11 +1413,11 @@ function agentMain(ctx) {
           setTimeout(() => location.reload(), 1500);
           return;
         }
-        if (!job) { if (agentBusy) { agentBusy = false; lastJobAt = Date.now(); setBadge('ok'); } return; }
+        if (!job) { if (agentBusy) { agentBusy = false; lastJobAt = Date.now(); setBadge('ok'); await refreshOwnState(true); } return; }
         agentBusy = true;
         if (job.kind !== 'idle' && isIdleOffline()) { await wakePage('執行「' + ({ collect: '收集', give: '分發', sell: '賣出', lock: '鎖定', unlock: '解鎖' }[job.kind] || '工作') + '」前'); state = readState() || state; }
-        // 分頁在背景（同帳號開兩個分頁時常見）：遊戲畫面暫停更新，背包資料可能是舊的 → 工作前直接向遊戲要一份最新的
-        if (job.kind !== 'idle' && (document.hidden || isIdleOffline())) { try { const j = await game({ type: 'sync' }); if (j && j.character && j.character.id === charId) state = j; } catch (_) {} }
+        // 頁面的背包資料可能是舊的（背景分頁更常見）→ 工作前直接向遊戲要一份最新的
+        if (job.kind !== 'idle') { await refreshOwnState(true); state = readState() || state; }
         if (res.role === 'owner') return await runBagJob(job, state, charId);
         const role = res.role; // 'giver' | 'receiver'
         const batch = job.batches[job.batchIndex];
