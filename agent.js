@@ -529,7 +529,10 @@ function agentMain(ctx) {
         }
         if (t.action === 'switch') {
           try {
-            if (sessionStorage.getItem('mapleCharacter') === t.charId) { done.push(`${t.name} 已經是目前角色`); continue; }
+            // 畫面上是這隻、而且遊戲伺服器記的「目前角色」也是這隻才算已切好（同帳號開兩個分頁時，伺服器記的可能是另一隻）
+            accountAt = 0; await loadAccount().catch(() => null);
+            const srvActive = account && account.activeCharacterId;
+            if (sessionStorage.getItem('mapleCharacter') === t.charId && (!srvActive || srvActive === t.charId)) { done.push(`${t.name} 已經是目前角色`); continue; }
             setBadge(null, `切換到 ${t.name}…`);
             await game({ type: 'switch', characterId: t.charId });
             switchTo = t.charId;
