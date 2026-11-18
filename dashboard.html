@@ -843,14 +843,23 @@ function renderOverview() {
   $('#ovTable').innerHTML = h;
   renderOvBar();
 }
+// 總覽操作列的訊息：記下來，重畫操作列時一起畫回去（不然送出後馬上被洗掉，看起來像沒反應）
+function setIdleMsg(t) { ui.idleMsg = t; clearTimeout(ui.idleMsgTimer); ui.idleMsgTimer = setTimeout(() => { ui.idleMsg = ''; const el = $('#idleMsg'); if (el) el.textContent = ''; }, 20000); const el = $('#idleMsg'); if (el) el.textContent = t; }
+function ovGroupBtns() {
+  return ['A', 'B'].map(g => { const n = groupInactive(g).length; return n ? `<button class="btn" data-ovgswitch="${g}" title="把 ${g} 組全部切成目前角色">⇄ 全部切到 ${g} 組（${n} 隻）</button>` : `<span class="dim sm">目前是 ${g} 組</span>`; }).join('');
+}
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('[data-ovgswitch]'); if (!t) return;
+  try { const r = await switchGroup(t.dataset.ovgswitch); if (r) setIdleMsg(`已送出：${t.dataset.ovgswitch} 組 ${r.jobs.length} 個帳號切換中，遊戲分頁約 10 秒內重新整理`); } catch (err) { alert('失敗：' + err.message); }
+});
 // 勾選角色後出現在底部的動作列
 function renderOvBar() {
   const bar = $('#ovBar'); if (!bar) return;
   const n = ui.idleSel.size;
   bar.style.display = '';
   bar.innerHTML = n
-    ? `<span class="sum">已選 <b>${n}</b> 隻</span><button class="btn primary" data-idle="start">▶ 開始掛機</button><button class="btn" data-idle="stop">Ⅱ 暫停</button><button class="btn" data-idle="restart" title="先暫停再開始，掛機時間重新從 24 小時算起">↻ 重新開始</button><button class="btn" data-idle="wake" title="幫勾選的帳號按遊戲的「點一下繼續」，領回離線掛機期間累積的收益">⏏ 領取離線收益</button><button class="btn" data-idle="switch" title="把勾選的角色切成該帳號的目前角色（同帳號勾兩隻時以後面那隻為準）">⇄ 切換為目前角色</button><button class="btn" id="idleSelNone">清除</button><span class="dim" id="idleMsg"></span>`
-    : `<span class="dim">勾選角色可以批次操作，或</span><button class="btn" id="idleSelStopped">選未掛機的</button><button class="btn" id="idleSelAll">全選</button><span class="dim" id="idleMsg"></span>`;
+    ? `<span class="sum">已選 <b>${n}</b> 隻</span><button class="btn primary" data-idle="start">▶ 開始掛機</button><button class="btn" data-idle="stop">Ⅱ 暫停</button><button class="btn" data-idle="restart" title="先暫停再開始，掛機時間重新從 24 小時算起">↻ 重新開始</button><button class="btn" data-idle="wake" title="幫勾選的帳號按遊戲的「點一下繼續」，領回離線掛機期間累積的收益">⏏ 領取離線收益</button><button class="btn" data-idle="switch" title="把勾選的角色切成該帳號的目前角色（同帳號勾兩隻時以後面那隻為準）">⇄ 切換為目前角色</button><button class="btn" id="idleSelNone">清除</button>${ovGroupBtns()}<span class="dim" id="idleMsg">${esc(ui.idleMsg || '')}</span>`
+    : `<span class="dim">勾選角色可以批次操作，或</span><button class="btn" id="idleSelStopped">選未掛機的</button><button class="btn" id="idleSelAll">全選</button>${ovGroupBtns()}<span class="dim" id="idleMsg">${esc(ui.idleMsg || '')}</span>`;
 }
 document.addEventListener('click', async e => {
   const t = e.target.closest('[data-attn],[data-openjobs],[data-goto],[data-ovmode],[data-dpsopen]');
@@ -1653,20 +1662,27 @@ document.addEventListener('click', async e => {
     if (t.dataset && t.dataset.wake) {
       t.disabled = true; t.textContent = '領取中…';
       await api('/api/idle', { targets: [{ charId: t.dataset.wake, action: 'wake' }] });
-      $('#idleMsg').textContent = '已送出領取，幾秒內資料會更新';
+      setIdleMsg('已送出領取，幾秒內資料會更新');
       await poll(true);
     }
     if (t.dataset && t.dataset.switch) {
       t.disabled = true; t.textContent = '切換中…';
       await api('/api/idle', { targets: [{ charId: t.dataset.switch, action: 'switch' }] });
-      $('#idleMsg').textContent = '已送出切換，該帳號的遊戲分頁會自動重新整理（約 10 秒）';
+      setIdleMsg('已送出切換，該帳號的遊戲分頁會自動重新整理（約 10 秒）');
       await poll(true);
     }
     if (t.dataset && t.dataset.idle) {
-      if (!ui.idleSel.size) { $('#idleMsg').textContent = '請先勾選角色'; return; }
+      if (!ui.idleSel.size) { setIdleMsg('請先勾選角色'); return; }
       const action = t.dataset.idle;
-      const r = await api('/api/idle', { targets: [...ui.idleSel].map(charId => ({ charId, action })) });
-      $('#idleMsg').textContent = `已送出 ${ui.idleSel.size} 隻（${r.jobs.length} 個帳號），幾秒內會生效`;
+      let ids = [...ui.idleSel];
+      if (action === 'switch') {
+        // 已經是目前角色的不用切；同帳號兩隻都勾了，切到「不是目前的那隻」
+        const accOf = id => { const s = DATA.chars[id] || snaps().find(x => (x.accountChars || []).some(c => c.id === id)); return s && s.accountId; };
+        ids = ids.filter(id => { const a = accOf(id); return a && activeCharOf(a) !== id; });
+        if (!ids.length) { setIdleMsg('勾選的角色都已經是目前角色了。要切到另一隻，請勾另一隻，或用「⇄ 全部切到 A 組／B 組」。'); return; }
+      }
+      const r = await api('/api/idle', { targets: ids.map(charId => ({ charId, action })) });
+      setIdleMsg(action === 'switch' ? `已送出切換：${ids.length} 隻（${r.jobs.length} 個帳號），遊戲分頁約 10 秒內重新整理${ids.length < ui.idleSel.size ? `；其他 ${ui.idleSel.size - ids.length} 隻本來就是目前角色` : ''}` : `已送出 ${ids.length} 隻（${r.jobs.length} 個帳號），幾秒內會生效`);
       await poll(true);
     }
     // 收集
@@ -2690,6 +2706,16 @@ function renderFactory() {
       <span class="dim sm">拖曳角色右邊的 ● 連到地圖＝派工・拖標題移動節點・拖空白處平移・滾輪縮放</span></div>`;
   requestAnimationFrame(() => { drawWires(); renderRecent(); });
 }
+// ---- 整組切成目前角色（總覽、派工看板共用） ----
+function groupInactive(g) { return groupChars(g).filter(id => { const s = DATA.chars[id] || snaps().find(x => (x.accountChars || []).some(c => c.id === id)); return s && activeCharOf(s.accountId) !== id; }); }
+async function switchGroup(g) {
+  const ids = groupInactive(g);
+  if (!ids.length) { alert(`${g} 組的角色都已經是目前角色了`); return null; }
+  if (!confirm(`把 ${g} 組的 ${ids.length} 隻角色切成目前角色？另一組會轉成背景掛機。需要那些帳號的遊戲分頁開著。`)) return null;
+  const r = await api('/api/idle', { targets: ids.map(charId => ({ charId, action: 'switch' })) });
+  setTimeout(() => poll(true), 8000);
+  return r;
+}
 // ---- 派工分組的操作 ----
 document.addEventListener('click', async e => {
   const t = e.target.closest && e.target.closest('[data-bdgroup],[data-bdgswitch],[data-bdmovegrp]'); if (!t || !t.closest('#board')) return;
@@ -2700,13 +2726,9 @@ document.addEventListener('click', async e => {
       await saveSettings({ charGroup: { ...(S.charGroup || {}), [id]: to } }); ui.fac.sig = null; renderBoard(); return;
     }
     if (t.dataset.bdgswitch) {
-      const g = t.dataset.bdgswitch;
-      const ids = groupChars(g).filter(id => { const s = DATA.chars[id] || snaps().find(x => (x.accountChars || []).some(c => c.id === id)); return s && activeCharOf(s.accountId) !== id; });
-      if (!ids.length) return;
-      if (!confirm(`把 ${g} 組的 ${ids.length} 隻角色切成目前角色？另一組會轉成背景掛機。需要那些帳號的遊戲分頁開著。`)) return;
-      const r = await api('/api/idle', { targets: ids.map(charId => ({ charId, action: 'switch' })) });
-      if ($('#bdMsg')) $('#bdMsg').textContent = `已送出切換（${r.jobs.length} 個帳號），約 10 秒後更新`;
-      setTimeout(() => poll(true), 8000); return;
+      const r = await switchGroup(t.dataset.bdgswitch);
+      if (r && $('#bdMsg')) $('#bdMsg').textContent = `已送出切換（${r.jobs.length} 個帳號），約 10 秒後更新`;
+      return;
     }
   } catch (err) { alert('失敗：' + err.message); }
 });
