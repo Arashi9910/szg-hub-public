@@ -859,7 +859,7 @@ function emptyFilter() {
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 const fmt = n => n == null ? '—' : Number(n).toLocaleString('zh-TW');
-const short = n => { if (n == null) return '—'; n = Number(n); if (n >= 1e8) return (n/1e8).toFixed(2).replace(/\.?0+$/,'') + ' 億'; if (n >= 1e4) return (n/1e4).toFixed(1).replace(/\.0$/,'') + ' 萬'; return fmt(Math.round(n)); };
+const short = n => { if (n == null) return '—'; n = Number(n); if (n < 0) return '-' + short(-n); if (n >= 1e8) return (n/1e8).toFixed(2).replace(/\.?0+$/,'') + ' 億'; if (n >= 1e4) return (n/1e4).toFixed(1).replace(/\.0$/,'') + ' 萬'; return fmt(Math.round(n)); };
 const ago = ms => { const m = Math.floor(ms/60000); if (m < 1) return '剛剛'; if (m < 60) return m + ' 分前'; const h = Math.floor(m/60); if (h < 24) return h + ' 小時前'; return Math.floor(h/24) + ' 天前'; };
 const hm = ms => { if (ms <= 0) return '0m'; const m = Math.round(ms/60000); const h = Math.floor(m/60); return h ? `${h}h${String(m%60).padStart(2,'0')}m` : `${m}m`; };
 const clock = t => { const d = new Date(t); return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
@@ -1169,7 +1169,7 @@ function renderOverview() {
   const withSes = live.filter(r => r.c.session);
   const mph = live.filter(r => ['on', 'soon'].includes(idleState(r))).reduce((a, r) => a + (mesoRate(r.c) || 0), 0);
   const sesTotal = withSes.reduce((a, r) => a + (r.c.session.money || 0), 0), earnedTotal = live.reduce((a, r) => a + (r.c.earned || 0), 0);
-  const sesFrom = withSes.reduce((a, r) => { const t = Date.parse(r.c.session.startedAt) || 0; return t && (!a || t < a) ? t : a; }, 0);
+  const sesFrom = withSes.reduce((a, r) => { const v = r.c.session.startedAt, t = (typeof v === 'number' ? v : Date.parse(v)) || 0; return t && (!a || t < a) ? t : a; }, 0);
   // 讀數列：有上限的指標才畫條；正常灰、注意橘、停機紅
   const ga = (DATA.alerts || {}).guild;
   const gauge = (lbl, val, unit, cmp, frac, lv = '', title = '') => `<div class="gauge ${lv}"${title ? ` title="${esc(title)}"` : ''}><div class="lbl">${lbl}</div><div class="val">${val}${unit ? `<small>${unit}</small>` : ''}</div>${frac == null ? '' : `<div class="track"><i style="width:${Math.max(0, Math.min(1, frac)) * 100}%"></i></div>`}<div class="cmp">${cmp}</div></div>`;
@@ -1178,7 +1178,7 @@ function renderOverview() {
     ${gauge('掛機中', idleOn, `／${live.length}`, nStop ? `${nStop} 隻沒在掛機` : `${accLatest.length} 個帳號・全部運轉`, live.length ? idleOn / live.length : 0, nStop ? 'warn' : '')}
     ${gauge('經驗產出', short(hourly), '／時', '每小時經驗合計；沒有分頁的用最後一次的數字', null)}
     ${withSes.length ? gauge('楓幣收入', short(mph), '／時', `${live.filter(r => ['on', 'soon'].includes(idleState(r)) && mesoRate(r.c) != null).length} 隻掛機中的合計`, null, '', '每隻角色「本次掛機賺的楓幣 ÷ 掛機時間」加總（遊戲主控台的掛機報告）；只算掛機中、而且這次掛超過 10 分鐘的') : gauge('楓幣收入', '—', '', '腳本更新後，角色回報一次就會有', null)}
-    ${withSes.length ? gauge('合計賺得', short(sesTotal), '', `累計 ${short(earnedTotal)}`, null, '', `本次掛機合計：所有角色這次掛機賺的楓幣${sesFrom ? `（最早從 ${new Date(sesFrom).toLocaleString()} 開始）` : ''}\n累計：遊戲主控台的「累計賺得」加總`) : ''}
+    ${withSes.length ? gauge('合計賺得', short(sesTotal), '', `累計 ${short(earnedTotal)}`, null, '', `本次掛機合計：所有角色這次掛機賺的楓幣（遊戲掛機報告的淨額，這次買東西花的已經扣掉，所以單隻可能是負的）${sesFrom ? `（最早從 ${new Date(sesFrom).toLocaleString()} 開始）` : ''}\n累計：遊戲主控台的「累計賺得」加總`) : ''}
     ${gauge('有遊戲分頁', nTab, `／${live.length}`, nTab < live.length ? `${live.length - nTab} 隻在伺服器背景掛機` : '全部有自己的分頁', live.length ? nTab / live.length : 0, '', TAB_HINT)}
     ${gauge('楓幣總和', short(totalMoney), '', '含帳號倉庫', null)}
     ${gauge('點數總和', fmt(totalPts), '', ptsKnown.length < accLatest.length ? `${ptsKnown.length}／${accLatest.length} 個帳號有回報` : '點數是整個帳號共用', null)}
