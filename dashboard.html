@@ -687,6 +687,13 @@
       </div>
       <div class="dim">開啟後，每個帳號的遊戲分頁會每 45 秒檢查一次：今天還有次數就開始答題，題庫有的直接答。遇到題庫沒有的題目會停在那題（遊戲作答不限時），題目會出現在下面，你選好答案後會自動接著答。不論自動或手動作答，答完看到的正確答案都會自動收進題庫。</div>
     </div>
+    <div class="card" id="qsCard">
+      <h3>共享題庫 <span class="dim sm">所有人的中控一起累積：只上傳遊戲公布的正確答案和匿名編號，不送角色名稱、帳號</span></h3>
+      <div class="bar"><label><input type="checkbox" class="sw" id="qsOn"> 加入共享題庫</label><span id="qsStatus" class="dim"></span><button class="btn sm" id="qsSync"><span data-ic="refresh-cw"></span> 立即同步</button></div>
+      <div class="dim sm">答完題遊戲會公布正解，中控把正解送到共享題庫，也每 30 分鐘下載一次別人累積的；遇到題庫沒有的題目會馬上再抓一次。同一題有不同答案時，以最多人回報的為準。自己學到的答案永遠優先。</div>
+      <details style="margin-top:4px"><summary class="dim sm" style="cursor:pointer">進階：改用自己的題庫網址</summary>
+        <div class="bar" style="margin-top:6px"><input id="qsUrl" placeholder="https://script.google.com/macros/s/…/exec" style="width:520px" autocomplete="off"><button class="btn sm" id="qsUrlSave">儲存</button><span class="dim sm">留空＝用預設的共享題庫</span></div></details>
+    </div>
     <div class="card"><h3>等你作答的題目</h3><div id="quizUnknown"></div></div>
     <div class="card">
       <h3>外部資料庫</h3>
@@ -695,7 +702,7 @@
     </div>
     <div class="card">
       <details id="qbDetails"><summary>瀏覽題庫</summary>
-        <div class="bar" style="margin:6px 0"><input id="qbSearch" placeholder="搜尋題目或答案" style="width:260px"><select id="qbSrc"><option value="">全部來源</option><option value="learned">自己學到的</option><option value="bank">內建題庫</option><option value="ext">冒險資料庫</option></select><span class="dim" id="qbCount"></span></div>
+        <div class="bar" style="margin:6px 0"><input id="qbSearch" placeholder="搜尋題目或答案" style="width:260px"><select id="qbSrc"><option value="">全部來源</option><option value="learned">自己學到的</option><option value="shared">共享題庫</option><option value="bank">內建題庫</option><option value="ext">冒險資料庫</option></select><span class="dim" id="qbCount"></span></div>
         <div id="qbOut" style="max-height:520px;overflow:auto"></div>
       </details>
     </div>
@@ -2435,12 +2442,24 @@ document.addEventListener('input', e => {
 
 // ================= 知識王 =================
 let QUIZ = null;
+document.addEventListener('change', async e => { if (e.target.id !== 'qsOn') return; await saveSettings({ quizShare: { ...(S.quizShare || {}), on: e.target.checked } }); if (e.target.checked) await api('/api/quiz/share/sync').catch(() => {}); await loadQuiz(); renderQuiz(); });
+document.addEventListener('click', async e => {
+  const t = e.target.closest('#qsSync,#qsUrlSave'); if (!t) return;
+  if (t.id === 'qsUrlSave') { const v = $('#qsUrl').value.trim(); if (v && !/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(v)) { alert('網址格式不對：要是 https://script.google.com/macros/s/…/exec'); return; } await saveSettings({ quizShare: { ...(S.quizShare || {}), url: v } }); }
+  t.disabled = true; const r = await api('/api/quiz/share/sync').catch(err => ({ error: err.message })); t.disabled = false;
+  await loadQuiz(); renderQuiz(); if (r && r.error) $('#qsStatus').innerHTML += `　<span class="bad">${esc(r.error)}</span>`;
+});
 async function loadQuiz() { try { QUIZ = await (await fetch('/api/quiz')).json(); } catch (_) {} }
 function renderQuiz() {
   if (!QUIZ) { loadQuiz().then(() => QUIZ && renderQuiz()); return; }
   $('#quizAuto').checked = !!QUIZ.auto;
   const sc = QUIZ.srcCount || {};
-  $('#quizCount').textContent = `題庫共 ${QUIZ.count} 題（自己學到 ${sc.learned || 0}・內建 ${sc.bank || 0}・冒險資料庫 ${sc.ext || 0}）`;
+  $('#quizCount').textContent = `題庫共 ${QUIZ.count} 題（自己學到 ${sc.learned || 0}・共享 ${sc.shared || 0}・內建 ${sc.bank || 0}・冒險資料庫 ${sc.ext || 0}）`;
+  { const sh = QUIZ.share || {};
+    $('#qsOn').checked = sh.on !== false;
+    if (document.activeElement !== $('#qsUrl')) $('#qsUrl').value = ((S.quizShare || {}).url) || '';
+    $('#qsStatus').innerHTML = sh.on === false ? '已關閉：不上傳也不下載' : !sh.configured ? '<span class="warn">還沒有共享題庫網址（作者設定好之後，更新中控就會自動連上）</span>'
+      : `共享題庫 <b>${fmt(sh.count || 0)}</b> 題・你已貢獻 ${fmt(sh.sent || 0)} 題${sh.queue ? `・等上傳 ${fmt(sh.queue)} 題` : ''}・${sh.lastPull ? ago(Date.now() - sh.lastPull) + '同步' : '還沒同步'}${sh.error ? `　<span class="bad">${esc(sh.error)}</span>` : ''}`; }
   const ex = QUIZ.extdb || {};
   $('#extStatus').innerHTML = ex.ok ? `已下載：道具 ${fmt(ex.items)}、怪物 ${fmt(ex.mobs)}、題目 ${fmt(ex.quiz)}　<span class="dim">資料日期 ${esc(ex.dataDate || '—')}・下載於 ${clock(ex.fetchedAt)}</span>`
     : '<span class="warn">還沒下載（伺服器啟動 15 秒後會自動下載，或按「立即更新」）</span>';
@@ -3041,7 +3060,7 @@ let QBANK = null;
 async function renderQBank(reload) {
   if (!QBANK || reload) { try { QBANK = (await (await fetch('/api/quiz/export')).json()).questions || []; } catch (_) { QBANK = []; } }
   const q = $('#qbSearch').value.trim(), src = $('#qbSrc').value;
-  const SRC = { learned: '自己學到', bank: '內建', ext: '冒險資料庫' };
+  const SRC = { learned: '自己學到', shared: '共享題庫', bank: '內建', ext: '冒險資料庫' };
   const list = QBANK.filter(x => (!src || x.src === src) && (!q || x.q.includes(q) || String(x.answer).includes(q)));
   $('#qbCount').textContent = `${list.length} 題`;
   $('#qbOut').innerHTML = `<table class="qbank"><thead><tr><th class="nosort">題目</th><th class="nosort">答案</th><th class="nosort">其他選項</th><th class="nosort">來源</th></tr></thead><tbody>${list.slice(0, 300).map(x =>

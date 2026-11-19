@@ -79,9 +79,66 @@ function quizBank() {
   try {
     for (const x of JSON.parse(fs.readFileSync(QUIZ_FILE, 'utf8')).questions || []) if (x.q && x.answer) bank[qnorm(x.q)] = { q: x.q, options: x.options || [], answer: x.answer, src: 'bank' };
   } catch (_) {}
+  // 共享題庫（大家的中控一起累積、遊戲公布的正解）：在內建之後、自己學到的之前
+  if (quizShareOn()) for (const [k, x] of Object.entries((db.quizShared && db.quizShared.items) || {})) bank[k] = { q: x.q, options: x.options || [], answer: x.answer, src: 'shared', n: x.n };
   for (const [k, x] of Object.entries(quizStore().learned)) bank[k] = { ...x, src: 'learned' };
   return bank;
 }
+// ===== 共享題庫：Google 試算表＋Apps Script（tools/quiz-share.gs）=====
+// 預設加入（公開版也是）；只上傳遊戲公布的正確答案＋匿名編號，不送角色名稱。設定：settings.quizShare = { on, url }
+const QUIZ_SHARE_URL = 'https://script.google.com/macros/s/AKfycbxsdKpgb1W1YlFfwE0DpK0ZvWObMcsdnCLDr1WdURBG7MPApdaR8MPzkCZ2KQY2eiqKzQ/exec';
+const quizShareCfg = () => { const x = (db.settings && db.settings.quizShare) || {}; return { on: x.on !== false, url: x.url || process.env.SZG_QUIZ_SHARE_URL || QUIZ_SHARE_URL }; };
+// 只接受 Google Apps Script 的網址（測試時可以用環境變數指到本機的模擬）
+const quizShareOn = () => { const c = quizShareCfg(); return c.on && (/^https:\/\/script\.google(usercontent)?\.com\//.test(c.url || '') || (!!process.env.SZG_QUIZ_SHARE_URL && c.url === process.env.SZG_QUIZ_SHARE_URL)); };
+function quizShareState() {
+  db.installId = db.installId || crypto.randomBytes(12).toString('hex');
+  const st = db.quizShareState || (db.quizShareState = { queue: [], sent: {}, lastPull: 0, lastPush: 0, error: '', backfilled: false });
+  return st;
+}
+// 遊戲公布正解時呼叫：已經在共享題庫而且一樣的不用再送；內建、冒險資料庫本來就一樣的也不送
+function quizShareQueue(q, options, answer) {
+  if (!quizShareOn() || !q || !answer || !Array.isArray(options) || !options.includes(answer)) return;
+  const st = quizShareState(), k = qnorm(q), tag = k + '|' + qnorm(answer);
+  if (st.sent[tag] || st.queue.some(x => x.key === k && qnorm(x.answer) === qnorm(answer))) return;
+  st.queue = st.queue.filter(x => x.key !== k); // 同一題後來的答案取代前面的
+  st.queue.push({ key: k, q: String(q).slice(0, 300), options: options.map(o => String(o).slice(0, 120)).slice(0, 8), answer: String(answer).slice(0, 120) });
+  if (st.queue.length > 3000) st.queue.splice(0, st.queue.length - 3000);
+}
+let quizShareBusy = false;
+async function quizShareSync(force) {
+  if (!quizShareOn() || quizShareBusy) return;
+  quizShareBusy = true;
+  const st = quizShareState(), url = quizShareCfg().url;
+  try {
+    // 第一次：把以前從遊戲學到的（不是在面板自己猜的）補送上去
+    if (!st.backfilled) { for (const x of Object.values(quizStore().learned)) if (x.by !== '面板') quizShareQueue(x.q, x.options || [], x.answer); st.backfilled = true; }
+    if (st.queue.length && (force || Date.now() - st.lastPush > 5 * 60e3)) {
+      const batch = st.queue.slice(0, 300);
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ install: db.installId, items: batch }), redirect: 'follow' });
+      const j = await r.json();
+      if (!j.ok) throw new Error('上傳失敗：' + (j.error || r.status));
+      for (const x of batch) st.sent[x.key + '|' + qnorm(x.answer)] = 1;
+      st.queue.splice(0, batch.length); st.lastPush = Date.now();
+      if (j.added || j.voted) quizLog(`共享題庫：上傳 ${batch.length} 題（新題目 ${j.added}、投票 ${j.voted}）`);
+    }
+    if (force || Date.now() - st.lastPull > 30 * 60e3) {
+      const r = await fetch(url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(), { redirect: 'follow' });
+      const j = await r.json();
+      if (!j || !Array.isArray(j.items)) throw new Error('下載的格式不對');
+      const items = {}; for (const x of j.items) if (x && x.q && x.answer) items[qnorm(x.q)] = { q: String(x.q), options: (x.options || []).map(String), answer: String(x.answer), n: Number(x.n) || 1 };
+      const before = Object.keys((db.quizShared && db.quizShared.items) || {}).length;
+      db.quizShared = { at: Date.now(), items };
+      st.lastPull = Date.now();
+      if (Object.keys(items).length !== before) quizLog(`共享題庫：下載 ${Object.keys(items).length} 題`);
+      // 等你作答的題目如果共享題庫有了，就不用再等
+      const uq = quizStore().unknown; for (const k of Object.keys(uq)) if (items[k]) delete uq[k];
+    }
+    st.error = '';
+  } catch (e) { st.error = String(e.message || e).slice(0, 200); }
+  finally { quizShareBusy = false; save(); }
+}
+setInterval(() => quizShareSync(false), 60e3);
+setTimeout(() => quizShareSync(false), 15e3);
 function quizLog(msg) { const q = quizStore(); q.log.push({ at: Date.now(), msg: String(msg).slice(0, 200) }); if (q.log.length > 200) q.log.splice(0, q.log.length - 200); }
 
 let saveTimer = null;
@@ -769,6 +826,7 @@ const server = http.createServer(async (req, res) => {
       for (const [k, u] of Object.entries(st.unknown)) if (Date.now() - (u.at || 0) > 12 * 3600e3 || bank[k]) delete st.unknown[k];
       const srcCount = {}; for (const x of Object.values(bank)) srcCount[x.src] = (srcCount[x.src] || 0) + 1;
       return send(res, 200, { auto: !!db.settings.quizAuto, answers, count: Object.keys(bank).length, srcCount, extdb: extdb.status(),
+        share: (() => { const c = quizShareCfg(), ss = quizShareState(); return { on: c.on !== false, configured: quizShareOn() || /^https:/.test(c.url || ''), custom: !!(db.settings.quizShare && db.settings.quizShare.url), count: Object.keys((db.quizShared && db.quizShared.items) || {}).length, lastPull: ss.lastPull, lastPush: ss.lastPush, queue: ss.queue.length, sent: Object.keys(ss.sent).length, error: ss.error }; })(),
         unknown: Object.values(st.unknown).sort((a, b) => b.at - a.at).slice(0, 40), learned: Object.values(st.learned).slice(-100), log: st.log.slice(-50) });
     }
     if (req.method === 'GET' && url.pathname === '/api/quiz/export') {
@@ -779,6 +837,8 @@ const server = http.createServer(async (req, res) => {
       if (!e || !e.q || !e.answer) return send(res, 400, { error: '缺少題目或答案' });
       const k = qnorm(e.q), st = quizStore();
       const known = quizBank()[k];
+      // 遊戲公布的正解（腳本送來的會帶 correct 欄位；面板自己作答的沒有）→ 送進共享題庫
+      if (e.correct !== undefined && !(known && ['bank', 'ext'].includes(known.src) && qnorm(known.answer) === qnorm(e.answer))) quizShareQueue(e.q, (e.options || []).map(String), String(e.answer));
       if (!known || qnorm(known.answer) !== qnorm(e.answer)) {
         st.learned[k] = { q: String(e.q), options: (e.options || []).map(String), answer: String(e.answer), by: e.by || (e.charId ? charName(e.charId) : ''), at: Date.now() };
         quizLog(`${known ? '更正' : '新增'}：${e.q} → ${e.answer}${e.by ? '（' + e.by + '）' : ''}`);
@@ -787,11 +847,15 @@ const server = http.createServer(async (req, res) => {
       save();
       return send(res, 200, { ok: true });
     }
+    if (req.method === 'POST' && url.pathname === '/api/quiz/share/sync') { const ss = quizShareState(); ss.lastPull = 0; await quizShareSync(true); return send(res, 200, { ok: !ss.error, error: ss.error }); }
     if (req.method === 'POST' && url.pathname === '/api/quiz/unknown') {
       const e = JSON.parse(await readBody(req));
       if (e && e.q) {
         const k = qnorm(e.q), st = quizStore();
-        if (!st.unknown[k]) quizLog(`題庫沒有，等你作答：${e.q}`);
+        if (!st.unknown[k]) {
+          quizLog(`題庫沒有，等你作答：${e.q}`);
+          const ss = quizShareState(); if (quizShareOn() && Date.now() - ss.lastPull > 120e3) { ss.lastPull = 0; quizShareSync(false); } // 也許別人已經答過：馬上抓一次共享題庫
+        }
         st.unknown[k] = { q: String(e.q), options: (e.options || []).map(String), by: e.charId ? charName(e.charId) : '', at: Date.now() };
         save();
       }
