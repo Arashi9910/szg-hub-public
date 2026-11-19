@@ -1237,6 +1237,7 @@ function agentMain(ctx) {
       if (job.kind === 'forge') return runForgeJob(job, c);
       if (job.kind === 'guildDeposit' || job.kind === 'guildWithdraw' || job.kind === 'guildView') return runGuildJob(job, c);
       if (job.kind === 'guildSell') return runGuildSell(job, c);
+      if (job.kind === 'guildMoney') return runGuildMoney(job, c);
       // 不認得的工作：多半是這個分頁的腳本太舊，重新整理一次拿新版（同一個工作只試一次）
       if (GM_getValue(ck('reloadForJob'), '') !== job.id) {
         GM_setValue(ck('reloadForJob'), job.id);
@@ -1384,6 +1385,36 @@ function agentMain(ctx) {
       if (halvings) await report(job, { event: 'log', msg: `遊戲限制單次請求大小，分成較小的批次送出（每批最多 ${size} 項）` });
       const names = rows.map(r => r.name + (r.kind === 'item' ? ' ×' + r.qty : ''));
       await report(job, { event: 'log', msg: `已${label} ${rows.length} 項：${names.slice(0, 30).join('、')}${names.length > 30 ? '…' : ''}` });
+      return report(job, { event: 'batchDone' });
+    }
+    // 存楓幣／點數到公倉：遊戲格式 {type:'guildWarehouseMesos'|'guildWarehouseCash', op:'deposit', amount, characterId}
+    // 金錢動作不自動重試（避免回應遺失時重複存入）；存之前先讀一次公倉，存完比對公倉餘額
+    async function runGuildMoney(job, c) {
+      const b = job.batches[0] || {};
+      const st = readState() || {}, ch = (st.character && st.character.id === c.id ? st.character : c) || {};
+      const pts = (() => { const v = st.cashPoints != null ? st.cashPoints : (ch.cashPoints != null ? ch.cashPoints : ch.points); return typeof v === 'number' ? v : (v && typeof v.balance === 'number' ? v.balance : null); })();
+      const have = { mesos: Number(ch.money) || 0, cash: pts };
+      let before = null;
+      try { const v = await gameRetry({ type: 'guildWarehouseView', characterId: c.id }); before = v && v.summary && v.summary.guildWarehouse; if (before) postGuild(v, c); } catch (_) {}
+      if (!before) return report(job, { event: 'error', msg: '讀不到公會倉庫（可能還沒加入公會），沒有存入' });
+      const done = [];
+      for (const [field, type, label, gk] of [['mesos', 'guildWarehouseMesos', '楓幣', 'mesos'], ['cash', 'guildWarehouseCash', '點數', 'cashPoints']]) {
+        const amt = Math.floor(Number(b[field]) || 0);
+        if (!(amt > 0)) continue;
+        if (have[field] == null) return report(job, { event: 'error', msg: `讀不到目前的${label}，沒有存入${done.length ? '（' + done.join('、') + ' 已完成）' : ''}` });
+        if (amt > have[field]) return report(job, { event: 'error', msg: `${label}不足：要存 ${amt.toLocaleString()}，${c.name} 只有 ${have[field].toLocaleString()}${done.length ? '（' + done.join('、') + ' 已完成）' : ''}` });
+        setBadge(null, `存入公倉${label} ${amt.toLocaleString()}…`);
+        let j;
+        try { j = await game({ type, op: 'deposit', amount: amt, characterId: c.id }); }
+        catch (e) { return report(job, { event: 'error', msg: `存入${label}失敗：${e.message}${done.length ? '（' + done.join('、') + ' 已完成）' : ''}` }); }
+        postGuild(j, c);
+        const after = j && j.summary && j.summary.guildWarehouse;
+        const diff = after ? (Number(after[gk]) || 0) - (Number(before[gk]) || 0) : null;
+        done.push(`${label} ${amt.toLocaleString()}`);
+        await report(job, { event: 'log', msg: `已存入${label} ${amt.toLocaleString()}${diff != null ? `：公倉${label} ${(Number(before[gk]) || 0).toLocaleString()} → ${(Number(after[gk]) || 0).toLocaleString()}${diff !== amt ? `（實際增加 ${diff.toLocaleString()}）` : ''}` : ''}` });
+        if (after) before = after;
+        await sleepP(800);
+      }
       return report(job, { event: 'batchDone' });
     }
     // 公倉的裝備賣給商店：遊戲不能直接從公倉賣，所以由這隻角色每次領出一批、馬上賣掉（避免背包塞滿）

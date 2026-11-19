@@ -216,6 +216,8 @@ function agentTooOld(job, code, charId) {
 // 公會倉庫：存入、領取、查看都是「某隻角色在自己頁面執行」的背包工作
 for (const k of ['guildDeposit', 'guildWithdraw', 'guildView', 'guildSell']) BAG_KINDS.add(k);
 Object.assign(KIND_MIN_AGENT, { guildDeposit: '0.25.0', guildWithdraw: '0.25.0', guildView: '0.25.0', guildSell: '0.28.0' });
+// 存楓幣／點數到公倉：一定要使用者在工作清單逐一確認（「全部確認」也不包含它）
+BAG_KINDS.add('guildMoney'); KIND_MIN_AGENT.guildMoney = '0.34.0';
 // 查看公倉：找一隻有自己分頁的角色（優先本尊），建立後直接排隊（只讀，不用確認）
 function createGuildView(charId) {
   const live = Object.values(db.chars).filter(s => s.playerCode && tabOf(s.playerCode, s.char.id));
@@ -234,13 +236,25 @@ function createGuildView(charId) {
 }
 // 自動存入：每 N 分鐘照「存入規則」的勾選與條件，替有自己遊戲分頁的角色建立存入工作（直接排隊，不用確認）
 // 設定：settings.guildAuto = { mode: 'off' | 'preview' | 'deposit', everyMin }；勾選與條件：settings.guildDep（cats 是整類，例如「卷軸」「裝備」）
+// 浮動判斷基準（跟面板 rollProfileDefault 同一套預設）：每個部位、武器種類看的素質不同
+const WEAPON_PHYS = ['sword', 'twoSword', 'axe', 'twoAxe', 'mace', 'twoMace', 'spear', 'polearm', 'bow', 'crossbow', 'claw', 'dagger', 'knuckle', 'gun'];
+const WEAPON_MAGIC = ['wand', 'staff'];
+function rollProfile(t) {
+  const p = (db.settings.rollProfiles || {})[t];
+  if (p && Array.isArray(p.stats)) return { stats: p.stats, min: Number(p.min) || 0 };
+  if (WEAPON_MAGIC.includes(t)) return { stats: ['incMAD'], min: 1 };
+  if (WEAPON_PHYS.includes(t)) return { stats: ['incPAD'], min: 1 };
+  if (t === 'gloves') return { stats: ['incPAD', 'incSTR', 'incDEX', 'incINT', 'incLUK'], min: 1 };
+  return { stats: ['incSTR', 'incDEX', 'incINT', 'incLUK', 'incPAD', 'incMAD'], min: 1 };
+}
 function guildRollPass(g, dep) {
-  const cs = (dep.conds || []).filter(c => c.k && c.min !== '' && c.min != null);
+  const cs = (dep.conds || []).filter(c => c.k && (c.k === '_pass' || (c.min !== '' && c.min != null)));
   if (!cs.length) return true;
   if (!g.baseStats || !g.cleanStats) return !!dep.unknown;
   const d = k => (Number(g.cleanStats[k]) || 0) - (Number(g.baseStats[k]) || 0);
   const sum = () => [...new Set([...Object.keys(g.baseStats), ...Object.keys(g.cleanStats)])].reduce((t, k) => t + d(k), 0);
-  const ok = cs.map(c => (c.k === '_sum' ? sum() : d(c.k)) >= Number(c.min));
+  const pass = () => { const p = rollProfile(g.gtype || g.type || g.weaponType || g.slot || ''); return p.stats.reduce((t, k) => t + d(k), 0) >= p.min; };
+  const ok = cs.map(c => c.k === '_pass' ? pass() : (c.k === '_sum' ? sum() : d(c.k)) >= Number(c.min));
   return dep.mode === 'any' ? ok.some(Boolean) : ok.every(Boolean);
 }
 function guildPlanFor(snap, dep) {
@@ -415,6 +429,19 @@ function createBagJob(body) {
   if (!owner) throw new Error('找不到角色資料');
   if (!owner.playerCode) throw new Error('角色還沒回報 12 碼 ID，請先更新腳本並打開遊戲頁面');
   const b = (body.batches || [])[0] || {};
+  if (body.kind === 'guildMoney') {
+    const mesos = Math.floor(Number(b.mesos) || 0), cash = Math.floor(Number(b.cash) || 0);
+    if (!(mesos > 0) && !(cash > 0)) throw new Error('沒有填要存的楓幣或點數');
+    if (mesos < 0 || cash < 0) throw new Error('金額不能是負數');
+    const job = {
+      id: crypto.randomBytes(6).toString('hex'), kind: 'guildMoney', status: 'pending', createdAt: Date.now(),
+      fromCharId: owner.char.id, fromName: owner.char.name, fromCode: owner.playerCode,
+      toCharId: owner.char.id, toName: owner.char.name, toCode: owner.playerCode,
+      batches: [{ items: [], gear: [], money: 0, mesos, cash }], batchIndex: 0, log: [], lastMsg: '',
+    };
+    db.jobs.push(job); save();
+    return job;
+  }
   if (!(b.items || []).length && !(b.gear || []).length) throw new Error('沒有選擇任何物品');
   const job = {
     id: crypto.randomBytes(6).toString('hex'), kind: body.kind, status: 'pending', createdAt: Date.now(),
@@ -644,7 +671,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true, removed: before - db.jobs.length });
     }
     if (req.method === 'POST' && url.pathname === '/api/jobs/approve-all') {
-      for (const j of db.jobs) if (j.status === 'pending') { j.status = 'approved'; j.approvedAt = Date.now(); jobLog(j, '已確認，排隊等待執行'); }
+      for (const j of db.jobs) if (j.status === 'pending' && j.kind !== 'guildMoney') { j.status = 'approved'; j.approvedAt = Date.now(); jobLog(j, '已確認，排隊等待執行'); }
       save();
       return send(res, 200, { ok: true });
     }
