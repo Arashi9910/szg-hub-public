@@ -401,6 +401,9 @@ function agentMain(ctx) {
           map: c.map, mapName: catalog.mapsById[String(c.map)] || c.map,
           auto: !!c.auto, until: c.until || null,
           hp: c.hp, maxhp: c.maxhp, mp: c.mp, maxmp: c.maxmp, kills: c.kills || 0,
+          // 楓幣收入：遊戲主控台的「累計賺得」和本次掛機報告（賺了多少、掛了多久），中控算每小時楓幣用
+          earned: Number(c.earned) || 0,
+          session: (r => r && typeof r === 'object' ? { money: Number(r.money) || 0, xp: Number(r.xp) || 0, activeMs: Number(r.activeMs) || 0, startedAt: r.startedAt || null, updatedAt: r.updatedAt || null, stoppedAt: r.stoppedAt || null } : null)(c.sessionReport),
           hpItem: sup.hpItem ? itemInfo(sup.hpItem).name : null, hpQty: sup.hpItem ? (inv[sup.hpItem] || 0) : null,
           mpItem: sup.mpItem ? itemInfo(sup.mpItem).name : null, mpQty: sup.mpItem ? (inv[sup.mpItem] || 0) : null,
           stats: c.stats || {},

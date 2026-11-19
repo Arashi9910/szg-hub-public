@@ -1032,6 +1032,8 @@ function ovRows() {
   for (const m of missingChars()) rows.push({ missing: true, c: m, account: accountLabel(m.accountId, m.refSnap), active: false });
   return rows;
 }
+// 楓幣收入：遊戲的本次掛機報告（賺了多少 ÷ 掛了多久）；掛不到 10 分鐘的不算，數字太跳
+const mesoRate = c => { const x = c && c.session; return x && x.activeMs >= 10 * 60e3 ? x.money / x.activeMs * 3600e3 : null; };
 const idleState = r => r.missing ? (r.c.auto ? 'on' : 'off') : !r.c.auto ? 'off' : r.remain == null ? 'on' : r.remain <= 0 ? 'expired' : r.remain < 3600e3 ? 'soon' : 'on';
 const potLow = c => (c.hpQty != null && c.hpQty < 50) || (c.mpQty != null && c.mpQty < 20);
 // 需要處理：每一項都盡量附上一鍵處理的按鈕
@@ -1164,6 +1166,10 @@ function renderOverview() {
   const totalPts = ptsKnown.reduce((a, s) => a + s.points, 0);
   const hourly = live.reduce((a, r) => a + (r.c.hourlyExp || 0), 0);
   const nTab = live.filter(r => r.active).length;
+  const withSes = live.filter(r => r.c.session);
+  const mph = live.filter(r => ['on', 'soon'].includes(idleState(r))).reduce((a, r) => a + (mesoRate(r.c) || 0), 0);
+  const sesTotal = withSes.reduce((a, r) => a + (r.c.session.money || 0), 0), earnedTotal = live.reduce((a, r) => a + (r.c.earned || 0), 0);
+  const sesFrom = withSes.reduce((a, r) => { const t = Date.parse(r.c.session.startedAt) || 0; return t && (!a || t < a) ? t : a; }, 0);
   // 讀數列：有上限的指標才畫條；正常灰、注意橘、停機紅
   const ga = (DATA.alerts || {}).guild;
   const gauge = (lbl, val, unit, cmp, frac, lv = '', title = '') => `<div class="gauge ${lv}"${title ? ` title="${esc(title)}"` : ''}><div class="lbl">${lbl}</div><div class="val">${val}${unit ? `<small>${unit}</small>` : ''}</div>${frac == null ? '' : `<div class="track"><i style="width:${Math.max(0, Math.min(1, frac)) * 100}%"></i></div>`}<div class="cmp">${cmp}</div></div>`;
@@ -1171,6 +1177,8 @@ function renderOverview() {
   $('#ovSummary').innerHTML = `<div class="gauges">
     ${gauge('掛機中', idleOn, `／${live.length}`, nStop ? `${nStop} 隻沒在掛機` : `${accLatest.length} 個帳號・全部運轉`, live.length ? idleOn / live.length : 0, nStop ? 'warn' : '')}
     ${gauge('經驗產出', short(hourly), '／時', '每小時經驗合計；沒有分頁的用最後一次的數字', null)}
+    ${withSes.length ? gauge('楓幣收入', short(mph), '／時', `${live.filter(r => ['on', 'soon'].includes(idleState(r)) && mesoRate(r.c) != null).length} 隻掛機中的合計`, null, '', '每隻角色「本次掛機賺的楓幣 ÷ 掛機時間」加總（遊戲主控台的掛機報告）；只算掛機中、而且這次掛超過 10 分鐘的') : gauge('楓幣收入', '—', '', '腳本更新後，角色回報一次就會有', null)}
+    ${withSes.length ? gauge('合計賺得', short(sesTotal), '', `累計 ${short(earnedTotal)}`, null, '', `本次掛機合計：所有角色這次掛機賺的楓幣${sesFrom ? `（最早從 ${new Date(sesFrom).toLocaleString()} 開始）` : ''}\n累計：遊戲主控台的「累計賺得」加總`) : ''}
     ${gauge('有遊戲分頁', nTab, `／${live.length}`, nTab < live.length ? `${live.length - nTab} 隻在伺服器背景掛機` : '全部有自己的分頁', live.length ? nTab / live.length : 0, '', TAB_HINT)}
     ${gauge('楓幣總和', short(totalMoney), '', '含帳號倉庫', null)}
     ${gauge('點數總和', fmt(totalPts), '', ptsKnown.length < accLatest.length ? `${ptsKnown.length}／${accLatest.length} 個帳號有回報` : '點數是整個帳號共用', null)}
@@ -1194,13 +1202,14 @@ function renderOverview() {
   const k = ui.ovSort.key, d = ui.ovSort.dir;
   const tgt = ui.ovTarget;
   const lvT = r => r.missing ? null : lvTime(r.c, (r.c.lv || 0) + 1), tgT = r => r.missing || !tgt ? null : lvTime(r.c, tgt);
-  const val = r => ({ account: r.account, name: r.c.name, lv: (r.c.lv || 0) * 1000 + (r.c.expPct || 0), hourly: r.c.hourlyExp, tnext: (lvT(r) || {}).h ?? null, ttgt: (tgT(r) || {}).h ?? null, dps: (dpsOf(r.c.id) || {}).w5 ? dpsOf(r.c.id).w5.dps || dpsOf(r.c.id).w60.dps : -1, map: r.c.mapName, idle: r.missing ? null : (r.c.auto ? r.remain : -1), money: r.c.money, points: r.s && r.s.points, pot: r.missing ? null : Math.min(r.c.hpQty ?? 1e9, (r.c.mpQty ?? 1e9) * 2.5), upd: r.s ? -r.s.receivedAt : null }[k]);
+  const val = r => ({ account: r.account, name: r.c.name, lv: (r.c.lv || 0) * 1000 + (r.c.expPct || 0), hourly: r.c.hourlyExp, tnext: (lvT(r) || {}).h ?? null, ttgt: (tgT(r) || {}).h ?? null, dps: (dpsOf(r.c.id) || {}).w5 ? dpsOf(r.c.id).w5.dps || dpsOf(r.c.id).w60.dps : -1, map: r.c.mapName, idle: r.missing ? null : (r.c.auto ? r.remain : -1), money: r.c.money, mrate: r.missing ? null : mesoRate(r.c) ?? -1, points: r.s && r.s.points, pot: r.missing ? null : Math.min(r.c.hpQty ?? 1e9, (r.c.mpQty ?? 1e9) * 2.5), upd: r.s ? -r.s.receivedAt : null }[k]);
   // 依帳號排序時，有分頁的排前面
-  list.sort((a, b) => cmp(val(a), val(b)) * d || cmp(a.account, b.account) || (b.active - a.active) || cmp(a.c.name, b.c.name));
+  // 沒資料的（—）不管正排倒排都放最後
+  list.sort((a, b) => { const va = val(a), vb = val(b); return ((va == null) - (vb == null)) || cmp(va, vb) * d || cmp(a.account, b.account) || (b.active - a.active) || cmp(a.c.name, b.c.name); });
   const more = ui.ovMore;
   const th = (key, label, cls = '') => `<th data-ovsort="${key}" class="${cls}">${label}${ui.ovSort.key === key ? (ui.ovSort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
-  const xcol = tgt ? 2 : 1, ncol = (more ? 16 : 12) + xcol;
-  let h = `<table class="sticky ov"><thead><tr><th class="nosort"><input type="checkbox" id="ovAll" title="全選"></th><th class="nosort"></th>${th('account', '帳號')}${th('name', '角色')}${th('lv', '等級')}${th('hourly', '每小時經驗', 'num')}${th('tnext', '升級還要', 'num')}${tgt ? th('ttgt', `到 Lv${tgt}`, 'num') : ''}${th('dps', '實戰 DPS', 'num')}${th('map', '地圖')}${th('idle', '掛機')}${th('money', '楓幣', 'num')}${th('points', '點數', 'num')}${more ? `${th('pot', '藥水 HP／MP', 'num')}<th class="nosort num">裝備欄</th>` + '<th class="nosort num">道具</th><th class="nosort">交易ID</th>' : ''}${th('upd', '更新')}</tr></thead><tbody>`;
+  const xcol = tgt ? 2 : 1, ncol = (more ? 17 : 13) + xcol;
+  let h = `<table class="sticky ov"><thead><tr><th class="nosort"><input type="checkbox" id="ovAll" title="全選"></th><th class="nosort"></th>${th('account', '帳號')}${th('name', '角色')}${th('lv', '等級')}${th('hourly', '每小時經驗', 'num')}${th('tnext', '升級還要', 'num')}${tgt ? th('ttgt', `到 Lv${tgt}`, 'num') : ''}${th('dps', '實戰 DPS', 'num')}${th('map', '地圖')}${th('idle', '掛機')}${th('money', '楓幣', 'num')}${th('mrate', '每小時楓幣', 'num')}${th('points', '點數', 'num')}${more ? `${th('pot', '藥水 HP／MP', 'num')}<th class="nosort num">裝備欄</th>` + '<th class="nosort num">道具</th><th class="nosort">交易ID</th>' : ''}${th('upd', '更新')}</tr></thead><tbody>`;
   if (!rows.length) h += `<tr><td colspan="${ncol}" class="empty">還沒有資料。打開任一個設定檔的遊戲分頁，右下角出現「中控：已連線」就代表在回報了。</td></tr>`;
   else if (!list.length) h += `<tr><td colspan="${ncol}" class="empty">沒有符合的角色</td></tr>`;
   let lastAcc = null;
@@ -1231,6 +1240,7 @@ function renderOverview() {
       <td>${esc(c.mapName)}</td>
       <td>${idle} <span class="sm">${autoToggle(c.id)}</span></td>
       <td class="num">${short(c.money)}</td>
+      <td class="num">${(() => { const x = c.session, v = mesoRate(c); if (!x) return '<span class="dim">—</span>'; return `<span title="${esc(`本次掛機 ${hm(x.activeMs)}、賺 ${fmt(x.money)} 楓幣${c.earned ? `\n累計賺得 ${fmt(c.earned)}` : ''}`)}">${v == null ? '<span class="dim">剛開始</span>' : short(v)}<div class="dim sm">本次 ${short(x.money)}</div></span>`; })()}</td>
       <td class="num" title="點數是整個帳號共用">${typeof r.s.points === 'number' ? (r.active ? fmt(r.s.points) : `<span class="dim">${fmt(r.s.points)}</span>`) : '<span class="dim">—</span>'}</td>
       ${more ? `<td class="num" title="${esc((c.hpItem || '') + ' / ' + (c.mpItem || ''))}">${pot(c.hpQty)} <span class="dim">/</span> ${pot(c.mpQty)}</td><td class="num">${c.gearBagCount ?? '—'}</td><td class="num">${c.itemStackCount ?? '—'}</td><td class="dim">${esc(c.tradeId || '—')}</td>` : ''}
       <td class="dim">${r.s.idleOffline ? `<span class="warn" title="遊戲已進入離線掛機，畫面暫停更新">離線掛機中</span><div class="sm">資料停在 ${clock(r.s.idleOffline.since)}</div><button class="btn" data-wake="${c.id}" style="padding:1px 6px">⏏ 領取</button>` : ago(Date.now() - (r.s.receivedAt || r.s.at))}</td></tr>`;
