@@ -480,6 +480,15 @@ function createJob(body) {
   return job;
 }
 
+// 總覽「需要處理」用的小摘要：公倉用量、知識王還沒答的題目（不必等使用者打開那一頁）
+function alertSummary() {
+  const out = {};
+  const g = db.guild && db.guild.data;
+  if (g && g.capacity) out.guild = { items: Object.values(g.items || {}).filter(n => n > 0).length, itemsCap: g.capacity.items || 0, gear: (g.gear || []).length, gearCap: g.capacity.gear || 0, at: db.guild.at || 0 };
+  const st = db.quiz && db.quiz.unknown;
+  if (st) { const now = Date.now(); const xs = Object.values(st).filter(u => now - (u.at || 0) < 12 * 3600e3); out.quiz = { n: xs.length, by: [...new Set(xs.map(u => u.by).filter(Boolean))].slice(0, 6) }; }
+  return out;
+}
 function send(res, code, body, type = 'application/json; charset=utf-8') {
   res.writeHead(code, {
     'Content-Type': type,
@@ -543,7 +552,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/data') {
       const tabsOut = {}; for (const [code, m] of Object.entries(tabs)) for (const [id, t] of Object.entries(m)) if (Date.now() - t.at < TAB_LIVE_MS) tabsOut[id] = { code, at: t.at, hidden: t.hidden, off: t.off };
-      return send(res, 200, { now: Date.now(), tabs: tabsOut, chars: db.chars, dps: db.dps || {}, settings: db.settings, jobs: db.jobs.slice(-100), expTable: db.expTable || {}, idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo });
+      return send(res, 200, { now: Date.now(), tabs: tabsOut, chars: db.chars, dps: db.dps || {}, settings: db.settings, jobs: db.jobs.slice(-100), expTable: db.expTable || {}, idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo, alerts: alertSummary() });
     }
 
     if (req.method === 'POST' && url.pathname === '/api/push') {

@@ -9,7 +9,7 @@
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   .seg button { background: transparent; color: var(--dim); border: 0; border-right: 1px solid var(--line); padding: 4px 12px; cursor: pointer; font: inherit; }
   .seg button:last-child { border-right: 0; }
-  .seg button.on { background: var(--accent); color: #fff; }
+  .seg button.on { background: var(--accent-fill); color: #fff; }
   .seg button .n { opacity: .7; font-size: 12px; margin-left: 3px; }
   .bag-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 10px; }
   .bag-tools #bSearch { width: 180px; }
@@ -24,7 +24,7 @@
   .ccard .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: middle; }
   .holder { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; margin: 2px 4px 2px 0; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); font-size: 12px; cursor: pointer; user-select: none; }
   .holder:hover { border-color: var(--accent); }
-  .holder.sel { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .holder.sel { background: var(--accent-fill); border-color: var(--accent); color: #fff; }
   .holder.lk { opacity: .6; }
   #filterCard > summary { cursor: pointer; } #filterCard > summary b { color: var(--text); font-size: 13px; }
   .holder.wh { cursor: default; border-style: dashed; color: var(--dim); } .holder.wh:hover { border-color: var(--line); }
@@ -35,7 +35,7 @@
   .grid .kindlbl { grid-column: 1 / -1; color: var(--dim); font-size: 12px; margin-top: 4px; }
   .tile { position: relative; height: 52px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; }
   .tile:hover { border-color: var(--accent); }
-  .tile.sel { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); background: #22355a; }
+  .tile.sel { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); background: #1f3346; }
   .tile img { width: 32px; height: 32px; object-fit: contain; image-rendering: pixelated; }
   .tile .q { position: absolute; right: 3px; bottom: 1px; font-size: 12px; font-weight: 600; text-shadow: 0 0 3px #000, 0 0 2px #000; }
   .tile .p { position: absolute; left: 3px; top: 1px; font-size: 10px; color: var(--main); font-weight: 600; text-shadow: 0 0 3px #000; }
@@ -50,7 +50,7 @@
   .jobs-btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; cursor: pointer; font: inherit; display: inline-flex; gap: 6px; align-items: center; }
   .jobs-btn.hot { border-color: var(--warn); }
   .badge { border-radius: 10px; padding: 0 7px; font-size: 12px; font-weight: 600; }
-  .warn-b { background: var(--warn); color: #222; } .run-b { background: var(--accent); color: #fff; } .bad-b { background: var(--bad); color: #fff; }
+  .warn-b { background: var(--warn); color: #222; } .run-b { background: var(--accent-fill); color: #fff; } .bad-b { background: var(--bad); color: #fff; }
   .drawer { position: fixed; top: var(--hdr, 52px); right: 0; bottom: 0; width: min(980px, 96vw); z-index: 40; background: var(--panel); border-left: 1px solid var(--accent); box-shadow: -10px 0 30px rgba(0,0,0,.5); overflow: auto; padding: 10px 14px; }
   .drawer .dhd { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; position: sticky; top: -10px; background: var(--panel); padding: 8px 0; z-index: 2; }
   .drawer table td { white-space: normal; }
@@ -72,7 +72,7 @@
   table.ov tr.alt td { opacity: .62; } table.ov tr.alt td .cn { font-weight: 400; }
   table.ov tr.alt:hover td { opacity: 1; }
   table.ov tr.accstart td { border-top: 2px solid var(--line); }
-  table.ov tr.picked td { background: #1d2c47; }
+  table.ov tr.picked td { background: #1f3346; }
   .sm { font-size: 12px; }
   .lvl { display: inline-block; min-width: 50px; }
   .dpslink { cursor: pointer; } .dpslink:hover b { color: var(--accent); text-decoration: underline; }
@@ -82,9 +82,9 @@
   .dps-kpis div { display: flex; flex-direction: column; } .dps-kpis span { color: var(--dim); font-size: 12px; } .dps-kpis b { font-size: 17px; } .dps-kpis i { font-style: normal; color: var(--dim); font-size: 12px; }
   .dps-cols { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(260px, 1fr); gap: 24px; }
   .skrow { display: grid; grid-template-columns: 130px 1fr 52px; gap: 8px; align-items: center; font-size: 12px; margin: 3px 0; }
-  .skbar { height: 7px; background: var(--line); border-radius: 4px; overflow: hidden; } .skbar i { display: block; height: 100%; background: var(--accent); }
+  .skbar { height: 7px; background: var(--line); border-radius: 4px; overflow: hidden; } .skbar i { display: block; height: 100%; background: var(--accent-fill); }
   .expbar { display: inline-block; vertical-align: middle; width: 56px; height: 5px; background: var(--line); border-radius: 3px; margin: 0 6px; overflow: hidden; }
-  .expbar i { display: block; height: 100%; background: var(--accent); }
+  .expbar i { display: block; height: 100%; background: var(--accent-fill); }
   .ov-rules { margin: 0 0 10px; border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; background: var(--panel2); }
   .ov-rules summary { cursor: pointer; } .ov-rules .rules-body { margin-top: 8px; }
   .board { display: grid; grid-template-columns: 210px 1fr; gap: 12px; align-items: start; }
@@ -112,7 +112,7 @@
   .tile .tn { font-size: 12px; line-height: 1.15; text-align: center; padding: 3px 3px 0; color: var(--text); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   @media (max-width: 1100px) { .lanes { grid-template-columns: 1fr; } }
   .fac { position: relative; height: calc(100vh - var(--hdr, 52px) - 130px); min-height: 560px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px; cursor: grab; touch-action: none;
-    background-color: #0c121c; background-image: radial-gradient(circle, #24324a 1px, transparent 1.2px); background-size: 22px 22px; }
+    background-color: #121417; background-image: radial-gradient(circle, #2a2e33 1px, transparent 1.2px); background-size: 22px 22px; }
   .fac.panning { cursor: grabbing; }
   .fac-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
   .fac-wires { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
@@ -123,7 +123,7 @@
   .fac-wires .w.idle { stroke-dasharray: 3 6; opacity: .5; }
   .fac-wires .w.soon { stroke-dasharray: 4 7; opacity: .45; }
   .fac-wires .w.tmp { stroke-dasharray: 6 5; stroke-width: 2.5; }
-  .fac-wires .w-lbl { fill: var(--text); font-size: 12px; paint-order: stroke; stroke: #0c121c; stroke-width: 4px; }
+  .fac-wires .w-lbl { fill: var(--text); font-size: 12px; paint-order: stroke; stroke: #121417; stroke-width: 4px; }
   @keyframes wflow { to { stroke-dashoffset: -24; } }
   .fnode { display: flex; flex-direction: column; }
   .fnode .fn-bd { flex: 1; overflow: auto; min-height: 0; }
@@ -132,9 +132,9 @@
   .fnode.pulse { animation: npulse .6s ease-out; }
   @keyframes npulse { 0% { box-shadow: 0 0 0 0 rgba(224,179,65,.8); } 100% { box-shadow: 0 0 0 14px rgba(224,179,65,0); } }
   .fac-wires .w.none { display: none; }
-  .loot { position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 7px; background: rgba(15,21,32,.9); border: 1px solid var(--accent); display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 5; will-change: transform; }
+  .loot { position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 7px; background: rgba(22,24,27,.9); border: 1px solid var(--accent); display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 5; will-change: transform; }
   .loot img { width: 22px; height: 22px; object-fit: contain; image-rendering: pixelated; }
-  .loot span { font-size: 10px; } .loot b { position: absolute; right: -6px; bottom: -6px; font-size: 10px; background: var(--accent); border-radius: 6px; padding: 0 3px; }
+  .loot span { font-size: 10px; } .loot b { position: absolute; right: -6px; bottom: -6px; font-size: 10px; background: var(--accent-fill); border-radius: 6px; padding: 0 3px; }
   .loot.sold { border-color: #e0b341; } .loot.goal { border: 2px solid #ffd54a; box-shadow: 0 0 12px 3px rgba(255,213,74,.55); }
   .loot i { position: absolute; left: -8px; top: -9px; font-style: normal; font-size: 12px; }
   .recent .rc { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
@@ -156,17 +156,19 @@
   .fnode .fgoal img.ico { width: 18px; height: 18px; }
   .lane-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
   .port { position: absolute; top: 15px; width: 14px; height: 14px; border-radius: 50%; background: var(--panel); border: 2px solid var(--accent); }
-  .port.out { right: -8px; cursor: crosshair; background: var(--accent); box-shadow: 0 0 0 4px rgba(79,127,209,.25); }
+  .port.out { right: -8px; cursor: crosshair; background: var(--accent-fill); box-shadow: 0 0 0 4px rgba(90,169,230,.25); }
   .port.out:hover { transform: scale(1.25); }
   .port.in { left: -8px; } .port.out2 { right: -8px; border-color: var(--dim); }
-  .fac-hud { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 6px; align-items: center; background: rgba(15,21,32,.85); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+  .fac-hud { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 6px; align-items: center; background: rgba(22,24,27,.85); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
   img.ico { width: 22px; height: 22px; object-fit: contain; vertical-align: middle; margin-right: 4px; image-rendering: pixelated; }
   img.mico { max-width: 44px; max-height: 40px; object-fit: contain; vertical-align: middle; margin-right: 6px; image-rendering: pixelated; }
   .cell-gear img.ico { width: 26px; height: 26px; float: left; margin: 2px 6px 0 0; }
   .qbank td { vertical-align: top; }
   :root {
-    --bg: #0f1520; --panel: #182131; --panel2: #1e2a3d; --line: #2b3a52; --text: #dbe3ef; --dim: #8a99b0;
-    --accent: #4f7fd1; --good: #3fae6a; --warn: #d9a441; --bad: #e66b6b; --main: #f0c75e;
+    /* 控制室配色：石墨灰為底；正常＝灰，顏色只留給要處理的狀態（橘＝注意、紅＝停機／錯誤）；鋼藍只用在互動與選取 */
+    --bg: #16181b; --panel: #1f2226; --panel2: #26292e; --line: #33373d; --text: #dadde0; --dim: #8b9198;
+    --accent: #5aa9e6; --accent-fill: #2b679c; --good: #6dbb8a; --warn: #f0a43a; --bad: #ef5350; --main: #f0c75e;
+    --num: "SZG Num", "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif; }
@@ -188,8 +190,8 @@
   .fnode .fn-hd a[data-bdmovegrp] { margin-left: auto; cursor: pointer; }
   tr.pickrow { cursor: pointer; user-select: none; }
   tr.pickrow:hover td { background: rgba(255,255,255,.04); }
-  tr.pickrow.picked td { background: rgba(91,141,239,.16); }
-  tr.pickrow.picked:hover td { background: rgba(91,141,239,.24); }
+  tr.pickrow.picked td { background: rgba(90,169,230,.16); }
+  tr.pickrow.picked:hover td { background: rgba(90,169,230,.24); }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
   .card h3 { margin: 0 0 8px; font-size: 13px; color: var(--dim); font-weight: 600; }
   .stats-row { display: flex; gap: 24px; flex-wrap: wrap; }
@@ -200,7 +202,7 @@
   th.nosort { cursor: default; }
   /* 表頭凍結：捲動時停在頁面頂端的導覽列下方（--hdr 由程式依導覽列實際高度設定） */
   table.sticky thead th { position: sticky; top: var(--hdr, 52px); z-index: 4; box-shadow: inset 0 -1px 0 var(--line), 0 2px 4px rgba(0,0,0,.35); }
-  tr:hover td { background: #1b2638; }
+  tr:hover td { background: #24272b; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .dim { color: var(--dim); } .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
   .stale td { opacity: .55; }
@@ -213,7 +215,7 @@
   input[type=number] { width: 72px; }
   button.btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 5px; padding: 4px 10px; cursor: pointer; font: inherit; }
   button.btn:hover { border-color: var(--accent); }
-  button.btn.primary { background: var(--accent); border-color: var(--accent); }
+  button.btn.primary { background: var(--accent-fill); border-color: var(--accent-fill); color: #fff; }
   .cell-gear { min-width: 120px; white-space: normal; }
   .cell-gear .n { font-weight: 600; } .cell-gear .s { color: var(--dim); font-size: 12px; }
   .plus { color: var(--warn); }
@@ -283,7 +285,7 @@
   .sysbox > summary::-webkit-details-marker { display: none; }
   .sysbox > summary.warn { color: var(--warn); border-color: var(--warn); }
   .sysbox > summary.bad { color: var(--bad); border-color: var(--bad); }
-  .sysbox > summary.upd { color: var(--text); border-color: var(--accent); background: #1d2c47; }
+  .sysbox > summary.upd { color: var(--text); border-color: var(--accent); background: #1f3346; }
   .sys-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 50; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; width: max-content; max-width: 70vw; box-shadow: 0 10px 30px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 8px; }
   .sys-pop #updBox { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   /* 沒選東西時，浮動操作列縮成右下角的小列，不擋內容 */
@@ -291,6 +293,90 @@
   .action-bar.idle .btn { padding: 2px 8px; font-size: 12px; }
   .gd-grp { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; margin: 2px 0; }
   .gd-grp > b { width: 44px; flex: none; color: var(--dim); font-weight: 400; }
+
+  /* ===== 控制室風格（v0.34）===== */
+  /* 數字字型：Barlow Semi Condensed（SIL OFL），只含英數符號，中文自動用系統字型 */
+  @font-face { font-family: "SZG Num"; font-weight: 400 500; font-display: swap; src: url(data:font/woff2;base64,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) format("woff2"); }
+  @font-face { font-family: "SZG Num"; font-weight: 600 800; font-display: swap; src: url(data:font/woff2;base64,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) format("woff2"); }
+  td.num, .stat b, .gauge .val, .lvl b, .nfont { font-family: var(--num); font-size: 15px; letter-spacing: .01em; }
+  .card h3, section > h3 { font-weight: 500; }
+  th { font-weight: 500; }
+  header { background: var(--panel); }
+  nav button { border-radius: 0; border: 0; border-bottom: 2px solid transparent; }
+  nav button.on { background: transparent; border-color: transparent; border-bottom-color: var(--accent); }
+  .card { border-radius: 4px; }
+  /* 讀數列 */
+  #ovSummary { display: block; }
+  .gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin: -10px -12px; }
+  .gauge { padding: 10px 14px 12px; border-right: 1px solid var(--line); }
+  .gauge:last-child { border-right: 0; }
+  .gauge .lbl { color: var(--dim); font-size: 12px; }
+  .gauge .val { font-size: 30px; font-weight: 600; line-height: 1.15; }
+  .gauge .val small { font-size: 14px; color: var(--dim); font-weight: 500; margin-left: 3px; }
+  .gauge .cmp { font-size: 12px; color: var(--dim); margin-top: 4px; white-space: normal; }
+  .track { position: relative; height: 5px; background: var(--panel2); margin-top: 7px; }
+  .track i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--dim); }
+  .gauge.warn .val { color: var(--warn); } .gauge.warn .track i { background: var(--warn); }
+  .gauge.bad .val { color: var(--bad); } .gauge.bad .track i { background: var(--bad); }
+  /* 需要處理：燈號取代表情符號，沒事時只剩一行灰字 */
+  .attn, .attn.warn, .attn.bad { border-left: 1px solid var(--line); }
+  .attn.bad { box-shadow: inset 3px 0 0 var(--bad); } .attn.warn { box-shadow: inset 3px 0 0 var(--warn); }
+  .lamp { display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--dim); vertical-align: 0; }
+  .lamp.warn { background: var(--warn); border-color: var(--warn); } .lamp.bad { background: var(--bad); border-color: var(--bad); }
+  .attn-row .ic { width: 14px; }
+  .attn-ok { color: var(--dim); font-weight: 400; }
+  /* 掛機剩餘：數字＋24 小時條 */
+  .left24 { display: inline-block; width: 56px; height: 4px; background: var(--panel2); position: relative; vertical-align: middle; margin: 0 6px 0 4px; }
+  .left24 i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--dim); }
+  .left24.warn i { background: var(--warn); }
+  .idle-st { font-family: var(--num); }
+  .expbar i { background: var(--dim); }
+
+  /* ===== 公倉：狀態列＋背包 ⇄ 公倉兩欄（v0.35）===== */
+  svg.ic { width: 15px; height: 15px; vertical-align: -2px; flex: none; }
+  .g-status { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 26px; padding: 10px 14px; }
+  .g-st-name b { font-size: 15px; }
+  .g-st-cap { display: flex; gap: 18px; }
+  .g-meter { display: grid; grid-template-columns: auto auto auto; column-gap: 4px; align-items: baseline; }
+  .g-meter .lbl, .g-st-money .lbl { color: var(--dim); font-size: 12px; margin-right: 2px; }
+  .g-meter b { font-size: 18px; }
+  .g-meter .track { grid-column: 1 / -1; height: 4px; background: var(--panel2); position: relative; margin-top: 3px; }
+  .g-meter .track i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--dim); }
+  .g-meter.warn b, .g-meter.warn .track i { color: var(--warn); background: var(--warn); } .g-meter.warn b { background: none; }
+  .g-meter.bad b { color: var(--bad); } .g-meter.bad .track i { background: var(--bad); }
+  .g-st-money { display: flex; gap: 6px; align-items: baseline; } .g-st-money b { font-size: 18px; margin-right: 12px; }
+  .g-st-auto { flex: 1; min-width: 220px; line-height: 1.5; }
+  .g-st-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  .g-st-btns .btn { display: inline-flex; gap: 5px; align-items: center; }
+  .g-tools { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 0 0 8px; }
+  .g-xfer { display: grid; grid-template-columns: minmax(0, 1fr) 190px minmax(0, 1fr); gap: 10px; align-items: start; }
+  .g-pane { margin: 0; padding: 0; display: flex; flex-direction: column; min-height: 420px; }
+  .g-pane-hd { display: flex; gap: 10px; align-items: center; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  .g-pane-hd b { font-size: 14px; }
+  .g-pane-tools { padding: 6px 12px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; min-height: 38px; }
+  .g-pane-tools:empty { display: none; }
+  .g-pane-tools .bar { margin: 0; }
+  .g-list { overflow: auto; max-height: calc(100vh - var(--hdr, 52px) - 260px); }
+  .g-list table { border: 0; }
+  .g-list thead th { position: sticky; top: 0; z-index: 1; }
+  .g-mid { position: sticky; top: calc(var(--hdr, 52px) + 12px); display: flex; flex-direction: column; gap: 10px; padding-top: 50px; }
+  .g-act { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+  .g-act label { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+  .g-act select { max-width: 100%; }
+  .g-big { padding: 9px 10px; font-size: 14px; display: inline-flex; justify-content: center; gap: 6px; align-items: center; }
+  .g-sep { border-top: 1px solid var(--line); margin: 4px 0; }
+  #gwMsg { min-height: 1em; }
+  .g-drawer { width: min(860px, 96vw); }
+  .g-drawer summary .gd-lb { width: auto; margin-right: 8px; } .g-drawer h3 { color: var(--text); font-size: 14px; }
+  .g-drawer .card { border: 0; padding: 4px 0 12px; border-bottom: 1px solid var(--line); border-radius: 0; }
+  @media (max-width: 1100px) { .g-xfer { grid-template-columns: 1fr; } .g-mid { position: static; padding-top: 0; flex-direction: row; flex-wrap: wrap; } .g-act { flex-direction: row; flex-wrap: wrap; align-items: center; } }
+
+  /* ===== 背包：角色卡收合（v0.35）===== */
+  .b-charbox { margin-top: 2px; }
+  .b-charbox > summary { cursor: pointer; padding: 6px 2px; display: flex; gap: 6px; align-items: center; }
+  .b-charbox > summary::-webkit-details-marker { display: none; }
+  .b-charbox > summary::before { content: '▸'; color: var(--dim); } .b-charbox[open] > summary::before { content: '▾'; }
+  .b-charbox[open] > .char-strip { margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -455,7 +541,7 @@
         <details class="bag-adv"><summary>更多篩選</summary><div id="ffBag"></div></details>
         <details class="bag-adv rp-editor"><summary>浮動判斷基準</summary><div class="rp-body"></div></details>
       </div>
-      <div id="bChars" class="char-strip"></div>
+      <details id="bCharBox" class="b-charbox"><summary><span data-ic="backpack"></span> <span id="bCharSum">角色：全部</span> <span class="dim sm">（點開選角色；按住 Ctrl 可以多選）</span></summary><div id="bChars" class="char-strip"></div></details>
     </div>
     <div id="bagOut"></div>
     <div id="bagBar" class="action-bar" style="display:none"></div>
@@ -601,14 +687,58 @@
     <div class="card"><h3>強化結果</h3><div id="fgLog"></div></div>
   </section>
   <section id="guild">
+    <div class="card g-status" id="gStatus">
+      <div class="g-st-name" id="gsName"></div>
+      <div class="g-st-cap" id="gsCap"></div>
+      <div class="g-st-money" id="gsMoney"></div>
+      <div class="g-st-auto" id="gsAuto"></div>
+      <div class="g-st-btns"><button class="btn" id="gwRefresh" title="請一個在線的遊戲分頁讀取公會倉庫（只讀）"><span data-ic="refresh-cw"></span> 重新整理</button><button class="btn" id="gRulesOpen" title="自動存入、存入規則、浮動判斷基準"><span data-ic="settings-2"></span> 存入規則</button><button class="btn" id="gMoneyOpen" title="存入或提領楓幣、點數"><span data-ic="coins"></span> 楓幣／點數</button></div>
+    </div>
+    <div id="gGuideWrap">
     <div class="card">
       <details id="gGuideBox"><summary style="cursor:pointer"><b>📘 第一次使用：公會倉庫怎麼設定</b>　<span id="gSetupState" class="sm"></span></summary>
         <ol class="gsteps" id="gSteps"></ol>
-        <div class="dim sm">中控只會動<b>背包裡</b>沒鎖定、可交易、不是補給設定中的道具和裝備。<b>楓幣和點數</b>只有你在「④ 楓幣、點數」手動填金額、建立工作並確認後才會存入或提領，自動存入永遠不碰。存入、領取、賣出都是由那隻角色的遊戲分頁自己操作，所以那隻角色要有自己的遊戲分頁（同一個帳號可以開兩個分頁，A、B 各一個）。</div>
+        <div class="dim sm">中控只會動<b>背包裡</b>沒鎖定、可交易、不是補給設定中的道具和裝備。<b>楓幣和點數</b>只有你在上方「楓幣／點數」手動填金額、建立工作並確認後才會存入或提領，自動存入永遠不碰。存入、領取、賣出都是由那隻角色的遊戲分頁自己操作，所以那隻角色要有自己的遊戲分頁（同一個帳號可以開兩個分頁，A、B 各一個）。</div>
       </details>
     </div>
+    </div>
+    <div class="g-tools">
+      <div class="seg" id="gwTabs"><button data-gwtab="scroll">卷軸</button><button data-gwtab="use">消耗</button><button data-gwtab="etc">其他</button><button data-gwtab="gear">裝備</button></div>
+      <input id="gwQ" placeholder="搜尋名稱（兩邊一起篩）" style="width:200px" autocomplete="off">
+      <span class="dim sm">點整列選取（Shift＋點選一段）。左邊選好按「存入」，右邊選好按「領取」。</span>
+    </div>
+    <div class="g-xfer">
+      <div class="card g-pane" id="gBagPane">
+        <div class="g-pane-hd"><b>背包</b><select id="gxChars" title="看哪些角色的背包"></select><span id="gxBagInfo" class="dim sm"></span></div>
+        <div id="gxBagTools" class="g-pane-tools"></div>
+        <div id="gxBagOut" class="g-list"></div>
+      </div>
+      <div class="g-mid" id="gxMid">
+        <div class="g-act"><button class="btn primary g-big" id="gxDeposit" disabled></button>
+          <label class="sm dim" title="道具每隻角色留幾個在背包">每隻留 <input type="number" id="gxKeep" min="0" value="0" style="width:58px"> 個</label></div>
+        <div class="g-act" id="gwBar"></div>
+        <div class="dim sm" id="gwMsg"></div>
+      </div>
+      <div class="card g-pane" id="gGuildPane">
+        <div class="g-pane-hd"><b>公會倉庫</b><span id="gwInfo" class="dim sm"></span></div>
+        <div id="gwFilter" class="g-pane-tools"></div>
+        <div id="gwOut" class="g-list"></div>
+      </div>
+    </div>
+    <aside id="gRulesDrawer" class="drawer g-drawer" style="display:none">
+      <div class="dhd"><b>自動存入與存入規則</b><span class="dim" style="flex:1">手動「依規則存入」和自動存入都照這份規則，改了會自動存檔</span><button class="btn" data-gclose="gRulesDrawer">關閉 ✕</button></div>
     <div class="card">
-      <h3>① 存入規則 <span class="dim sm">手動存入和自動存入都照這份規則，改了會自動存檔</span></h3>
+      <h3>執行</h3>
+      <div class="bar"><span class="gd-lb">手動</span><button class="btn primary" id="gdCreate">依規則建立存入工作</button><span class="dim sm">建立後要在右上角「工作」按確認才會執行</span><span class="dim" id="gdMsg"></span></div>
+      <div class="bar"><span class="gd-lb">自動</span><select id="gaMode"><option value="off">關閉</option><option value="preview">試跑（只記錄會存哪些，不會存）</option><option value="deposit">自動存入（不用確認）</option></select>
+        <span>每</span><input type="number" id="gaEvery" min="10" max="1440" style="width:70px"><span>分鐘檢查一次</span>
+        <button class="btn" id="gaRun">立即檢查一次</button><span class="dim" id="gaInfo"></span></div>
+      <div class="sm" style="color:var(--dim)">自動存入只會替<b>有自己遊戲分頁</b>的角色建立工作，沒有分頁（背景掛機）的不會動；公倉快滿時會停下來。建議先用「試跑」看紀錄，確定沒問題再改成自動存入。</div>
+      <details style="margin-top:6px"><summary class="dim" style="cursor:pointer">自動存入紀錄</summary><div id="gaLog"></div></details>
+      <div id="gdPreview"></div>
+    </div>
+    <div class="card">
+      <h3>存入規則 <span class="dim sm">手動存入和自動存入都照這份規則，改了會自動存檔</span></h3>
       <div id="gdSummary" class="gd-sum"></div>
       <div class="bar"><span class="gd-lb">快速套用</span>
         <button class="btn sm" data-gdpreset="scroll" title="所有卷軸都存，其他不動">只存卷軸</button>
@@ -636,40 +766,27 @@
       <details class="rp-editor" id="gdRollBox"><summary style="cursor:pointer"><span class="gd-lb" style="display:inline-block">浮動判斷基準</span> <span class="dim sm">每個部位、每種武器要看哪些素質（物理武器看物攻、法杖看魔攻…）</span></summary><div class="rp-body"></div></details>
       <div class="bar"><span class="gd-lb">道具保留</span><span>每隻角色每種留</span><input type="number" id="gdKeep" min="0" style="width:70px"><span class="dim sm">個在背包（0＝全部存入）</span></div>
     </div>
-    <div class="card">
-      <h3>② 執行</h3>
-      <div class="bar"><span class="gd-lb">手動</span><button class="btn primary" id="gdCreate">依規則建立存入工作</button><span class="dim sm">建立後要在右上角「工作」按確認才會執行</span><span class="dim" id="gdMsg"></span></div>
-      <div class="bar"><span class="gd-lb">自動</span><select id="gaMode"><option value="off">關閉</option><option value="preview">試跑（只記錄會存哪些，不會存）</option><option value="deposit">自動存入（不用確認）</option></select>
-        <span>每</span><input type="number" id="gaEvery" min="10" max="1440" style="width:70px"><span>分鐘檢查一次</span>
-        <button class="btn" id="gaRun">立即檢查一次</button><span class="dim" id="gaInfo"></span></div>
-      <div class="sm" style="color:var(--dim)">自動存入只會替<b>有自己遊戲分頁</b>的角色建立工作，沒有分頁（背景掛機）的不會動；公倉快滿時會停下來。建議先用「試跑」看紀錄，確定沒問題再改成自動存入。</div>
-      <details style="margin-top:6px"><summary class="dim" style="cursor:pointer">自動存入紀錄</summary><div id="gaLog"></div></details>
-      <div id="gdPreview"></div>
-    </div>
-    <div class="card">
-      <h3>③ 公會倉庫內容 <span class="dim sm">領取給角色、把不要的裝備賣掉</span></h3>
-      <div class="bar"><span id="gwInfo" class="dim"></span><button class="btn" id="gwRefresh" title="請一個在線的遊戲分頁讀取公會倉庫（只讀）">↻ 重新整理</button></div>
-      <div class="bar">
-        <div class="seg" id="gwTabs"><button data-gwtab="scroll">卷軸</button><button data-gwtab="use">消耗</button><button data-gwtab="etc">其他</button><button data-gwtab="gear">裝備</button></div>
-        <input id="gwQ" placeholder="搜尋名稱" style="width:160px" autocomplete="off">
-        <span class="dim">點一下整列就能選取（再點一次取消；Shift＋點可以一次選一段），選好給哪隻角色。裝備會依職業、等級先建議一隻（等級剛好夠穿的），可以改。</span>
-      </div>
-      <div id="gwFilter"></div>
-      <div id="gwOut"></div>
-      <div class="bar" id="gwBar" style="margin-top:8px"></div>
-    </div>
+    </aside>
+    <aside id="gMoneyDrawer" class="drawer g-drawer" style="display:none">
+      <div class="dhd"><b>楓幣、點數</b><span class="dim" style="flex:1"></span><button class="btn" data-gclose="gMoneyDrawer">關閉 ✕</button></div>
     <div class="card" id="gmCard">
-      <h3>④ 楓幣、點數 <span class="dim sm">選誰要存入或提領、多少；建立後要在右上角「工作」按確認才會執行</span></h3>
+      <h3>楓幣、點數 <span class="dim sm">選誰要存入或提領、多少；建立後要在右上角「工作」按確認才會執行</span></h3>
       <div class="bar"><div class="seg" id="gmOp"><button data-gmop="deposit">存入公倉</button><button data-gmop="withdraw">從公倉提領</button></div><span id="gmInfo" class="dim"></span></div>
       <div class="bar" id="gmQuick"></div>
       <div id="gmOut"></div>
       <div class="bar" style="margin-top:8px"><button class="btn primary" id="gmCreate">建立存入工作</button><span class="dim" id="gmSum"></span><span class="dim" id="gmMsg"></span></div>
     </div>
+    </aside>
   </section>
 </main>
 
 <script>
 'use strict';
+// 圖示：Lucide（ISC License，© Lucide Icons and Contributors，https://lucide.dev）
+const ICONS = {"refresh-cw": "<path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\"/> <path d=\"M21 3v5h-5\"/> <path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\"/> <path d=\"M8 16H3v5\"/>", "settings-2": "<path d=\"M14 17H5\"/> <path d=\"M19 7h-9\"/> <circle cx=\"17\" cy=\"17\" r=\"3\"/> <circle cx=\"7\" cy=\"7\" r=\"3\"/>", "x": "<path d=\"M18 6 6 18\"/> <path d=\"m6 6 12 12\"/>", "coins": "<path d=\"M13.744 17.736a6 6 0 1 1-7.48-7.48\"/> <path d=\"M15 6h1v4\"/> <path d=\"m6.134 14.768.866-.5 2 3.464\"/> <circle cx=\"16\" cy=\"8\" r=\"6\"/>", "arrow-right": "<path d=\"M5 12h14\"/> <path d=\"m12 5 7 7-7 7\"/>", "arrow-left": "<path d=\"m12 19-7-7 7-7\"/> <path d=\"M19 12H5\"/>", "package": "<path d=\"M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z\"/> <path d=\"M12 22V12\"/> <polyline points=\"3.29 7 12 12 20.71 7\"/> <path d=\"m7.5 4.27 9 5.15\"/>", "archive": "<rect width=\"20\" height=\"5\" x=\"2\" y=\"3\" rx=\"1\"/> <path d=\"M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8\"/> <path d=\"M10 12h4\"/>", "history": "<path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\"/> <path d=\"M3 3v5h5\"/> <path d=\"M12 7v5l4 2\"/>", "circle-help": "<circle cx=\"12\" cy=\"12\" r=\"10\"/> <path d=\"M9 9.5a3 2.5 0 016 0c0 2-2 2-3 3.5\"/> <path d=\"M12 17h.01\"/>", "check": "<path d=\"M20 6 9 17l-5-5\"/>", "triangle-alert": "<path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\"/> <path d=\"M12 9v4\"/> <path d=\"M12 17h.01\"/>", "octagon-alert": "<path d=\"M12 16h.01\"/> <path d=\"M12 8v4\"/> <path d=\"M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z\"/>", "search": "<path d=\"m21 21-4.34-4.34\"/> <circle cx=\"11\" cy=\"11\" r=\"8\"/>", "warehouse": "<path d=\"M18 21V10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v11\"/> <path d=\"M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 1.132-1.803l7.95-3.974a2 2 0 0 1 1.837 0l7.948 3.974A2 2 0 0 1 22 8z\"/> <path d=\"M6 13h12\"/> <path d=\"M6 17h12\"/>", "chevron-down": "<path d=\"m6 9 6 6 6-6\"/>", "hand-coins": "<path d=\"M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17\"/> <path d=\"m7 21 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9\"/> <path d=\"m2 16 6 6\"/> <circle cx=\"16\" cy=\"9\" r=\"2.9\"/> <circle cx=\"6\" cy=\"5\" r=\"3\"/>", "backpack": "<path d=\"M4 10a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z\"/> <path d=\"M8 10h8\"/> <path d=\"M8 18h8\"/> <path d=\"M8 22v-6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v6\"/> <path d=\"M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2\"/>", "list-checks": "<path d=\"M13 5h8\"/> <path d=\"M13 12h8\"/> <path d=\"M13 19h8\"/> <path d=\"m3 17 2 2 4-4\"/> <path d=\"m3 7 2 2 4-4\"/>", "wallet": "<path d=\"M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1\"/> <path d=\"M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4\"/>"};
+const ic = (n, cls = '') => ICONS[n] ? `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>` : '';
+// 靜態 HTML 裡的 <span data-ic="名稱"></span> 換成圖示
+function fillIcons(root = document) { root.querySelectorAll('[data-ic]:not([data-icd])').forEach(el => { el.innerHTML = ic(el.dataset.ic); el.dataset.icd = '1'; }); }
 // ================= 常數 =================
 const SLOT_ORDER = ['weapon','hat','top','overall','bottom','shoes','gloves','cape','shield','earring','face','eye','pendant','ring','belt','medal'];
 const SLOT_LABEL = { weapon:'武器', hat:'帽子', top:'上衣', overall:'套服', bottom:'褲裙', shoes:'鞋子', gloves:'手套', cape:'披風', shield:'盾牌', earring:'耳環', face:'臉飾', eye:'眼飾', pendant:'項鍊', ring:'戒指', belt:'腰帶', medal:'勳章' };
@@ -875,6 +992,7 @@ function ovRows() {
 const idleState = r => r.missing ? (r.c.auto ? 'on' : 'off') : !r.c.auto ? 'off' : r.remain == null ? 'on' : r.remain <= 0 ? 'expired' : r.remain < 3600e3 ? 'soon' : 'on';
 const potLow = c => (c.hpQty != null && c.hpQty < 50) || (c.mpQty != null && c.mpQty < 20);
 // 需要處理：每一項都盡量附上一鍵處理的按鈕
+const LVORD = { bad: 0, warn: 1, info: 2 };
 function renderAttention(rows) {
   const items = [];
   const nm = list => list.map(r => esc(r.c.name)).join('、');
@@ -899,6 +1017,15 @@ function renderAttention(rows) {
   if (fail) items.push({ lv: 'bad', icon: '⚠', text: `<b>${fail}</b> 個工作失敗`, btn: `<button class="btn" data-openjobs>查看</button>` });
   const waitTab = js.filter(j => ['approved', 'running'].includes(j.status) && /分頁/.test(j.lastMsg || '') && /等待/.test(j.lastMsg || ''));
   if (waitTab.length) items.push({ lv: 'warn', icon: '🗂', text: `<b>${waitTab.length}</b> 個工作在等角色的遊戲分頁：${[...new Set(waitTab.map(j => esc((j.lastMsg.match(/等待 (\S+) 的遊戲分頁/) || [])[1] || j.fromName)))].join('、')}　<span class="dim">在那個帳號的遊戲分頁右下角按「＋ 開 某某 的分頁」，或在下表按「⇄ 切換」</span>`, btn: `<button class="btn" data-openjobs>查看</button>` });
+  // 公倉快滿（以最後一次讀到的公倉內容計算）
+  const ga = (DATA.alerts || {}).guild;
+  if (ga && (ga.gearCap || ga.itemsCap)) {
+    const pg = ga.gearCap ? ga.gear / ga.gearCap : 0, pi = ga.itemsCap ? ga.items / ga.itemsCap : 0, p = Math.max(pg, pi);
+    if (p >= 0.9) items.push({ lv: p >= 1 ? 'bad' : 'warn', text: `公倉${p >= 1 ? '<b>滿了</b>，自動存入會停下來' : '<b>快滿了</b>'}：裝備 <b>${ga.gear}／${ga.gearCap}</b> 件、道具 <b>${ga.items}／${ga.itemsCap}</b> 格　<span class="dim">${ago(Date.now() - ga.at)}讀到的</span>`, btn: `<button class="btn" data-goto="guild">開公倉</button>` });
+  }
+  // 知識王有題目等你作答
+  const qa = (DATA.alerts || {}).quiz;
+  if (qa && qa.n) items.push({ lv: 'warn', text: `知識王有 <b>${qa.n}</b> 題題庫沒有，等你作答${qa.by.length ? `：${qa.by.map(esc).join('、')}` : ''}　<span class="dim">答過的會記進題庫，下次自動作答</span>`, btn: `<button class="btn primary" data-goto="quiz">去作答</button>` });
   // 腳本版本
   const want = DATA.scriptVersion;
   const old = snaps().filter(s => isOnline(s) && want && s.scriptVersion !== want);
@@ -913,8 +1040,8 @@ function renderAttention(rows) {
   if (pendingV.length) items.push({ lv: 'info', icon: '🔄', text: `${names(pendingV)} 會在 2 分鐘內自動重新整理到 v${esc(want)}（有工作在跑時會等工作結束）。` });
   $('#ovAttn').className = 'card attn' + (items.some(i => i.lv === 'bad') ? ' bad' : items.some(i => i.lv === 'warn') ? ' warn' : ' ok');
   $('#ovAttn').innerHTML = items.length
-    ? `<h3>需要處理（${items.length}）</h3>${items.map(i => `<div class="attn-row ${i.lv}"><span class="ic">${i.icon}</span><span class="tx">${i.text}</span>${i.btn ? `<span class="act">${i.btn}</span>` : ''}</div>`).join('')}`
-    : `<div class="attn-ok">✓ 一切正常：所有角色都在掛機、遊戲分頁都有回報、沒有待確認的工作</div>`;
+    ? `<h3>需要處理（${items.length}）</h3>${items.sort((a, b) => LVORD[a.lv] - LVORD[b.lv]).map(i => `<div class="attn-row ${i.lv}"><span class="ic"><span class="lamp ${i.lv}" title="${i.lv === 'bad' ? '停機／錯誤' : i.lv === 'warn' ? '注意' : '資訊'}"></span></span><span class="tx">${i.text}</span>${i.btn ? `<span class="act">${i.btn}</span>` : ''}</div>`).join('')}`
+    : `<div class="attn-ok"><span class="lamp"></span>　全部正常：角色都在掛機、遊戲分頁都有回報、沒有待確認的工作</div>`;
 }
 function renderOverview() {
   const rows = ovRows();
@@ -929,13 +1056,18 @@ function renderOverview() {
   const totalPts = ptsKnown.reduce((a, s) => a + s.points, 0);
   const hourly = live.reduce((a, r) => a + (r.c.hourlyExp || 0), 0);
   const nTab = live.filter(r => r.active).length;
-  $('#ovSummary').innerHTML = `
-    <div class="stat"><b>${accLatest.length}</b><span>帳號（${live.length} 隻角色有資料）</span></div>
-    <div class="stat"><b class="${idleOn < live.length ? 'warn' : 'good'}">${idleOn}<span class="dim" style="font-size:13px"> / ${live.length}</span></b><span>掛機中</span></div>
-    <div class="stat"><b>${short(hourly)}</b><span>每小時經驗合計（沒有分頁的用最後一次的數字）</span></div>
-    <div class="stat" title="有自己遊戲分頁的角色：資料即時、工作直接執行。沒有分頁的在遊戲伺服器上背景掛機。${esc(TAB_HINT)}"><b class="${nTab < live.length ? '' : 'good'}">${nTab}<span class="dim" style="font-size:13px"> / ${live.length}</span></b><span>有遊戲分頁</span></div>
-    <div class="stat"><b>${short(totalMoney)}</b><span>楓幣總和（含倉庫）</span></div>
-    <div class="stat"><b>${fmt(totalPts)}</b><span>點數總和${ptsKnown.length < accLatest.length ? `（${ptsKnown.length}/${accLatest.length} 帳號有回報）` : ''}</span></div>`;
+  // 讀數列：有上限的指標才畫條；正常灰、注意橘、停機紅
+  const ga = (DATA.alerts || {}).guild;
+  const gauge = (lbl, val, unit, cmp, frac, lv = '', title = '') => `<div class="gauge ${lv}"${title ? ` title="${esc(title)}"` : ''}><div class="lbl">${lbl}</div><div class="val">${val}${unit ? `<small>${unit}</small>` : ''}</div>${frac == null ? '' : `<div class="track"><i style="width:${Math.max(0, Math.min(1, frac)) * 100}%"></i></div>`}<div class="cmp">${cmp}</div></div>`;
+  const nStop = live.length - idleOn, gp = ga && ga.gearCap ? ga.gear / ga.gearCap : null;
+  $('#ovSummary').innerHTML = `<div class="gauges">
+    ${gauge('掛機中', idleOn, `／${live.length}`, nStop ? `${nStop} 隻沒在掛機` : `${accLatest.length} 個帳號・全部運轉`, live.length ? idleOn / live.length : 0, nStop ? 'warn' : '')}
+    ${gauge('經驗產出', short(hourly), '／時', '每小時經驗合計；沒有分頁的用最後一次的數字', null)}
+    ${gauge('有遊戲分頁', nTab, `／${live.length}`, nTab < live.length ? `${live.length - nTab} 隻在伺服器背景掛機` : '全部有自己的分頁', live.length ? nTab / live.length : 0, '', TAB_HINT)}
+    ${gauge('楓幣總和', short(totalMoney), '', '含帳號倉庫', null)}
+    ${gauge('點數總和', fmt(totalPts), '', ptsKnown.length < accLatest.length ? `${ptsKnown.length}／${accLatest.length} 個帳號有回報` : '點數是整個帳號共用', null)}
+    ${ga && ga.gearCap ? gauge('公倉裝備', ga.gear, `／${ga.gearCap}`, `道具 ${ga.items}／${ga.itemsCap} 格`, gp, gp >= 1 ? 'bad' : gp >= 0.9 ? 'warn' : '') : gauge('公倉', '—', '', '還沒讀過公會倉庫', null)}
+  </div>`;
 
   // 楓幣分布
   if ($('#ovMoneyBox').open) {
@@ -971,12 +1103,12 @@ function renderOverview() {
     const accCell = k !== 'account' || newAcc ? `<input class="label-edit" data-acc="${esc(r.missing ? c.accountId : r.s.accountId)}" value="${esc(r.account)}">` : '';
     if (r.missing) {
       h += `<tr class="${cls}"><td><input type="checkbox" data-isel="${c.id}" ${sel ? 'checked' : ''}></td><td></td><td>${accCell}</td><td><div>${esc(c.name)}${switchBtn(c.id, c.accountId)}</div><div class="dim sm">${esc(c.job || '')}</div></td><td>Lv${c.lv}</td>
-        <td colspan="${3 + xcol}" class="dim">尚未同步（開它的遊戲分頁，或按「⇄ 切換」一次就會出現）</td><td>${c.auto ? '<span class="good">● 掛機中</span>' : '<span class="bad">● 未掛機</span>'} ${autoToggle(c.id)}</td><td colspan="${ncol - 9 - xcol}"></td></tr>`;
+        <td colspan="${3 + xcol}" class="dim">尚未同步（開它的遊戲分頁，或按「⇄ 切換」一次就會出現）</td><td>${c.auto ? '<span><span class="lamp"></span> 掛機中</span>' : '<span class="bad"><span class="lamp bad"></span> 未掛機</span>'} ${autoToggle(c.id)}</td><td colspan="${ncol - 9 - xcol}"></td></tr>`;
       continue;
     }
     const isMain = S.mainCharId === c.id, st = idleState(r);
-    const idle = st === 'off' ? `<span class="bad">● 未掛機</span>` : st === 'expired' ? `<span class="bad">● 已到期</span>` : r.remain == null ? `<span class="good">● 掛機中</span>`
-      : `<span class="${st === 'soon' ? 'warn' : 'good'}" title="至 ${clock(c.until)}">● 剩 ${hm(r.remain)}</span>`;
+    const idle = st === 'off' ? `<span class="bad"><span class="lamp bad"></span> 未掛機</span>` : st === 'expired' ? `<span class="bad"><span class="lamp bad"></span> 已到期</span>` : r.remain == null ? `<span><span class="lamp"></span> 掛機中</span>`
+      : `<span class="${st === 'soon' ? 'warn' : ''}" title="掛機到 ${clock(c.until)}"><span class="lamp ${st === 'soon' ? 'warn' : ''}"></span> <span class="idle-st">剩 ${hm(r.remain)}</span><span class="left24 ${st === 'soon' ? 'warn' : ''}"><i style="width:${Math.max(0, Math.min(1, r.remain / 864e5)) * 100}%"></i></span></span>`;
     const pot = q => q == null ? '<span class="dim">—</span>' : fmt(q);
     const exp = c.expPct == null ? null : Math.max(0, Math.min(100, c.expPct));
     h += `<tr class="${cls}">
@@ -1091,7 +1223,7 @@ document.addEventListener('click', async e => {
     }
   } catch (err) { alert('失敗：' + err.message); }
 });
-document.addEventListener('toggle', e => { if (e.target.id === 'ovMoneyBox' && e.target.open) renderOverview(); }, true);
+document.addEventListener('toggle', e => { if (e.target.id === 'ovMoneyBox' && e.target.open) renderOverview(); if (e.target.id === 'bCharBox') { try { localStorage.setItem('bagCharsOpen', e.target.open ? '1' : '0'); } catch (_) {} } }, true);
 document.addEventListener('change', e => { if (e.target.id === 'ovMore') { ui.ovMore = e.target.checked; try { localStorage.setItem('ovMore', ui.ovMore ? '1' : '0'); } catch (_) {} renderOverview(); } });
 document.addEventListener('input', e => { if (e.target.id === 'ovSearch') { ui.ovQ = e.target.value; renderOverview(); } });
 
@@ -1631,6 +1763,10 @@ function renderBagList() {
   $('#bKinds').innerHTML = `<button data-bkind="" class="${!b.kind ? 'on' : ''}">全部<span class="n">${all}</span></button>` +
     Object.keys(kc).sort((x, y) => kindRank(x) - kindRank(y)).map(k => `<button data-bkind="${esc(k)}" class="${b.kind === k ? 'on' : ''}">${esc(k)}<span class="n">${kc[k]}</span></button>`).join('');
   // 角色卡
+  { const picked = chars.filter(s => b.chars.has(s.char.id)), nSelAll = [...ui.bagSel].filter(id => !id.startsWith(GSID)).length;
+    $('#bCharSum').innerHTML = `角色：${picked.length ? esc(picked.slice(0, 4).map(s => s.char.name).join('、')) + (picked.length > 4 ? ` 等 ${picked.length} 隻` : '') : `全部（${chars.length} 隻）`}${nSelAll ? `<span class="good">・已選 ${nSelAll} 項</span>` : ''}`;
+    fillIcons($('#bag'));
+    const box = $('#bCharBox'); if (!box.dataset.init) { box.dataset.init = '1'; try { box.open = localStorage.getItem('bagCharsOpen') === '1'; } catch (_) {} } }
   $('#bChars').innerHTML = chars.map(s => {
     const rows = bagRows(s, true), on = !b.chars.size || b.chars.has(s.char.id), filtering = b.q.trim() || b.sellOnly || b.hideLocked;
     const nSel = bagRows(s, true, true).filter(r => ui.bagSel.has(bagSid(s.char.id, r.id))).length;
@@ -3817,17 +3953,18 @@ function renderGuideSteps() {
   const d = gdState(), a = S.guildAuto || {}, g = GUILD && GUILD.data;
   const hasJob = (DATA.jobs || []).some(j => j.kind === 'guildDeposit' && j.status === 'done');
   const steps = [
-    [!!g, `<b>確認讀得到公倉</b>：角色要已經加入公會、遊戲裡打得開公會倉庫。按下方「③ 公會倉庫內容」的「↻ 重新整理」，或在任一遊戲分頁打開公會倉庫一次。${g ? `<span class="good">已讀到：${esc(g.guildName || '公會倉庫')}</span>` : ''}`],
-    [gdHasRule(d), '<b>設定存入規則</b>（①）：想存什麼用「快速套用」最快；要挑素質就加「裝備條件」，例如浮動總和 ≥ 1 只存比標準好的。'],
-    [hasJob, '<b>先手動存一次</b>（②）：看下面的預覽確認數量，按「依規則建立存入工作」，再到右上角「工作」確認。'],
-    [a.mode === 'deposit', '<b>開自動存入</b>（②）：先選「試跑」看紀錄，沒問題再改「自動存入」，之後每隔一段時間自動把新撿到的東西存進去。'],
-    [false, '<b>領取／賣出</b>（③）：點整列選取要的東西、選給哪隻角色（裝備會依職業等級建議）；不要的裝備可以直接賣給商店。'],
+    [!!g, `<b>確認讀得到公倉</b>：角色要已經加入公會、遊戲裡打得開公會倉庫。按上方「重新整理」，或在任一遊戲分頁打開公會倉庫一次。${g ? `<span class="good">已讀到：${esc(g.guildName || '公會倉庫')}</span>` : ''}`],
+    [gdHasRule(d), '<b>設定存入規則</b>：按上方「存入規則」，用「快速套用」最快；要挑裝備就用「依部位基準達標」。'],
+    [hasJob, '<b>先存一次</b>：在左邊「背包」點選要存的東西按「存入 →」，或在「存入規則」裡按「依規則建立存入工作」。'],
+    [a.mode === 'deposit', '<b>開自動存入</b>（存入規則最上面）：先選「試跑」看紀錄，沒問題再改「自動存入」。'],
+    [false, '<b>領取／賣出</b>：在右邊「公會倉庫」點選，按「← 領取」給角色（裝備會依職業等級建議）；不要的裝備可以直接賣給商店。'],
   ];
   $('#gSteps').innerHTML = steps.map(([done, t]) => `<li class="${done ? 'done' : ''}">${t}</li>`).join('');
   const n = steps.slice(0, 4).filter(x => x[0]).length;
   $('#gSetupState').innerHTML = n >= 4 ? '<span class="good">✓ 已設定完成，自動存入中</span>' : `<span class="warn">已完成 ${n}/4 步</span>`;
   const box = $('#gGuideBox');
   if (!box.dataset.init) { box.dataset.init = '1'; box.open = n < 2; }
+  $('#gGuideWrap').style.display = n >= 3 && !box.open ? 'none' : '';
 }
 async function loadGuild(force) {
   if (!force && Date.now() - guildLoadAt < 4000) return GUILD;
@@ -3868,9 +4005,11 @@ function gearFits(g) {
     .sort((a, b) => (a.char.lv || 0) - (b.char.lv || 0)).map(s => s.char.id);
 }
 function renderGuild() {
-  loadGuild().then(() => { renderGuildOut(); renderGuildDeposit(); renderGuildAuto(); renderGuideSteps(); renderGuildMoney(); });
+  fillIcons($('#guild'));
+  loadGuild().then(() => { renderGuildStatus(); renderGuildBag(); renderGuildOut(); renderGuideSteps(); if ($('#gRulesDrawer').style.display !== 'none') { renderGuildDeposit(); renderGuildAuto(); } if ($('#gMoneyDrawer').style.display !== 'none') renderGuildMoney(); });
 }
 function renderGuildAuto() {
+  if (typeof renderGuildStatus === 'function') setTimeout(renderGuildStatus, 0);
   const a = S.guildAuto || {}, ae = document.activeElement;
   if (ae !== $('#gaMode')) $('#gaMode').value = a.mode || 'off';
   if (ae !== $('#gaEvery')) $('#gaEvery').value = a.everyMin || 30;
@@ -3888,11 +4027,11 @@ function renderGuildOut() {
   const job = (DATA.jobs || []).find(j => j.kind === 'guildView' && ['approved', 'running'].includes(j.status));
   if (!g) {
     $('#gwInfo').innerHTML = job ? `讀取中（${esc(job.fromName)}）…` : '還沒讀過公會倉庫。按「重新整理」，或在任一遊戲分頁打開公會倉庫一次。';
-    $('#gwOut').innerHTML = ''; $('#gwBar').innerHTML = ''; return;
+    $('#gwOut').innerHTML = ''; $('#gwBar').innerHTML = ''; renderGuildStatus(); renderGuildBag(); return;
   }
   const cap = g.capacity || {};
   const nItem = Object.keys(g.items || {}).length, nGear = (g.gear || []).length;
-  $('#gwInfo').innerHTML = `<b>${esc(g.guildName || '公會倉庫')}</b>　道具 ${nItem}/${cap.items || '?'} 格　裝備 ${nGear}/${cap.gear || '?'} 件　<span class="dim">更新於 ${ago(Date.now() - GUILD.at)}（${esc(GUILD.charName || '')}）${job ? '・讀取中…' : ''}</span>`;
+  $('#gwInfo').textContent = `道具 ${nItem}／${cap.items || '?'} 格・裝備 ${nGear}／${cap.gear || '?'} 件`;
   const q = ui.gw.q.trim().toLowerCase();
   let rows;
   if (ui.gw.tab !== 'gear') {
@@ -3903,13 +4042,13 @@ function renderGuildOut() {
   rows = rows.filter(r => !q || String(r.name).toLowerCase().includes(q)).sort((a, b) => cmp(a.name, b.name) || ((b.sum ?? -99) - (a.sum ?? -99)));
   ui.gw.shown = rows.map(r => r.rk);
   // 裝備頁的篩選列
-  $('#gwFilter').innerHTML = ui.gw.tab !== 'gear' ? '' : `<div class="bar" style="align-items:flex-start"><span style="width:70px">篩選</span><div>
+  if ($('#gwFilter').contains(document.activeElement) && document.activeElement.tagName === 'INPUT') { /* 正在輸入數字時不要重畫篩選列 */ } else $('#gwFilter').innerHTML = ui.gw.tab !== 'gear' ? '' : `<div class="bar" style="align-items:flex-start"><div>
     ${ui.gw.conds.map((c, i) => `<div class="bar" style="margin:2px 0"><select data-gwck="${i}"><option value="_sum" ${c.k === '_sum' ? 'selected' : ''}>浮動總和</option>${STAT_ORDER.map(k => `<option value="${k}" ${c.k === k ? 'selected' : ''}>${esc(statNames[k] || k)} 浮動</option>`).join('')}</select><select data-gwcop="${i}"><option value="ge" ${c.op !== 'le' ? 'selected' : ''}>≥</option><option value="le" ${c.op === 'le' ? 'selected' : ''}>≤</option></select><input type="number" data-gwcv="${i}" value="${esc(c.v)}" style="width:64px"><button class="btn sm" data-gwcdel="${i}">✕</button></div>`).join('')}
     <div class="bar" style="margin:2px 0"><button class="btn sm" id="gwAddCond">＋ 浮動條件</button>${ui.gw.conds.length > 1 ? `<select id="gwMode"><option value="all" ${ui.gw.mode === 'all' ? 'selected' : ''}>全部符合</option><option value="any" ${ui.gw.mode === 'any' ? 'selected' : ''}>符合任一</option></select>` : ''}
       ${rollFilterSel('gwJudge', ui.gw.judge)}<label><input type="checkbox" id="gwFresh" ${ui.gw.fresh ? 'checked' : ''}> 只看沒衝過卷的</label>
       <span class="dim">列出 ${rows.length} 件</span><button class="btn sm" id="gwPickShown">勾選目前列出的</button></div></div></div>`;
   const opt = (sel, fits) => '<option value="">（不領）</option>' + snaps().slice().sort((a, b) => cmp(a.char.name, b.char.name)).map(s => `<option value="${s.char.id}" ${sel === s.char.id ? 'selected' : ''}>${fits && fits[0] === s.char.id ? '★ ' : ''}${esc(s.char.name)} Lv${s.char.lv} ${esc(s.char.jobName || s.char.branch || '')}${fits && !fits.includes(s.char.id) ? '（不能穿）' : ''}${stateSuffix(s)}</option>`).join('');
-  let h = `<table><thead><tr><th class="nosort" style="width:24px"></th><th class="nosort">名稱</th>${ui.gw.tab !== 'gear' ? '<th class="nosort num">公倉數量</th><th class="nosort">領幾個</th>' : '<th class="nosort">強化／剩餘</th><th class="nosort">掉落浮動</th><th class="nosort" title="依浮動判斷基準：每個部位、武器種類看的素質不同">判斷</th><th class="nosort">需求</th>'}<th class="nosort">給誰</th></tr></thead><tbody>`;
+  let h = `<table><thead><tr><th class="nosort" style="width:24px"></th><th class="nosort">名稱</th>${ui.gw.tab !== 'gear' ? '<th class="nosort num">數量</th><th class="nosort">領幾個</th>' : '<th class="nosort">強化</th><th class="nosort">掉落浮動</th><th class="nosort" title="依浮動判斷基準：每個部位、武器種類看的素質不同">判斷</th><th class="nosort">給誰</th>'}</tr></thead><tbody>`;
   if (!rows.length) h += `<tr><td colspan="7" class="empty">${ui.gw.tab === 'gear' ? '沒有裝備' : '這一類沒有東西'}</td></tr>`;
   for (const r of rows.slice(0, 400)) {
     const sel = ui.gw.sel.get(r.rk);
@@ -3917,14 +4056,13 @@ function renderGuildOut() {
     const name = `${img ? `<img src="${esc(img)}" style="width:20px;height:20px;vertical-align:middle;margin-right:4px" loading="lazy">` : ''}${esc(r.name)}`;
     if (r.key) {
       h += `<tr class="pickrow ${sel ? 'picked' : ''}"><td><input type="checkbox" data-gwpick="${esc(r.rk)}" ${sel ? 'checked' : ''}></td><td title="${esc(itemTip(r.id))}">${name}</td><td class="num">${fmt(r.qty)}</td>
-        <td><input type="number" data-gwqty="${esc(r.rk)}" min="1" max="${r.qty}" value="${sel ? sel.qty : r.qty}" style="width:80px"></td>
-        <td><select data-gwto="${esc(r.rk)}">${opt(sel ? sel.target : '')}</select></td></tr>`;
+        <td><input type="number" data-gwqty="${esc(r.rk)}" min="1" max="${r.qty}" value="${sel ? sel.qty : r.qty}" style="width:80px"></td></tr>`;
     } else {
       const fits = gearFits(r.g);
       const x = EXT.items[r.id] || {};
       const req = [(x.req && x.req.Level) || x.lv ? 'Lv' + ((x.req && x.req.Level) || x.lv) : '', x.job || '全職業'].filter(Boolean).join(' ');
-      h += `<tr class="pickrow ${sel ? 'picked' : ''}"><td><input type="checkbox" data-gwpick="${esc(r.rk)}" ${sel ? 'checked' : ''}></td><td title="${esc(itemTip(r.id))}">${name}</td>
-        <td>${r.g.successes ? '+' + r.g.successes : '—'} / ${r.g.slots ?? '?'}</td><td>${rollText(rollDelta(r.g))}</td><td>${rollJudgeCell(r.g)}</td><td class="dim">${esc(req)}</td>
+      h += `<tr class="pickrow ${sel ? 'picked' : ''}"><td><input type="checkbox" data-gwpick="${esc(r.rk)}" ${sel ? 'checked' : ''}></td><td title="${esc(itemTip(r.id) + '\n需求：' + req)}">${name}</td>
+        <td title="強化次數／剩餘可衝">${r.g.successes ? '+' + r.g.successes : '—'}／${r.g.slots ?? '?'}</td><td>${rollText(rollDelta(r.g))}</td><td>${rollJudgeCell(r.g)}</td>
         <td><select data-gwto="${esc(r.rk)}" data-fits="${esc(fits.join(','))}">${opt(sel ? sel.target : (fits[0] || ''), fits)}</select></td></tr>`;
     }
   }
@@ -3933,12 +4071,133 @@ function renderGuildOut() {
   const n = ui.gw.sel.size;
   const nSellGear = [...ui.gw.sel.keys()].filter(k => k.startsWith('g:')).length;
   if (!ui.gw.seller) ui.gw.seller = S.mainCharId || '';
-  $('#gwBar').innerHTML = `<span>已勾 <b>${n}</b> 項</span><span class="dim">勾選的道具全部給</span><select id="gwAll">${opt(ui.gw.all)}</select>
-    <button class="btn primary" id="gwCreate" ${n ? '' : 'disabled'}>建立領取工作</button>
-    <span style="margin-left:14px" class="dim">或</span><button class="btn" id="gwSell" ${nSellGear ? '' : 'disabled'} style="border-color:var(--bad)">💰 賣掉勾選的 ${nSellGear} 件裝備</button><span class="dim">由</span><select id="gwSeller">${charOpt(ui.gw.seller, true)}</select><span class="dim">領出後賣給商店</span>
-    <button class="btn" id="gwNone">清除勾選</button><span class="dim" id="gwMsg"></span>`;
+  if (!($('#gwBar').contains(document.activeElement) && document.activeElement.tagName === 'SELECT')) $('#gwBar').innerHTML = `<button class="btn primary g-big" id="gwCreate" ${n ? '' : 'disabled'}>${ic('arrow-left')} 領取 ${n ? n + ' 項' : ''}</button>
+    <label class="sm dim">道具領給<select id="gwAll">${opt(ui.gw.all)}</select></label>
+    ${ui.gw.tab === 'gear' ? '<span class="dim sm">裝備照右邊每件的「給誰」（已依職業、等級建議）</span>' : ''}
+    <div class="g-sep"></div>
+    <button class="btn" id="gwSell" ${nSellGear ? '' : 'disabled'} title="由指定角色從公倉領出後馬上賣給商店">${ic('hand-coins')} ${nSellGear ? `賣掉 ${nSellGear} 件公倉裝備` : '賣掉公倉裝備'}</button>
+    <label class="sm dim">由<select id="gwSeller">${charOpt(ui.gw.seller, true)}</select>執行</label>
+    ${n ? '<button class="btn sm" id="gwNone">清除右邊選取</button>' : ''}`;
+  renderGuildStatus(); renderGuildBag();
 }
 
+// ===== 公倉頁版面：狀態列＋左右兩欄（背包 ⇄ 公倉）＋抽屜（存入規則、楓幣點數）=====
+// 參考遊戲倉庫介面：自己的背包和倉庫並排，中間的按鈕把選取的東西搬過去；規則、金錢這些少用的設定收進抽屜
+const GW_KIND = { scroll: k => k === '卷軸', use: k => k === '消耗', etc: k => k !== '卷軸' && k !== '消耗' };
+ui.gx = { chars: 'all', sel: new Set(), shown: [] };
+function gxCharList() {
+  const all = snaps().slice().sort((a, b) => cmp(accountLabel(a.accountId, a), accountLabel(b.accountId, b)) || cmp(a.char.name, b.char.name));
+  if (ui.gx.chars === 'all') return all;
+  if (ui.gx.chars === 'A' || ui.gx.chars === 'B') { const ids = new Set(groupChars(ui.gx.chars)); return all.filter(s => ids.has(s.char.id)); }
+  return all.filter(s => s.char.id === ui.gx.chars);
+}
+// 背包裡可以存進公倉的東西（沒鎖、可交易、不是補給中的）
+function gxBagRows() {
+  const tab = ui.gw.tab, q = ui.gw.q.trim().toLowerCase(), rows = [];
+  if (tab === 'gear') {
+    for (const s of gxCharList()) for (const g of s.gear || []) if (g.loc === '背包' && !g.locked && g.tradable) rows.push({ rk: 'g:' + g.uid, g, s, name: g.name, id: g.itemId, j: rollJudge(g) });
+  } else {
+    const agg = new Map();
+    for (const s of gxCharList()) for (const it of s.items || []) {
+      if (it.loc !== '背包' || !(it.tradableQty > 0) || it.supply || !GW_KIND[tab](it.kind)) continue;
+      const a = agg.get(it.key) || agg.set(it.key, { rk: 'i:' + it.key, key: it.key, name: it.name, id: it.itemId, qty: 0, who: [] }).get(it.key);
+      a.qty += it.tradableQty; a.who.push({ s, qty: it.tradableQty });
+    }
+    rows.push(...agg.values());
+  }
+  return rows.filter(r => !q || String(r.name).toLowerCase().includes(q))
+    .sort((a, b) => cmp(a.name, b.name) || ((b.j ? b.j.score : -99) - (a.j ? a.j.score : -99)));
+}
+function renderGuildBag() {
+  const sel = $('#gxChars'); if (!sel) return;
+  if (document.activeElement !== sel) {
+    const cs = snaps().slice().sort((a, b) => cmp(a.char.name, b.char.name));
+    sel.innerHTML = `<option value="all">全部角色</option><option value="A">A 組</option><option value="B">B 組</option>` + cs.map(s => `<option value="${s.char.id}">${esc(s.char.name)}${stateSuffix(s)}</option>`).join('');
+    sel.value = ui.gx.chars;
+  }
+  const rows = gxBagRows(), G = ui.gw.tab === 'gear';
+  const valid = new Set(rows.map(r => r.rk)); for (const k of [...ui.gx.sel]) if (!valid.has(k)) ui.gx.sel.delete(k);
+  ui.gx.shown = rows.map(r => r.rk);
+  const n = ui.gx.sel.size;
+  $('#gxBagInfo').textContent = `${rows.length} ${G ? '件' : '種'}可以存`;
+  $('#gxBagTools').innerHTML = `<span class="sm">已選 <b>${n}</b></span><button class="btn sm" data-gxsel="all">全選</button>${G ? '<button class="btn sm" data-gxsel="ok" title="依浮動判斷基準">選達標的</button><button class="btn sm" data-gxsel="no">選未達標的</button>' : ''}${n ? '<button class="btn sm" data-gxsel="none">清除</button>' : ''}`;
+  let h = `<table><thead><tr><th class="nosort" style="width:24px"></th><th class="nosort">名稱</th>${G ? '<th class="nosort">在誰身上</th><th class="nosort">掉落浮動</th><th class="nosort">判斷</th>' : '<th class="nosort num">可存</th><th class="nosort">在誰身上</th>'}</tr></thead><tbody>`;
+  if (!rows.length) h += `<tr><td colspan="5" class="empty">${snaps().length ? '背包裡沒有這一類可以存的東西' : '還沒有背包資料'}</td></tr>`;
+  for (const r of rows.slice(0, 500)) {
+    const on = ui.gx.sel.has(r.rk);
+    h += `<tr class="pickrow ${on ? 'picked' : ''}" data-gxpick="${esc(r.rk)}"><td><input type="checkbox" ${on ? 'checked' : ''} tabindex="-1"></td><td>${iname(r.id, r.name)}</td>` + (G
+      ? `<td>${esc(r.s.char.name)}</td><td>${rollText(rollDelta(r.g))}</td><td>${rollJudgeCell(r.g)}</td>`
+      : `<td class="num">${fmt(r.qty)}</td><td class="sm" title="${esc(r.who.map(w => `${w.s.char.name} ${fmt(w.qty)}`).join('\n'))}">${esc(r.who.map(w => w.s.char.name).slice(0, 3).join('、'))}${r.who.length > 3 ? ` 等 ${r.who.length} 隻` : ''}</td>`) + '</tr>';
+  }
+  if (rows.length > 500) h += `<tr><td colspan="5" class="dim">只顯示前 500 筆，請用搜尋縮小範圍</td></tr>`;
+  $('#gxBagOut').innerHTML = h + '</tbody></table>';
+  const b = $('#gxDeposit'); b.disabled = !n; b.innerHTML = `存入 ${n ? n + ' 項' : ''} ${ic('arrow-right')}`;
+}
+// 依左邊的選取，每隻角色各建一個存入工作（存入可以再領回，直接執行）
+function gxDepositPlan() {
+  const keep = Math.max(0, Number($('#gxKeep').value) || 0), by = new Map();
+  const P = s => by.get(s.char.id) || by.set(s.char.id, { s, items: [], gear: [] }).get(s.char.id);
+  const rows = new Map(gxBagRows().map(r => [r.rk, r]));
+  for (const rk of ui.gx.sel) {
+    const r = rows.get(rk); if (!r) continue;
+    if (r.g) P(r.s).gear.push({ uid: r.g.uid, name: r.g.name });
+    else for (const w of r.who) { const qty = w.qty - keep; if (qty > 0) P(w.s).items.push({ key: r.key, name: r.name, qty }); }
+  }
+  return [...by.values()].filter(p => p.items.length || p.gear.length);
+}
+// 一句話的規則摘要（狀態列用）
+function gdShortSummary() {
+  const d = gdState();
+  if (!gdHasRule(d)) return '<span class="warn">還沒設定</span>';
+  const what = [...d.cats].map(k => k === '裝備' ? '裝備' + ((d.conds || []).filter(condValid).length ? `（${(d.conds || []).filter(condValid).map(c => c.k === '_pass' ? gdCondKey(c.k) : `${gdCondKey(c.k)} ≥ ${c.min}`).join(d.mode === 'any' ? ' 或 ' : '、')}）` : '') : gdCatLabel(k));
+  if (d.names.size) what.push(`另挑 ${d.names.size} 種`);
+  return `${what.join('、')}・${d.chars ? d.chars.size + ' 隻角色' : '全部角色'}${Number(d.keep) > 0 ? `・每種留 ${fmt(d.keep)}` : ''}`;
+}
+function renderGuildStatus() {
+  const el = $('#gStatus'); if (!el) return;
+  const g = GUILD && GUILD.data, a = S.guildAuto || {}, cap = (g && g.capacity) || {};
+  const job = (DATA.jobs || []).find(j => j.kind === 'guildView' && ['approved', 'running'].includes(j.status));
+  const meter = (lbl, n, max) => { const p = max ? n / max : 0, lv = p >= 1 ? 'bad' : p >= 0.9 ? 'warn' : ''; return `<div class="g-meter ${lv}"><span class="lbl">${lbl}</span><b class="nfont">${fmt(n)}</b><span class="dim">／${max || '?'}</span><span class="track"><i style="width:${Math.min(100, p * 100)}%"></i></span></div>`; };
+  const autoTxt = !a.mode || a.mode === 'off' ? '<span class="dim">自動存入：關閉</span>' : a.mode === 'preview' ? '<span class="warn">自動存入：試跑中（只記錄）</span>' : `自動存入：每 ${Math.max(10, a.everyMin || 30)} 分${GUILD.autoAt ? `<span class="dim">・上次 ${clock(GUILD.autoAt)}</span>` : ''}`;
+  $('#gsName').innerHTML = g ? `<b>${esc(g.guildName || '公會倉庫')}</b> <span class="dim sm">${job ? '讀取中…' : ago(Date.now() - (GUILD.at || 0)) + '更新'}</span>` : `<b>公會倉庫</b> <span class="dim sm">${job ? '讀取中…' : '還沒讀過，按「重新整理」'}</span>`;
+  $('#gsCap').innerHTML = g ? meter('道具', Object.values(g.items || {}).filter(n => n > 0).length, cap.items) + meter('裝備', (g.gear || []).length, cap.gear) : '';
+  $('#gsMoney').innerHTML = g ? `<span class="lbl">楓幣</span><b class="nfont">${short(g.mesos || 0)}</b><span class="lbl">點數</span><b class="nfont">${fmt(g.cashPoints || 0)}</b>` : '';
+  $('#gsAuto').innerHTML = `<div>${autoTxt}</div><div class="dim sm">規則：${gdShortSummary()}</div>`;
+}
+function openGDrawer(id) { document.querySelectorAll('.g-drawer').forEach(x => { x.style.display = x.id === id ? '' : 'none'; }); if (id === 'gMoneyDrawer') renderGuildMoney(); if (id === 'gRulesDrawer') { renderGuildDeposit(); renderGuildAuto(); } }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.g-drawer').forEach(x => { x.style.display = 'none'; }); });
+document.addEventListener('change', e => { if (e.target.id === 'gxChars') { ui.gx.chars = e.target.value; ui.gx.sel.clear(); renderGuildBag(); } });
+document.addEventListener('click', async e => {
+  const t = e.target.closest('[data-gxpick],[data-gxsel],#gxDeposit,#gRulesOpen,#gMoneyOpen,[data-gclose]'); if (!t || !t.closest('#guild')) return;
+  if (t.dataset.gclose) { $('#' + t.dataset.gclose).style.display = 'none'; return; }
+  if (t.id === 'gRulesOpen') { openGDrawer('gRulesDrawer'); return; }
+  if (t.id === 'gMoneyOpen') { openGDrawer('gMoneyDrawer'); return; }
+  if (t.dataset.gxpick) {
+    const rk = t.dataset.gxpick, list = ui.gx.shown;
+    if (e.shiftKey && ui.gx.last && list.includes(ui.gx.last)) { const [i, j] = [list.indexOf(ui.gx.last), list.indexOf(rk)].sort((x, y) => x - y); for (const k of list.slice(i, j + 1)) ui.gx.sel.add(k); }
+    else if (ui.gx.sel.has(rk)) ui.gx.sel.delete(rk); else ui.gx.sel.add(rk);
+    ui.gx.last = rk; renderGuildBag(); return;
+  }
+  if (t.dataset.gxsel) {
+    const rows = gxBagRows(), m = t.dataset.gxsel;
+    if (m === 'none') ui.gx.sel.clear();
+    else for (const r of rows) if (m === 'all' || (r.j && (m === 'ok' ? r.j.ok : !r.j.ok))) ui.gx.sel.add(r.rk);
+    renderGuildBag(); return;
+  }
+  if (t.id === 'gxDeposit') {
+    const plan = gxDepositPlan();
+    if (!plan.length) { $('#gwMsg').textContent = '選取的東西扣掉保留數量後沒有可以存的'; return; }
+    const nI = plan.reduce((a, p) => a + p.items.length, 0), nG = plan.reduce((a, p) => a + p.gear.length, 0);
+    if (!confirm(`存進公會倉庫：${plan.length} 隻角色、${nI ? nI + ' 種道具' : ''}${nI && nG ? '、' : ''}${nG ? nG + ' 件裝備' : ''}\n\n${plan.map(p => `${p.s.char.name}：${[...p.items.map(x => x.name + ' ×' + fmt(x.qty)), ...p.gear.map(x => x.name)].slice(0, 6).join('、')}${p.items.length + p.gear.length > 6 ? '…' : ''}`).join('\n')}`)) return;
+    try {
+      const r = await api('/api/jobs', plan.map(p => ({ kind: 'guildDeposit', fromCharId: p.s.char.id, batches: [{ items: p.items, gear: p.gear }] })));
+      for (const j of r.jobs) await api(`/api/jobs/${j.id}/approve`); // 存入可以再領回，直接執行
+      ui.gx.sel.clear();
+      $('#gwMsg').textContent = `已開始存入（${r.jobs.length} 隻角色），進度看右上角「工作」`;
+      await poll(true); renderGuildBag();
+    } catch (err) { $('#gwMsg').textContent = '失敗：' + err.message; }
+  }
+});
 // ---- ④ 楓幣、點數（存入／提領）----
 // 楓幣每隻角色各自的；點數是整個帳號共用，所以每個帳號只有一列可以填（由那個帳號有分頁的角色執行）
 ui.gm = { op: 'deposit', mesos: {}, cash: {} };
@@ -4074,6 +4333,7 @@ function gdPlan(all) {
   return { plan, gearOk, gearNo, itemQty, gearRows };
 }
 function renderGuildDeposit() {
+  if (typeof renderGuildStatus === 'function') setTimeout(renderGuildStatus, 0);
   const d = gdState();
   const ae = document.activeElement;
   $('#gdSummary').innerHTML = gdSummary(d);
@@ -4152,9 +4412,10 @@ document.addEventListener('click', async e => {
       if (skipped.length) { $('#gwMsg').textContent = `有 ${skipped.length} 項沒選「給誰」，請先選好（或用「勾選的道具全部給」）`; return; }
       const reqs = [...by.entries()].filter(([, p]) => p.items.length || p.gear.length).map(([charId, p]) => ({ kind: 'guildWithdraw', fromCharId: charId, batches: [{ items: p.items, gear: p.gear }] }));
       if (!reqs.length) return;
-      await api('/api/jobs', reqs); ui.gw.sel.clear();
-      $('#gwMsg').textContent = `已建立 ${reqs.length} 個領取工作，請在右上角「工作」確認執行。`;
-      await poll(true); openJobs(); return;
+      const r = await api('/api/jobs', reqs); ui.gw.sel.clear();
+      for (const j of r.jobs) await api(`/api/jobs/${j.id}/approve`); // 領取可以再存回去，直接執行
+      $('#gwMsg').textContent = `已開始領取（${reqs.length} 隻角色），進度看右上角「工作」`;
+      await poll(true); renderGuildOut(); return;
     }
     if (t.dataset.gdpreset) { gdPreset(d, t.dataset.gdpreset); gdSave(); renderGuildDeposit(); renderGuideSteps(); return; }
     if (t.dataset.gdgroup) { const ids = new Set(groupChars(t.dataset.gdgroup)); d.chars = new Set(gdAllCharIds().filter(id => ids.has(id))); gdSave(); renderGuildDeposit(); return; }
