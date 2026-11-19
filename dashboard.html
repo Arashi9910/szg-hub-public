@@ -604,7 +604,7 @@
     <div class="card">
       <details id="gGuideBox"><summary style="cursor:pointer"><b>📘 第一次使用：公會倉庫怎麼設定</b>　<span id="gSetupState" class="sm"></span></summary>
         <ol class="gsteps" id="gSteps"></ol>
-        <div class="dim sm">中控只會動<b>背包裡</b>沒鎖定、可交易、不是補給設定中的道具和裝備。<b>楓幣和點數</b>只有你在「④ 存楓幣、點數」手動填金額、建立工作並逐一確認後才會存，自動存入永遠不碰。存入、領取、賣出都是由那隻角色的遊戲分頁自己操作，所以那隻角色要有自己的遊戲分頁（同一個帳號可以開兩個分頁，A、B 各一個）。</div>
+        <div class="dim sm">中控只會動<b>背包裡</b>沒鎖定、可交易、不是補給設定中的道具和裝備。<b>楓幣和點數</b>只有你在「④ 楓幣、點數」手動填金額、建立工作並確認後才會存入或提領，自動存入永遠不碰。存入、領取、賣出都是由那隻角色的遊戲分頁自己操作，所以那隻角色要有自己的遊戲分頁（同一個帳號可以開兩個分頁，A、B 各一個）。</div>
       </details>
     </div>
     <div class="card">
@@ -659,10 +659,9 @@
       <div class="bar" id="gwBar" style="margin-top:8px"></div>
     </div>
     <div class="card" id="gmCard">
-      <h3>④ 存楓幣、點數 <span class="dim sm">選誰要存、存多少；建立後要在右上角「工作」逐一按確認才會執行（「全部確認」不包含這個）</span></h3>
-      <div class="bar"><span id="gmInfo" class="dim"></span></div>
-      <div class="bar"><span class="gd-lb">快速填入</span><span>楓幣：每隻保留</span><input type="number" id="gmKeep" min="0" placeholder="例 100000000" style="width:130px"><button class="btn sm" id="gmFillMesos">其餘全部存</button>
-        <span style="margin-left:10px">點數：</span><button class="btn sm" id="gmFillCash">每個帳號全部存</button><button class="btn sm" id="gmClear">清空金額</button></div>
+      <h3>④ 楓幣、點數 <span class="dim sm">選誰要存入或提領、多少；建立後要在右上角「工作」按確認才會執行</span></h3>
+      <div class="bar"><div class="seg" id="gmOp"><button data-gmop="deposit">存入公倉</button><button data-gmop="withdraw">從公倉提領</button></div><span id="gmInfo" class="dim"></span></div>
+      <div class="bar" id="gmQuick"></div>
       <div id="gmOut"></div>
       <div class="bar" style="margin-top:8px"><button class="btn primary" id="gmCreate">建立存入工作</button><span class="dim" id="gmSum"></span><span class="dim" id="gmMsg"></span></div>
     </div>
@@ -1325,7 +1324,7 @@ const JOB_STATUS = { pending: ['待確認', 'warn'], approved: ['排隊中', '']
 const JOB_KIND = { collect: '收集', give: '分發', sell: '賣出', lock: '鎖定', unlock: '解鎖' };
 const BAG_KINDS = ['sell', 'lock', 'unlock', 'forge'];
 JOB_KIND.forge = '強化';
-Object.assign(JOB_KIND, { guildDeposit: '存入公倉', guildWithdraw: '公倉領取', guildView: '查看公倉', guildSell: '公倉賣出', guildMoney: '存楓幣／點數到公倉' });
+Object.assign(JOB_KIND, { guildDeposit: '存入公倉', guildWithdraw: '公倉領取', guildView: '查看公倉', guildSell: '公倉賣出', guildMoney: '公倉楓幣／點數' });
 BAG_KINDS.push('guildDeposit', 'guildWithdraw', 'guildView', 'guildSell', 'guildMoney');
 const giveDraft = { items: {}, gear: new Set() };
 const emptyFF = () => ({ kinds: [], incKeys: [], excKeys: [], gear: 'all', lock: 'all' });
@@ -1480,7 +1479,7 @@ function renderJobs(sel, filterFn) {
       !isOnline(fromS) && `${j.fromName} 離線`, !bag && !isOnline(toS) && `${j.toName} 離線`,
       isOnline(fromS) && !hasTab(j.fromCharId) && j.kind !== 'idle' && `${j.fromName} 沒有自己的遊戲分頁（開分頁或切換過去）`,
       !bag && isOnline(toS) && !hasTab(j.toCharId) && `${j.toName} 沒有自己的遊戲分頁（開分頁或切換過去）`].filter(Boolean) : [];
-    const detail = j.batches.map((b, i) => `<div>${bag ? '' : `<b>第 ${i + 1} 批</b>：`}${[...(b.items || []).map(x => esc(x.name) + (x.qty === 'ALL' ? '（全部，最多 9999）' : ' ×' + fmt(x.qty))), ...(b.gear || []).map(g => esc(g.name))].join('、') || (b.mesos || b.cash ? '' : '—')}${b.mesos ? `存入公倉：楓幣 <b>${fmt(b.mesos)}</b>　` : ''}${b.cash ? `存入公倉：點數 <b>${fmt(b.cash)}</b>` : ''}${b.money ? '　＋' + (b.money === 'ALL' ? `楓幣（保留 ${b.keepPct || 0}%，其餘轉出）` : '楓幣 ' + fmt(b.money)) : ''}</div>`).join('');
+    const detail = j.batches.map((b, i) => `<div>${bag ? '' : `<b>第 ${i + 1} 批</b>：`}${[...(b.items || []).map(x => esc(x.name) + (x.qty === 'ALL' ? '（全部，最多 9999）' : ' ×' + fmt(x.qty))), ...(b.gear || []).map(g => esc(g.name))].join('、') || (b.mesos || b.cash ? '' : '—')}${b.mesos ? `${b.op === 'withdraw' ? '從公倉提領' : '存入公倉'}：楓幣 <b>${fmt(b.mesos)}</b>　` : ''}${b.cash ? `${b.op === 'withdraw' ? '從公倉提領' : '存入公倉'}：點數 <b>${fmt(b.cash)}</b>` : ''}${b.money ? '　＋' + (b.money === 'ALL' ? `楓幣（保留 ${b.keepPct || 0}%，其餘轉出）` : '楓幣 ' + fmt(b.money)) : ''}</div>`).join('');
     const logs = (j.log || []).slice(-30).reverse().map(l => `<div><span class="dim">${new Date(l.at).toLocaleTimeString('zh-TW')}</span> ${esc(l.msg)}${l.n > 1 ? ` <span class="dim">×${l.n}</span>` : ''}</div>`).join('');
     h += `<tr><td class="dim">${clock(j.createdAt)}</td><td class="${/sell/i.test(j.kind) || j.kind === 'forge' ? 'warn' : ''}">${JOB_KIND[j.kind] || j.kind}</td><td>${bag ? esc(j.fromName) : `${esc(j.fromName)} → ${esc(j.toName)}`}</td>
       <td class="wrap">${[nItems && nItems + ' 種道具', nGear && nGear + ' 件裝備', money].filter(Boolean).join('、')}${j.estimate ? `<div class="${j.kind === 'forge' ? 'warn' : 'dim'}">${j.kind === 'forge' ? '最多花費' : '估計'} ${short(j.estimate)} 楓幣</div>` : ''}<details><summary class="dim">明細</summary>${detail}</details></td>
@@ -1962,6 +1961,11 @@ document.addEventListener('click', async e => {
       if (sells && !confirm(`其中有 ${sells} 個「賣出」工作，賣出後無法復原。確定全部（${n} 個）確認執行？`)) return;
       const forges = (DATA.jobs || []).filter(j => j.status === 'pending' && j.kind === 'forge');
       if (forges.length && !confirm(`其中有 ${forges.length} 個「強化」工作，最多花費 ${short(forges.reduce((t, j) => t + (j.estimate || 0), 0))} 楓幣，衝卷無法復原。確定執行？`)) return;
+      const money = (DATA.jobs || []).filter(j => j.status === 'pending' && j.kind === 'guildMoney');
+      if (money.length) {
+        const sum = op => { const xs = money.filter(j => (j.batches[0].op || 'deposit') === op); return xs.length ? `${op === 'withdraw' ? '提領' : '存入'}：楓幣 ${fmt(xs.reduce((t, j) => t + (j.batches[0].mesos || 0), 0))}、點數 ${fmt(xs.reduce((t, j) => t + (j.batches[0].cash || 0), 0))}（${xs.length} 個）` : ''; };
+        if (!confirm(`其中有 ${money.length} 個公倉楓幣／點數工作：\n${[sum('deposit'), sum('withdraw')].filter(Boolean).join('\n')}\n確定全部（${n} 個）確認執行？`)) return;
+      }
       await api('/api/jobs/approve-all'); await poll(true);
     }
     if (t.dataset && t.dataset.act === 'approve') { /* handled above */ }
@@ -3699,8 +3703,7 @@ const isWeaponType = t => WEAPON_PHYS.includes(t) || WEAPON_MAGIC.includes(t);
 function rollProfileDefault(t) {
   if (WEAPON_MAGIC.includes(t)) return { stats: ['incMAD'], min: 1 };
   if (WEAPON_PHYS.includes(t)) return { stats: ['incPAD'], min: 1 };
-  if (t === 'gloves') return { stats: ['incPAD', 'incSTR', 'incDEX', 'incINT', 'incLUK'], min: 1 };
-  return { stats: ['incSTR', 'incDEX', 'incINT', 'incLUK', 'incPAD', 'incMAD'], min: 1 };
+  return { stats: ['incSTR', 'incDEX', 'incINT', 'incLUK'], min: 1 }; // 防具、飾品（含手套）看四屬
 }
 function rollProfile(t) { const p = (S.rollProfiles || {})[t]; return p && Array.isArray(p.stats) ? { stats: p.stats, min: Number(p.min) || 0 } : rollProfileDefault(t); }
 // 回傳 { score, ok, prof, rel }；算不出浮動（很舊的掉落）回傳 null。rel＝這件身上有沒有基準裡的素質
@@ -3742,8 +3745,8 @@ function rollEditorHTML() {
       <td class="wrap">${STAT_ORDER.map(k => `<span class="holder ${p.stats.includes(k) ? 'sel' : ''}" data-rpstat="${t}|${k}">${esc(statNames[k] || k)}</span>`).join('')}</td>
       <td>分數 ≥ <input type="number" data-rpmin="${t}" value="${p.min}" style="width:56px"></td>
       <td>${custom ? `<button class="btn sm" data-rpreset="${t}">還原預設</button>` : '<span class="dim sm">預設</span>'}</td></tr>`; };
-  return `<div class="dim sm" style="margin:4px 0 6px">點素質切換要不要算進分數。分數＝那些素質的掉落浮動加總（例：雙手棍只看物攻，物攻 +2 就是 2 分）。達標＝分數 ≥ 門檻。存入規則、公倉篩選、背包條列都用這份。</div>
-    <div class="bar"><button class="btn sm" data-rpbulk="phys">把第一種物理武器的設定套用到所有物理武器</button><button class="btn sm" data-rpbulk="armor">把帽子的設定套用到所有防具（手套、盾牌除外）</button><button class="btn sm" data-rpbulk="reset">全部還原預設</button></div>
+  return `<div class="dim sm" style="margin:4px 0 6px">點素質切換要不要算進分數。分數＝那些素質的掉落浮動加總（例：雙手棍只看物攻，物攻 +2 就是 2 分；防具預設看力量、敏捷、智力、幸運）。達標＝分數 ≥ 門檻。存入規則、公倉篩選、背包條列都用這份。</div>
+    <div class="bar"><button class="btn sm" data-rpbulk="phys">把第一種物理武器的設定套用到所有物理武器</button><button class="btn sm" data-rpbulk="armor">把帽子的設定套用到所有防具、飾品</button><button class="btn sm" data-rpbulk="reset">全部還原預設</button></div>
     <table class="rp-table"><thead><tr><th class="nosort">種類</th><th class="nosort">要看的素質</th><th class="nosort">門檻</th><th class="nosort"></th></tr></thead><tbody>
     <tr><td colspan="4" class="dim sm">武器</td></tr>${weapons.map(row).join('') || '<tr><td colspan="4" class="dim">還沒看到武器</td></tr>'}
     <tr><td colspan="4" class="dim sm">防具、飾品</td></tr>${armor.map(row).join('')}</tbody></table>`;
@@ -3758,7 +3761,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.rpreset) delete P[t.dataset.rpreset];
   else if (t.dataset.rpbulk === 'reset') { if (!confirm('把所有部位的浮動判斷基準還原成預設？')) return; for (const k of Object.keys(P)) delete P[k]; }
   else if (t.dataset.rpbulk === 'phys') { const { weapons } = rollEditorTypes(); const src = weapons.find(x => WEAPON_PHYS.includes(x)); if (!src) return; const p = rollProfile(src); for (const x of WEAPON_PHYS) P[x] = { stats: [...p.stats], min: p.min }; }
-  else if (t.dataset.rpbulk === 'armor') { const p = rollProfile('hat'); for (const x of ARMOR_ORDER) if (!['hat', 'gloves', 'shield'].includes(x)) P[x] = { stats: [...p.stats], min: p.min }; }
+  else if (t.dataset.rpbulk === 'armor') { const p = rollProfile('hat'); for (const x of ARMOR_ORDER) if (x !== 'hat') P[x] = { stats: [...p.stats], min: p.min }; }
   rollSave(P);
 });
 document.addEventListener('change', e => {
@@ -3936,9 +3939,9 @@ function renderGuildOut() {
     <button class="btn" id="gwNone">清除勾選</button><span class="dim" id="gwMsg"></span>`;
 }
 
-// ---- ④ 存楓幣、點數 ----
+// ---- ④ 楓幣、點數（存入／提領）----
 // 楓幣每隻角色各自的；點數是整個帳號共用，所以每個帳號只有一列可以填（由那個帳號有分頁的角色執行）
-ui.gm = { mesos: {}, cash: {} };
+ui.gm = { op: 'deposit', mesos: {}, cash: {} };
 function gmRows() {
   const out = [], byAcc = {};
   for (const s of snaps()) (byAcc[s.accountId] = byAcc[s.accountId] || []).push(s);
@@ -3949,20 +3952,29 @@ function gmRows() {
   }
   return out;
 }
+const gmW = () => ui.gm.op === 'withdraw';
+const gmTax = () => { const g = GUILD && GUILD.data; return g && typeof g.taxPercent === 'number' ? g.taxPercent : 5; };
 function renderGuildMoney() {
   const el = $('#gmOut'); if (!el) return;
-  const g = GUILD && GUILD.data;
-  $('#gmInfo').innerHTML = g ? `公倉目前：楓幣 <b>${fmt(g.mesos || 0)}</b>、點數 <b>${fmt(g.cashPoints || 0)}</b>　<span class="dim">公會稅率 ${g.taxPercent ?? '?'}%（遊戲在提領時會另外確認稅金）・${ago(Date.now() - (GUILD.at || 0))}讀到的</span>` : '還沒讀過公會倉庫：先在下方 ③ 按「↻ 重新整理」。';
+  const g = GUILD && GUILD.data, W = gmW();
+  document.querySelectorAll('#gmOp button').forEach(b => b.classList.toggle('on', b.dataset.gmop === ui.gm.op));
+  $('#gmInfo').innerHTML = g ? `公倉目前：楓幣 <b>${fmt(g.mesos || 0)}</b>、點數 <b>${fmt(g.cashPoints || 0)}</b>　<span class="dim">公會稅率 ${gmTax()}%${W ? '（提領會被扣稅，實際拿到的金額寫在工作紀錄）' : ''}・${ago(Date.now() - (GUILD.at || 0))}讀到的</span>` : '還沒讀過公會倉庫：先在上方 ③ 按「↻ 重新整理」。';
+  $('#gmCreate').textContent = W ? '建立提領工作' : '建立存入工作';
+  if (!$('#gmQuick').contains(document.activeElement)) $('#gmQuick').innerHTML = W
+    ? `<span class="gd-lb">提領給誰</span><span class="dim sm">在要拿到錢的角色那一列填金額；點數會進那個帳號。合計不能超過公倉餘額。</span><button class="btn sm" id="gmClear">清空金額</button>`
+    : `<span class="gd-lb">快速填入</span><span>楓幣：每隻保留</span><input type="number" id="gmKeep" min="0" placeholder="例 100000000" style="width:130px"><button class="btn sm" id="gmFillMesos">其餘全部存</button>
+       <span style="margin-left:10px">點數：</span><button class="btn sm" id="gmFillCash">每個帳號全部存</button><button class="btn sm" id="gmClear">清空金額</button>`;
   if (el.contains(document.activeElement)) { gmSumUpdate(); return; }
-  const rows = gmRows();
-  let h = `<table><thead><tr><th class="nosort">帳號</th><th class="nosort">角色</th><th class="nosort num">身上楓幣</th><th class="nosort">存入楓幣</th><th class="nosort num">帳號點數</th><th class="nosort">存入點數</th></tr></thead><tbody>`;
+  const rows = gmRows(), gm = g ? g.mesos || 0 : 0, gc = g ? g.cashPoints || 0 : 0;
+  let h = `<table><thead><tr><th class="nosort">帳號</th><th class="nosort">角色</th><th class="nosort num">身上楓幣</th><th class="nosort">${W ? '提領楓幣' : '存入楓幣'}</th><th class="nosort num">帳號點數</th><th class="nosort">${W ? '提領點數' : '存入點數'}</th></tr></thead><tbody>`;
   for (const r of rows) {
     const c = r.s.char, id = c.id, m = ui.gm.mesos[id] || '', p = ui.gm.cash[id] || '';
+    const maxM = W ? gm : c.money || 0, maxC = W ? gc : r.pts;
     h += `<tr class="${r.first ? 'accstart' : ''}"><td class="dim">${r.first ? esc(r.acc) : ''}</td><td>${esc(c.name)}${stateSuffix(r.s) ? ` <span class="dim sm">${esc(stateSuffix(r.s).trim())}</span>` : ''}</td>
       <td class="num">${fmt(c.money || 0)}</td>
-      <td><input type="number" min="0" max="${c.money || 0}" data-gmm="${id}" value="${esc(m)}" style="width:140px" placeholder="0"> <button class="btn sm" data-gmall="${id}">全部</button></td>
+      <td><input type="number" min="0" max="${maxM}" data-gmm="${id}" value="${esc(m)}" style="width:140px" placeholder="0"> <button class="btn sm" data-gmall="${id}" title="${W ? '填入公倉全部楓幣' : '填入身上全部楓幣'}">全部</button></td>
       <td class="num">${r.first ? (typeof r.pts === 'number' ? fmt(r.pts) : '<span class="dim">—</span>') : ''}</td>
-      <td>${r.first && typeof r.pts === 'number' ? `<input type="number" min="0" max="${r.pts}" data-gmc="${id}" value="${esc(p)}" style="width:110px" placeholder="0"> <button class="btn sm" data-gmcall="${id}">全部</button>` : ''}</td></tr>`;
+      <td>${r.first && (typeof r.pts === 'number' || W) ? `<input type="number" min="0" max="${maxC ?? 0}" data-gmc="${id}" value="${esc(p)}" style="width:110px" placeholder="0"> <button class="btn sm" data-gmcall="${id}" title="${W ? '填入公倉全部點數' : '填入帳號全部點數'}">全部</button>` : ''}</td></tr>`;
   }
   el.innerHTML = h + '</tbody></table>';
   gmSumUpdate();
@@ -3970,7 +3982,10 @@ function renderGuildMoney() {
 function gmSumUpdate() {
   const tm = Object.values(ui.gm.mesos).reduce((a, v) => a + (Number(v) || 0), 0), tc = Object.values(ui.gm.cash).reduce((a, v) => a + (Number(v) || 0), 0);
   const n = new Set([...Object.keys(ui.gm.mesos).filter(k => Number(ui.gm.mesos[k]) > 0), ...Object.keys(ui.gm.cash).filter(k => Number(ui.gm.cash[k]) > 0)]).size;
-  const el = $('#gmSum'); if (el) el.innerHTML = n ? `合計：楓幣 <b>${fmt(tm)}</b>、點數 <b>${fmt(tc)}</b>，${n} 隻角色` : '還沒有填金額';
+  const tx = gmTax(), net = v => Math.floor(v * (100 - tx) / 100);
+  const el = $('#gmSum'); if (el) el.innerHTML = !n ? '還沒有填金額' : gmW()
+    ? `合計提領：楓幣 <b>${fmt(tm)}</b>、點數 <b>${fmt(tc)}</b>，${n} 隻角色　<span class="dim">扣 ${tx}% 稅後約拿到楓幣 ${fmt(net(tm))}${tc ? '、點數 ' + fmt(net(tc)) : ''}（實際以遊戲為準）</span>`
+    : `合計存入：楓幣 <b>${fmt(tm)}</b>、點數 <b>${fmt(tc)}</b>，${n} 隻角色`;
 }
 document.addEventListener('input', e => {
   const t = e.target; if (!t.dataset) return;
@@ -3978,24 +3993,33 @@ document.addEventListener('input', e => {
   if (t.dataset.gmc) { const v = Math.max(0, Math.floor(Number(t.value) || 0)); if (v) ui.gm.cash[t.dataset.gmc] = v; else delete ui.gm.cash[t.dataset.gmc]; gmSumUpdate(); }
 });
 document.addEventListener('click', async e => {
-  const t = e.target.closest('#gmFillMesos,#gmFillCash,#gmClear,#gmCreate,[data-gmall],[data-gmcall]'); if (!t) return;
-  const rows = gmRows();
-  if (t.dataset.gmall) { const s = DATA.chars[t.dataset.gmall]; if (s && s.char.money) ui.gm.mesos[s.char.id] = s.char.money; }
-  else if (t.dataset.gmcall) { const r = rows.find(x => x.s.char.id === t.dataset.gmcall); if (r && r.pts) ui.gm.cash[r.s.char.id] = r.pts; }
+  const t = e.target.closest('#gmFillMesos,#gmFillCash,#gmClear,#gmCreate,[data-gmall],[data-gmcall],[data-gmop]'); if (!t) return;
+  if (t.dataset.gmop || (t.id === 'gmCreate' && gmW())) await loadGuild(true); // 提領要用最新的公倉餘額
+  const rows = gmRows(), W = gmW(), g = (GUILD && GUILD.data) || {};
+  if (t.dataset.gmop) { if (t.dataset.gmop !== ui.gm.op) ui.gm = { op: t.dataset.gmop, mesos: {}, cash: {} }; $('#gmMsg').textContent = ''; }
+  else if (t.dataset.gmall) { const s = DATA.chars[t.dataset.gmall], v = W ? g.mesos || 0 : s && s.char.money; if (W) ui.gm.mesos = {}; if (v) ui.gm.mesos[t.dataset.gmall] = v; }
+  else if (t.dataset.gmcall) { const r = rows.find(x => x.s.char.id === t.dataset.gmcall), v = W ? g.cashPoints || 0 : r && r.pts; if (W) ui.gm.cash = {}; if (v) ui.gm.cash[t.dataset.gmcall] = v; }
   else if (t.id === 'gmFillMesos') { const keep = Math.max(0, Number($('#gmKeep').value) || 0); for (const r of rows) { const v = (r.s.char.money || 0) - keep; if (v > 0) ui.gm.mesos[r.s.char.id] = v; else delete ui.gm.mesos[r.s.char.id]; } }
   else if (t.id === 'gmFillCash') { for (const r of rows) if (r.first && r.pts > 0) ui.gm.cash[r.s.char.id] = r.pts; }
-  else if (t.id === 'gmClear') { ui.gm = { mesos: {}, cash: {} }; }
+  else if (t.id === 'gmClear') { ui.gm = { op: ui.gm.op, mesos: {}, cash: {} }; }
   else if (t.id === 'gmCreate') {
     const ids = [...new Set([...Object.keys(ui.gm.mesos), ...Object.keys(ui.gm.cash)])].filter(id => (Number(ui.gm.mesos[id]) || 0) > 0 || (Number(ui.gm.cash[id]) || 0) > 0);
     if (!ids.length) { $('#gmMsg').textContent = '還沒有填金額'; return; }
-    const over = ids.filter(id => (Number(ui.gm.mesos[id]) || 0) > ((DATA.chars[id] || {}).char || {}).money);
-    if (over.length) { $('#gmMsg').textContent = '超過身上楓幣：' + over.map(id => DATA.chars[id].char.name).join('、'); return; }
+    const tm = ids.reduce((a, id) => a + (Number(ui.gm.mesos[id]) || 0), 0), tc = ids.reduce((a, id) => a + (Number(ui.gm.cash[id]) || 0), 0);
+    if (W) {
+      if (!GUILD || !GUILD.data) { $('#gmMsg').textContent = '還沒讀過公倉，先按 ③ 的「↻ 重新整理」'; return; }
+      if (tm > (g.mesos || 0) || tc > (g.cashPoints || 0)) { $('#gmMsg').textContent = `超過公倉餘額（楓幣 ${fmt(g.mesos || 0)}、點數 ${fmt(g.cashPoints || 0)}）`; return; }
+    } else {
+      const over = ids.filter(id => (Number(ui.gm.mesos[id]) || 0) > ((DATA.chars[id] || {}).char || {}).money);
+      if (over.length) { $('#gmMsg').textContent = '超過身上楓幣：' + over.map(id => DATA.chars[id].char.name).join('、'); return; }
+    }
+    const verb = W ? '提領' : '存入';
     const lines = ids.map(id => `${DATA.chars[id].char.name}：${ui.gm.mesos[id] ? '楓幣 ' + fmt(ui.gm.mesos[id]) : ''}${ui.gm.mesos[id] && ui.gm.cash[id] ? '、' : ''}${ui.gm.cash[id] ? '點數 ' + fmt(ui.gm.cash[id]) : ''}`);
-    if (!confirm(`建立 ${ids.length} 個存入工作（建立後還要在「工作」逐一確認才會執行）：\n\n${lines.join('\n')}`)) return;
+    if (!confirm(`建立 ${ids.length} 個${verb}工作（建立後還要在「工作」確認才會執行）：\n\n${lines.join('\n')}${W ? `\n\n提領會被扣公會稅 ${gmTax()}%。` : ''}`)) return;
     try {
-      await api('/api/jobs', ids.map(id => ({ kind: 'guildMoney', fromCharId: id, batches: [{ mesos: Number(ui.gm.mesos[id]) || 0, cash: Number(ui.gm.cash[id]) || 0 }] })));
-      ui.gm = { mesos: {}, cash: {} };
-      $('#gmMsg').textContent = `已建立 ${ids.length} 個工作，請到右上角「工作」逐一確認`;
+      await api('/api/jobs', ids.map(id => ({ kind: 'guildMoney', fromCharId: id, batches: [{ op: ui.gm.op, mesos: Number(ui.gm.mesos[id]) || 0, cash: Number(ui.gm.cash[id]) || 0 }] })));
+      ui.gm = { op: ui.gm.op, mesos: {}, cash: {} };
+      $('#gmMsg').textContent = `已建立 ${ids.length} 個${verb}工作，請到右上角「工作」確認`;
       poll(true);
     } catch (err) { $('#gmMsg').textContent = '失敗：' + err.message; }
   }

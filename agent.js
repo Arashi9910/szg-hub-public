@@ -1387,32 +1387,38 @@ function agentMain(ctx) {
       await report(job, { event: 'log', msg: `已${label} ${rows.length} 項：${names.slice(0, 30).join('、')}${names.length > 30 ? '…' : ''}` });
       return report(job, { event: 'batchDone' });
     }
-    // 存楓幣／點數到公倉：遊戲格式 {type:'guildWarehouseMesos'|'guildWarehouseCash', op:'deposit', amount, characterId}
-    // 金錢動作不自動重試（避免回應遺失時重複存入）；存之前先讀一次公倉，存完比對公倉餘額
+    // 公倉楓幣／點數：遊戲格式 {type:'guildWarehouseMesos'|'guildWarehouseCash', op:'deposit'|'withdraw', amount, characterId}
+    // 金錢動作不自動重試（避免回應遺失時重複執行）；先讀一次公倉，存入檢查身上夠、提領檢查公倉夠，做完比對公倉與身上的餘額（提領會被扣公會稅）
     async function runGuildMoney(job, c) {
-      const b = job.batches[0] || {};
-      const st = readState() || {}, ch = (st.character && st.character.id === c.id ? st.character : c) || {};
-      const pts = (() => { const v = st.cashPoints != null ? st.cashPoints : (ch.cashPoints != null ? ch.cashPoints : ch.points); return typeof v === 'number' ? v : (v && typeof v.balance === 'number' ? v.balance : null); })();
-      const have = { mesos: Number(ch.money) || 0, cash: pts };
+      const b = job.batches[0] || {}, op = b.op === 'withdraw' ? 'withdraw' : 'deposit', verb = op === 'withdraw' ? '提領' : '存入';
+      const ptsOf = (st, ch) => { const v = st && st.cashPoints != null ? st.cashPoints : (ch && ch.cashPoints != null ? ch.cashPoints : ch && ch.points); return typeof v === 'number' ? v : (v && typeof v.balance === 'number' ? v.balance : null); };
+      const mine = st => { const ch = st && st.character && st.character.id === c.id ? st.character : null; return { mesos: ch ? Number(ch.money) || 0 : null, cash: ptsOf(st, ch) }; };
+      let have = mine(readState() || {});
+      if (have.mesos == null) have.mesos = Number(c.money) || 0;
       let before = null;
       try { const v = await gameRetry({ type: 'guildWarehouseView', characterId: c.id }); before = v && v.summary && v.summary.guildWarehouse; if (before) postGuild(v, c); } catch (_) {}
-      if (!before) return report(job, { event: 'error', msg: '讀不到公會倉庫（可能還沒加入公會），沒有存入' });
-      const done = [];
+      if (!before) return report(job, { event: 'error', msg: `讀不到公會倉庫（可能還沒加入公會），沒有${verb}` });
+      const done = [], tail = () => done.length ? '（' + done.join('、') + ' 已完成）' : '';
       for (const [field, type, label, gk] of [['mesos', 'guildWarehouseMesos', '楓幣', 'mesos'], ['cash', 'guildWarehouseCash', '點數', 'cashPoints']]) {
         const amt = Math.floor(Number(b[field]) || 0);
         if (!(amt > 0)) continue;
-        if (have[field] == null) return report(job, { event: 'error', msg: `讀不到目前的${label}，沒有存入${done.length ? '（' + done.join('、') + ' 已完成）' : ''}` });
-        if (amt > have[field]) return report(job, { event: 'error', msg: `${label}不足：要存 ${amt.toLocaleString()}，${c.name} 只有 ${have[field].toLocaleString()}${done.length ? '（' + done.join('、') + ' 已完成）' : ''}` });
-        setBadge(null, `存入公倉${label} ${amt.toLocaleString()}…`);
+        if (op === 'deposit') {
+          if (have[field] == null) return report(job, { event: 'error', msg: `讀不到目前的${label}，沒有存入${tail()}` });
+          if (amt > have[field]) return report(job, { event: 'error', msg: `${label}不足：要存 ${amt.toLocaleString()}，${c.name} 只有 ${have[field].toLocaleString()}${tail()}` });
+        } else if (amt > (Number(before[gk]) || 0)) return report(job, { event: 'error', msg: `公倉${label}不足：要提領 ${amt.toLocaleString()}，公倉只有 ${(Number(before[gk]) || 0).toLocaleString()}${tail()}` });
+        setBadge(null, `${verb}公倉${label} ${amt.toLocaleString()}…`);
         let j;
-        try { j = await game({ type, op: 'deposit', amount: amt, characterId: c.id }); }
-        catch (e) { return report(job, { event: 'error', msg: `存入${label}失敗：${e.message}${done.length ? '（' + done.join('、') + ' 已完成）' : ''}` }); }
+        try { j = await game({ type, op, amount: amt, characterId: c.id }); }
+        catch (e) { return report(job, { event: 'error', msg: `${verb}${label}失敗：${e.message}${tail()}` }); }
         postGuild(j, c);
         const after = j && j.summary && j.summary.guildWarehouse;
-        const diff = after ? (Number(after[gk]) || 0) - (Number(before[gk]) || 0) : null;
-        done.push(`${label} ${amt.toLocaleString()}`);
-        await report(job, { event: 'log', msg: `已存入${label} ${amt.toLocaleString()}${diff != null ? `：公倉${label} ${(Number(before[gk]) || 0).toLocaleString()} → ${(Number(after[gk]) || 0).toLocaleString()}${diff !== amt ? `（實際增加 ${diff.toLocaleString()}）` : ''}` : ''}` });
+        const now = mine(j && j.character ? j : (readState() || {}));
+        const g0 = Number(before[gk]) || 0, g1 = after ? Number(after[gk]) || 0 : null;
+        const self = have[field] != null && now[field] != null ? `；${label === '點數' ? '帳號' : c.name + ' 身上'}${label} ${have[field].toLocaleString()} → ${now[field].toLocaleString()}` : '';
+        done.push(`${verb}${label} ${amt.toLocaleString()}`);
+        await report(job, { event: 'log', msg: `已${verb}${label} ${amt.toLocaleString()}${g1 != null ? `：公倉${label} ${g0.toLocaleString()} → ${g1.toLocaleString()}` : ''}${self}${op === 'withdraw' && have[field] != null && now[field] != null && now[field] - have[field] !== amt ? `（實際拿到 ${(now[field] - have[field]).toLocaleString()}，差額是公會稅）` : ''}` });
         if (after) before = after;
+        if (now[field] != null) have[field] = now[field];
         await sleepP(800);
       }
       return report(job, { event: 'batchDone' });
