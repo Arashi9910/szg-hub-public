@@ -92,7 +92,7 @@ const quizShareCfg = () => { const x = (db.settings && db.settings.quizShare) ||
 const quizShareOn = () => { const c = quizShareCfg(); return c.on && (/^https:\/\/script\.google(usercontent)?\.com\//.test(c.url || '') || (!!process.env.SZG_QUIZ_SHARE_URL && c.url === process.env.SZG_QUIZ_SHARE_URL)); };
 function quizShareState() {
   db.installId = db.installId || crypto.randomBytes(12).toString('hex');
-  const st = db.quizShareState || (db.quizShareState = { queue: [], sent: {}, lastPull: 0, lastPush: 0, error: '', backfilled: false });
+  const st = db.quizShareState || (db.quizShareState = { queue: [], sent: {}, lastPull: 0, lastPush: 0, error: '', scanTo: 0 });
   return st;
 }
 // 遊戲公布正解時呼叫：已經在共享題庫而且一樣的不用再送；內建、冒險資料庫本來就一樣的也不送
@@ -110,17 +110,6 @@ async function quizShareSync(force) {
   quizShareBusy = true;
   const st = quizShareState(), url = quizShareCfg().url;
   try {
-    // 第一次：把以前從遊戲學到的（不是在面板自己猜的）補送上去
-    if (!st.backfilled) { for (const x of Object.values(quizStore().learned)) if (x.by !== '面板') quizShareQueue(x.q, x.options || [], x.answer); st.backfilled = true; }
-    if (st.queue.length && (force || Date.now() - st.lastPush > 5 * 60e3)) {
-      const batch = st.queue.slice(0, 300);
-      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ install: db.installId, items: batch }), redirect: 'follow' });
-      const j = await r.json();
-      if (!j.ok) throw new Error('上傳失敗：' + (j.error || r.status));
-      for (const x of batch) st.sent[x.key + '|' + qnorm(x.answer)] = 1;
-      st.queue.splice(0, batch.length); st.lastPush = Date.now();
-      if (j.added || j.voted) quizLog(`共享題庫：上傳 ${batch.length} 題（新題目 ${j.added}、投票 ${j.voted}）`);
-    }
     if (force || Date.now() - st.lastPull > 30 * 60e3) {
       const r = await fetch(url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(), { redirect: 'follow' });
       const j = await r.json();
@@ -132,6 +121,37 @@ async function quizShareSync(force) {
       if (Object.keys(items).length !== before) quizLog(`共享題庫：下載 ${Object.keys(items).length} 題`);
       // 等你作答的題目如果共享題庫有了，就不用再等
       const uq = quizStore().unknown; for (const k of Object.keys(uq)) if (items[k]) delete uq[k];
+    }
+    // 補送自己學到的題目：面板選的答案，腳本會拿去遊戲作答；答錯會被遊戲正解蓋掉，
+    // 所以放 30 分鐘還留著的就是遊戲認可的。選項缺的從其他題庫補（共享題庫要求答案在選項裡），
+    // 暫時補不到的記在 optWait，之後每次同步再試
+    const upTo = Date.now() - (Number(process.env.SZG_QUIZ_VERIFY_MS) || 30 * 60e3);
+    const wait = new Set(st.optWait || []);
+    if ((st.scanTo || 0) < upTo || wait.size) {
+      let other = null; const L = quizStore().learned;
+      for (const [k, x] of Object.entries(L)) {
+        const at = x.at || 1; if (at > upTo || (at <= (st.scanTo || 0) && !wait.has(k))) continue;
+        wait.delete(k);
+        let opts = x.options || [];
+        if (!opts.includes(x.answer)) {
+          if (!other) { other = {}; try { for (const y of extdb.quizList()) other[qnorm(y.q)] = y.options || []; } catch (_) {} for (const [kk, y] of Object.entries((db.quizShared && db.quizShared.items) || {})) other[kk] = y.options || []; }
+          const o = (other[k] || []).map(String), hit = o.find(v => qnorm(v) === qnorm(x.answer));
+          if (!hit) { wait.add(k); continue; }
+          opts = o; x.answer = hit; x.options = o;
+        }
+        quizShareQueue(x.q, opts, x.answer);
+      }
+      for (const k of wait) if (!L[k]) wait.delete(k);
+      st.optWait = [...wait].slice(-1000); st.scanTo = Math.max(st.scanTo || 0, upTo);
+    }
+    if (st.queue.length && (force || Date.now() - st.lastPush > 5 * 60e3)) {
+      const batch = st.queue.slice(0, 300);
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ install: db.installId, items: batch }), redirect: 'follow' });
+      const j = await r.json();
+      if (!j.ok) throw new Error('上傳失敗：' + (j.error || r.status));
+      for (const x of batch) st.sent[x.key + '|' + qnorm(x.answer)] = 1;
+      st.queue.splice(0, batch.length); st.lastPush = Date.now();
+      if (j.added || j.voted) quizLog(`共享題庫：上傳 ${batch.length} 題（新題目 ${j.added}、投票 ${j.voted}）`);
     }
     st.error = '';
   } catch (e) { st.error = String(e.message || e).slice(0, 200); }
