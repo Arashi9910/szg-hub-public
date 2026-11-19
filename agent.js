@@ -717,8 +717,23 @@ function agentMain(ctx) {
     // 背包「新出現」的裝備：符合規則對象卻不符合保留條件 → 試跑只記錄／自動賣出
     // 一律不動：已鎖定、強化過、衝過卷；交易／背包工作進行中或剛結束 1 分鐘內出現的
     const COND_OPS_FN = { '>': (v, t) => v > t, '>=': (v, t) => v >= t, '<': (v, t) => v < t, '<=': (v, t) => v <= t, '=': (v, t) => v === t, '≠': (v, t) => v !== t };
+    // 浮動判斷（跟面板「部位設定」同一套預設；面板改過的由 /api/autosell 帶 rollProfiles 過來）
+    let ROLLP = {};
+    const RW_PHYS = ['sword', 'twoSword', 'axe', 'twoAxe', 'mace', 'twoMace', 'spear', 'polearm', 'bow', 'crossbow', 'claw', 'dagger', 'knuckle', 'gun'];
+    function rollProf(t) {
+      const p = ROLLP[t]; if (p && Array.isArray(p.stats)) return { stats: p.stats, min: Number(p.min) || 0 };
+      if (t === 'wand' || t === 'staff') return { stats: ['incMAD'], min: 1 };
+      if (RW_PHYS.includes(t)) return { stats: ['incPAD'], min: 1 };
+      return { stats: ['incSTR', 'incDEX', 'incINT', 'incLUK'], min: 1 };
+    }
+    function rollScore(g) {
+      if (!g.baseStats || !g.cleanStats) return null;
+      return rollProf(g.gtype || g.weaponType || g.slot || '').stats.reduce((t, s) => t + (Number(g.cleanStats[s]) || 0) - (Number(g.baseStats[s]) || 0), 0);
+    }
     function condVal(g, k) {
       const st = g.stats || {};
+      if (k === '_rollScore') { const sc = rollScore(g); return sc == null ? -999 : sc; }
+      if (k === '_rollOk') { const sc = rollScore(g); return sc != null && sc >= rollProf(g.gtype || g.weaponType || g.slot || '').min ? 1 : 0; }
       if (k === '_sum4') return (st.incSTR || 0) + (st.incDEX || 0) + (st.incINT || 0) + (st.incLUK || 0);
       if (k === '_plus') return g.plus || 0;
       if (k === '_slotsLeft') return g.slotsLeft || 0;
@@ -766,7 +781,8 @@ function agentMain(ctx) {
         if (agentBusy) return; // 交易／背包工作中先不處理，等結束
         const markAll = () => GM_setValue(key, [...new Set([...cur])]);
         if (Date.now() - lastJobAt < 60 * 1000) { markAll(); return; }
-        const cfg = await hub('GET', '/api/autosell');
+        const cfg = await hub('GET', '/api/autosell?v=' + AGENT_VERSION);
+        ROLLP = cfg.rollProfiles || {};
         if (cfg.mode === 'off' || !cfg.chars || !cfg.chars[c.id]) { markAll(); return; }
         const log = msg => hub('POST', '/api/gear-log', { charId: c.id, msg }).catch(() => {});
         const pick = [];

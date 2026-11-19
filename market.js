@@ -8,7 +8,7 @@ const LEASE_MS = 2 * 60 * 1000;   // 掃描工作租期：拿到工作的頁面 
 const BATCH = 6;                  // 每次交給頁面的查詢數
 const MAX_LISTINGS = 50;          // 每個攤位最多 50 件
 
-module.exports = function (getDb, save, charName) {
+module.exports = function (getDb, save, charName, rollProfile) {
   function M() {
     const db = getDb();
     const m = db.market || (db.market = {});
@@ -205,6 +205,11 @@ module.exports = function (getDb, save, charName) {
     if (k === '_slotsLeft') return g.slotsLeft || 0;
     if (k === '_maxSlots') return g.maxSlots || 0;
     if (k === '_reqLevel') return g.reqLevel || 0;
+    if (k === '_rollOk' || k === '_rollScore') { // 依部位設定的浮動判斷
+      if (!g.baseStats || !g.cleanStats || !rollProfile) return k === '_rollOk' ? 0 : -999;
+      const p = rollProfile(g.gtype || g.weaponType || g.slot || ''), sc = p.stats.reduce((t, s) => t + (Number(g.cleanStats[s]) || 0) - (Number(g.baseStats[s]) || 0), 0);
+      return k === '_rollOk' ? (sc >= p.min ? 1 : 0) : sc;
+    }
     return st[k] || 0;
   }
   const OPS = { '>': (v, t) => v > t, '>=': (v, t) => v >= t, '<': (v, t) => v < t, '<=': (v, t) => v <= t, '=': (v, t) => v === t, '≠': (v, t) => v !== t };
