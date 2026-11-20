@@ -428,7 +428,11 @@
   .dex-card .nm { font-weight: 600; line-height: 1.25; } .dex-card .sub { font-size: 12px; color: var(--dim); }
   .dex-card .st { grid-column: 1 / -1; font-size: 12px; display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 2px; font-variant-numeric: tabular-nums; }
   .dex-card .st .fl { color: var(--dim); font-size: 11px; } .dex-card .rq { grid-column: 1 / -1; font-size: 11px; color: var(--dim); }
-  .dex-card .own { color: var(--good); font-size: 11px; } .dex-more { grid-column: 1 / -1; text-align: center; padding: 10px; }
+  .dex-card .own { color: var(--good); font-size: 11px; } .dex-card.open { grid-column: span 2; }
+  .dex-card .src { grid-column: 1 / -1; font-size: 12px; margin-top: 3px; border-top: 1px dashed var(--line); padding-top: 3px; } .dex-card .src a { cursor: pointer; color: var(--accent); }
+  .dex-card .srcs { grid-column: 1 / -1; max-height: 260px; overflow: auto; font-size: 12px; }
+  .dex-card .sr { display: grid; grid-template-columns: 52px 1fr auto; gap: 4px; align-items: center; padding: 3px 0; border-bottom: 1px solid var(--line); }
+  .dex-card .sr .b { display: flex; gap: 3px; } .dex-card .sr .w { line-height: 1.3; } .dex-card .sr img { max-height: 22px; vertical-align: middle; } .dex-more { grid-column: 1 / -1; text-align: center; padding: 10px; }
   .ava-none { display: inline-flex; align-items: center; justify-content: center; font-size: 30px; opacity: .3; } .ava-none.sm { font-size: 14px; }
   .pt-mem.sel { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
   .pt-mem .lead { cursor: pointer; opacity: .25; } .pt-mem .lead.on { opacity: 1; cursor: default; }
@@ -552,7 +556,7 @@
       <div class="bar"><span class="dim sm" style="width:36px">等級</span><div class="seg" id="dexLv"></div><span class="dim sm">或</span><input type="number" id="dexLvMin" placeholder="最低" style="width:64px" min="0" max="200"><span>～</span><input type="number" id="dexLvMax" placeholder="最高" style="width:64px" min="0" max="200"></div>
       <div class="bar"><span class="dim sm" style="width:36px">部位</span><div class="chips" id="dexSlot"></div></div>
       <div class="bar"><span class="dim sm" style="width:36px">排序</span><div class="seg" id="dexSort"><button data-dexsort="lv">等級</button><button data-dexsort="slot">部位</button><button data-dexsort="atk">攻擊</button></div>
-        <label class="sm"><input type="checkbox" id="dexOwned"> 只看我有的</label></div>
+        <label class="sm"><input type="checkbox" id="dexOwned"> 只看我有的</label><label class="sm"><input type="checkbox" id="dexDrop"> 只看有怪物掉的</label></div>
       <div class="dim sm">素質是標準值，括號是掉落時的浮動範圍（推估：標準值 ±10%，至少 ±1；物攻／魔攻最多 ±5、其他最多 ±10，用你身上幾千筆掉落紀錄對過）。選某個職業時只列那個職業的裝備；全職業裝備請點「全職業」。</div>
     </div>
     <div id="dexGrid" class="dex-grid"></div>
@@ -5455,7 +5459,7 @@ function petClick(p, e) {
 // ================= 裝備圖鑑 =================
 // 資料：WORLD.equipment（遊戲分頁上傳）＝[id, 名稱, 部位, 分類, 需求等級, 需求職業位元, 標準素質, 可衝次數, [力,敏,智,幸]]
 ui.dex = (() => { try { return { job: 'all', lv: 'all', slot: '', sort: 'lv', q: '', owned: false, lvMin: '', lvMax: '', ...JSON.parse(localStorage.getItem('dex') || '{}'), limit: 120 }; } catch (_) { return { job: 'all', lv: 'all', slot: '', sort: 'lv', q: '', owned: false, lvMin: '', lvMax: '', limit: 120 }; } })();
-const dexSave = () => { try { const { limit, ...o } = ui.dex; localStorage.setItem('dex', JSON.stringify(o)); } catch (_) {} };
+const dexSave = () => { try { const { limit, open, ...o } = ui.dex; localStorage.setItem('dex', JSON.stringify(o)); } catch (_) {} };
 const DEX_JOBS = [['all', '全部', null], ['common', '全職業', 0], ['1', '劍士', 1], ['2', '法師', 2], ['4', '弓箭手', 4], ['8', '盜賊', 8], ['16', '海盜', 16]];
 const DEX_LV = [['all', '全部'], ['0-9', '0～9'], ['10-29', '10～29'], ['30-49', '30～49'], ['50-69', '50～69'], ['70-89', '70～89'], ['90-109', '90～109'], ['110-200', '110＋'], ['mine', '我的角色可穿']];
 // 掉落浮動範圍（推估，見圖鑑說明）
@@ -5468,6 +5472,34 @@ function dexOwnedIds() {
   for (const s of snaps()) for (const g of s.gear || []) if (g.itemId) n[g.itemId] = (n[g.itemId] || 0) + 1;
   return n;
 }
+// 每件裝備從哪裡掉：itemId → [{map, mob, c(機率), q(任務)}]，依機率排序（世界資料換版本才重算）
+let dexDropIdx = null, dexDropVer = '';
+function dexDrops(id) {
+  if (!WORLD) return [];
+  if (!dexDropIdx || dexDropVer !== WORLD.version) {
+    dexDropIdx = {}; dexDropVer = WORLD.version;
+    for (const m of WORLD.maps) for (const mob of m.mobs || []) for (const r of dropsFor(m, mob)) { const k = Number(r[0]); if (!k) continue; (dexDropIdx[k] || (dexDropIdx[k] = [])).push({ map: m, mob, c: r[3], q: r[4] }); }
+    for (const a of Object.values(dexDropIdx)) a.sort((x, y) => y.c - x.c || x.map.minLevel - y.map.minLevel);
+  }
+  return dexDropIdx[id] || [];
+}
+// 到地圖分頁打開那張圖的明細
+function dexGotoMap(mapId) {
+  const m = mapOf(mapId); if (!m) return;
+  document.querySelector('nav button[data-tab="maps"]').click();
+  $('#wRegion').value = ''; $('#wLv').value = ''; $('#wBoss').checked = false; $('#wSearch').value = m.name;
+  ui.wOpen.add(m.id); renderWorldMaps();
+  setTimeout(() => { const r = document.querySelector(`#wMaps [data-wmap="${CSS.escape(m.id)}"]`); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
+}
+// 加到派工：這張圖放進「打裝備」路線（已經在看板上就不動路線），並把這件裝備設成那張圖的目標
+function dexToBoard(mapId, itemId) {
+  const cfg = boardCfg(), onBoard = Object.values(cfg.lanes).flat();
+  if (!onBoard.includes(mapId)) cfg.lanes.gear.push(mapId);
+  const g = new Set((cfg.goals[mapId] || []).map(Number)); g.add(Number(itemId)); cfg.goals[mapId] = [...g];
+  saveBoard(cfg);
+  document.querySelector('nav button[data-tab="board"]').click();
+  return { added: !onBoard.includes(mapId), group: boardGroup() };
+}
 function renderDex() {
   const d = ui.dex, list = (WORLD && WORLD.equipment) || null;
   $('#dexJob').innerHTML = DEX_JOBS.map(([k, n]) => `<button data-dexjob="${k}" class="${d.job === k ? 'on' : ''}">${n}</button>`).join('');
@@ -5476,7 +5508,7 @@ function renderDex() {
   if (document.activeElement !== $('#dexQ')) $('#dexQ').value = d.q;
   if (document.activeElement !== $('#dexLvMin')) $('#dexLvMin').value = d.lvMin;
   if (document.activeElement !== $('#dexLvMax')) $('#dexLvMax').value = d.lvMax;
-  $('#dexOwned').checked = !!d.owned;
+  $('#dexOwned').checked = !!d.owned; $('#dexDrop').checked = !!d.drop;
   if (!list) { if (!WORLD) loadWorld().then(() => WORLD && renderDex()); $('#dexGrid').innerHTML = '<div class="card dim">還沒有圖鑑資料：遊戲分頁更新到新版腳本後（約 1 分鐘）會自動上傳。</div>'; $('#dexSlot').innerHTML = ''; $('#dexCount').textContent = ''; return; }
   // 部位：武器合成一類（下面再細分武器種類）
   const slots = [...new Set(list.map(e => isWeaponType(e[2]) ? 'weapon' : e[2]))].sort((a, b) => (DEX_SLOT_ORDER.indexOf(a) + 1 || 99) - (DEX_SLOT_ORDER.indexOf(b) + 1 || 99));
@@ -5499,6 +5531,7 @@ function renderDex() {
     if (d.slot === 'weapon' ? !isWeaponType(type) : d.slot && type !== d.slot) return false;
     if (q && !name.includes(q)) return false;
     if (d.owned && !owned[id]) return false;
+    if (d.drop && !dexDrops(id).length) return false;
     return true;
   });
   const atk = e => (e[6].incPAD || 0) + (e[6].incMAD || 0);
@@ -5510,17 +5543,29 @@ function renderDex() {
   const card = e => {
     const [id, name, type, , lv, job, st, tuc, rq] = e, u = itemImg(id), n = owned[id];
     const req = ['力', '敏', '智', '幸'].map((x, i) => rq[i] ? `${x} ${rq[i]}` : '').filter(Boolean).join('・');
-    return `<div class="dex-card" title="${esc(itemTip(id) || name)}"><div class="ic">${u ? `<img src="${esc(u)}" loading="lazy" alt="" onerror="this.remove()">` : ''}</div>
+    const src = dexDrops(id), open = ui.dex.open === id, top = src[0];
+    const srcHtml = !src.length ? `<div class="src dim">沒有怪物掉（商店、任務或活動）</div>`
+      : `<div class="src"><a data-dexsrc="${id}" title="看全部掉落地點">${open ? '▾' : '▸'} 掉落 ${src.length} 處</a>・最高 <b>${chancePct(top.c)}</b> <span class="dim">${esc(top.mob.name)}＠${esc(top.map.name)}</span></div>`
+        + (open ? `<div class="srcs">${src.slice(0, 30).map(x => `<div class="sr"><span class="p"><b>${chancePct(x.c)}</b></span><span class="w">${mobImg(x.mob)}${esc(x.mob.name)} <span class="dim">Lv${x.mob.lv}${x.mob.isBoss ? '・王' : ''}${x.q ? '・任務' : ''}</span><br><span class="dim">${esc(x.map.name)}・Lv${x.map.minLevel}＋</span></span>
+            <span class="b"><button class="btn sm" data-dexmap="${esc(x.map.id)}" title="到地圖分頁看這張圖">地圖</button><button class="btn sm" data-dexboard="${esc(x.map.id)}|${id}" title="放進派工的「打裝備」並把這件設成目標">派工</button></span></div>`).join('')}${src.length > 30 ? `<div class="dim sm">只列機率最高的 30 處</div>` : ''}</div>` : '');
+    return `<div class="dex-card ${open ? 'open' : ''}" title="${esc(itemTip(id) || name)}"><div class="ic">${u ? `<img src="${esc(u)}" loading="lazy" alt="" onerror="this.remove()">` : ''}</div>
       <div class="nm">${esc(name)}${n ? ` <span class="own">✓ 有 ${n} 件</span>` : ''}</div>
       <div class="sub">Lv${lv}・${esc(dexSlotName(type))}・${esc(dexJobText(job))}${tuc ? `・可衝 ${tuc} 次` : ''}</div>
       <div class="st">${keys(st).map(k => { const f = k === 'incBossDmg' ? 0 : dexFloat(k, st[k]); return `<span>${esc(sn(k))} <b>${st[k]}</b>${f ? `<span class="fl">（±${f}）</span>` : ''}</span>`; }).join('') || '<span class="dim">沒有素質</span>'}</div>
-      ${req ? `<div class="rq">需求 ${req}</div>` : ''}</div>`;
+      ${req ? `<div class="rq">需求 ${req}</div>` : ''}${srcHtml}</div>`;
   };
   $('#dexGrid').innerHTML = rows.slice(0, d.limit).map(card).join('') + (rows.length > d.limit ? `<div class="dex-more"><button class="btn" data-dexmore>再顯示 ${Math.min(240, rows.length - d.limit)} 件（還有 ${rows.length - d.limit} 件）</button></div>` : '') || '<div class="card dim">沒有符合的裝備</div>';
 }
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-dexjob],[data-dexlv],[data-dexslot],[data-dexsort],[data-dexmore]'); if (!t) return;
+  const t = e.target.closest('[data-dexjob],[data-dexlv],[data-dexslot],[data-dexsort],[data-dexmore],[data-dexsrc],[data-dexmap],[data-dexboard]'); if (!t) return;
   const d = ui.dex, x = t.dataset;
+  if (x.dexsrc) { d.open = d.open === Number(x.dexsrc) ? null : Number(x.dexsrc); renderDex(); return; }
+  if (x.dexmap) { dexGotoMap(x.dexmap); return; }
+  if (x.dexboard) {
+    const [mapId, itemId] = x.dexboard.split('|'), m = mapOf(mapId);
+    if (!confirm(`把「${m ? m.name : mapId}」放進派工（${boardGroup()} 組）的「打裝備」，並把「${wName(itemId)}」設成那張圖的目標？\n（只改看板，不會移動角色；要派誰去再到派工拖曳）`)) return;
+    dexToBoard(mapId, itemId); return;
+  }
   if (x.dexjob) d.job = x.dexjob;
   if (x.dexlv) { d.lv = x.dexlv; d.lvMin = ''; d.lvMax = ''; }
   if (x.dexslot != null) d.slot = x.dexslot;
@@ -5529,11 +5574,12 @@ document.addEventListener('click', e => {
   dexSave(); renderDex();
 });
 document.addEventListener('input', e => {
-  const id = e.target.id; if (!['dexQ', 'dexLvMin', 'dexLvMax', 'dexOwned'].includes(id)) return;
+  const id = e.target.id; if (!['dexQ', 'dexLvMin', 'dexLvMax', 'dexOwned', 'dexDrop'].includes(id)) return;
   const d = ui.dex;
   if (id === 'dexQ') d.q = e.target.value;
   if (id === 'dexLvMin' || id === 'dexLvMax') { d[id === 'dexLvMin' ? 'lvMin' : 'lvMax'] = e.target.value; d.lv = 'custom'; }
   if (id === 'dexOwned') d.owned = e.target.checked;
+  if (id === 'dexDrop') d.drop = e.target.checked;
   d.limit = 120; dexSave(); renderDex();
 });
 
