@@ -395,6 +395,8 @@
   .pet-show { display: none; background: none; border: 0; color: var(--dim); cursor: pointer; font: inherit; font-size: 12px; padding: 4px 12px; }
   .pet-card.off .pet-stage, .pet-card.off .pet-hide { display: none; } .pet-card.off .pet-show { display: block; }
   .ov-auto { padding: 8px 12px; }
+  #bdSyncBox { display: inline-flex; gap: 8px; align-items: center; } .bd-synclog { display: inline-block; position: relative; }
+  .bd-synclog > div { position: absolute; z-index: 30; top: 100%; left: 0; width: 460px; max-height: 300px; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
   .hpbar { display: inline-block; width: 90px; height: 7px; background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; vertical-align: middle; overflow: hidden; }
   .hpbar i { display: block; height: 100%; background: var(--bad); }
   table.boss-t td { padding-top: 3px; padding-bottom: 3px; }
@@ -611,7 +613,7 @@
       <h3>派工看板</h3>
       <div class="dim help-src">把角色拖到地圖上決定去哪裡（也可以點一下角色再點地圖）。地圖分成「練功、打卷軸、打裝備」三條路線，每張圖可以設定：🎯 要打的目標道具（看板會估計派去的角色每小時大約打到幾個）、💰 自動販售（撿到就賣給商店的道具，遊戲伺服器處理，分頁沒開也有效）。排好後按「套用派工」：要移動的角色換過去，並套用那張圖的自動販售。遊戲只能設定「目前所在地圖」的自動販售，所以換圖和設定是一起做的。估計值和地圖分頁的組隊試算用同一套方法，只是參考。</div>
       <div class="bar"><div class="seg" id="bdViewSeg"><button data-bview2="factory"><span data-ic="factory"></span> 工廠圖</button><button data-bview2="list"><span data-ic="list"></span> 清單</button></div>
-        <span id="bdGroupBox"></span><button class="btn" id="bdApply">▶ 套用派工</button><button class="btn" id="bdImport" title="把角色目前所在的地圖放上看板，並用你在遊戲裡設好的自動販售當範本">⤓ 匯入目前設定</button><button class="btn" id="bdClear">清除派工</button>
+        <span id="bdGroupBox"></span><button class="btn" id="bdApply">▶ 套用派工</button><button class="btn" id="bdImport" title="把角色目前所在的地圖放上看板，並用你在遊戲裡設好的自動販售當範本">⤓ 匯入目前設定</button><button class="btn" id="bdClear">清除派工</button><span id="bdSyncBox"></span>
         <select id="bdAddMap" style="max-width:260px"><option value="">＋ 加入地圖…</option></select><span class="dim" id="bdMsg"></span></div>
     </div>
     <div id="bdFactory" class="fac"></div>
@@ -3823,6 +3825,68 @@ function boardImport() {
 }
 document.addEventListener('click', e => { if (e.target.id === 'bdImport') boardImport(); });
 
+// ---- 遊戲 → 派工 自動同步 ----
+// 看板 → 遊戲：按「套用派工」；遊戲 → 看板：你在遊戲裡換地圖、改自動販售，這裡比對「上次看到的遊戲狀態」（存在 settings.boardSeen，
+// 中控沒開時的變化下次打開也抓得到），只有遊戲那邊真的變了才改看板；看板上還沒套用的派工，遊戲那邊沒動就保留。哪邊最後改就以哪邊為準。
+const sellKey = x => x ? JSON.stringify([!!x.enabled, [...(x.itemIds || [])].map(Number).sort((a, b) => a - b)]) : '';
+function boardSyncFromGame() {
+  if (S.boardSync === false || boardPending || !WORLD) return;
+  const seen = { ...(S.boardSeen || {}) }, all = { A: S.board || {}, ...(S.boards || {}) };
+  const busyBoss = new Set((DATA.jobs || []).filter(j => j.kind === 'boss' && ['approved', 'running', 'pending'].includes(j.status)).map(j => j.fromCharId));
+  const logs = [];
+  let boardsChanged = false, seenChanged = false;
+  const bd = g => {
+    const b = all[g] = { ...(all[g] || {}) };
+    b.lanes = { train: [...((b.lanes || {}).train || [])], scroll: [...((b.lanes || {}).scroll || [])], gear: [...((b.lanes || {}).gear || [])] };
+    b.assign = { ...(b.assign || {}) }; b.sell = { ...(b.sell || {}) };
+    return b;
+  };
+  for (const sn of snaps()) {
+    const id = sn.char.id, map = sn.char.map;
+    if (!map || !mapOf(map) || busyBoss.has(id)) continue; // 打王中的換圖不算
+    const sells = {}; for (const [m, x] of Object.entries(sn.autoSellAll || {})) sells[m] = sellKey(x);
+    const prev = seen[id];
+    seen[id] = { map, sell: sells };
+    if (!prev || prev.map !== map || JSON.stringify(prev.sell) !== JSON.stringify(sells)) seenChanged = true;
+    const g = charGroup(id), b = bd(g), onBoard = new Set(Object.values(b.lanes).flat());
+    const nm = sn.char.name, mn = m => (mapOf(m) || {}).name || m;
+    let changed = false;
+    // 角色所在的地圖不在看板上 → 放上去（第一次同步也做，等於自動匯入）
+    if (!onBoard.has(map)) { b.lanes.train.push(map); changed = true; logs.push(`${nm} 在 ${mn(map)}，已放上看板`); }
+    if (prev && prev.map !== map && b.assign[id] && b.assign[id] !== map) {
+      // 遊戲裡換了圖：看板上還沒套用的派工作廢，以遊戲為準
+      const was = b.assign[id]; delete b.assign[id]; changed = true;
+      logs.push(`${nm} 在遊戲裡換到 ${mn(map)}，取消看板上還沒套用的派工（${was === '__pool' ? '待命' : mn(was)}）`);
+    }
+    for (const [m, k] of Object.entries(sells)) {
+      if (!mapOf(m)) continue;
+      const cur = sellKey(b.sell[m]);
+      if (cur === k) continue;
+      // 遊戲那邊改過（和上次看到的不同）→ 更新範本；第一次同步只補看板上沒有的範本，不覆蓋
+      const gameChanged = prev ? (prev.sell || {})[m] !== k : !b.sell[m];
+      if (!gameChanged) continue;
+      const x = sn.autoSellAll[m];
+      b.sell[m] = { enabled: !!x.enabled, itemIds: [...(x.itemIds || [])] }; changed = true;
+      logs.push(`${nm} 在遊戲裡改了 ${mn(m)} 的自動販售（${x.enabled ? (x.itemIds || []).length + ' 項' : '關閉'}），已更新看板範本`);
+    }
+    if (changed) boardsChanged = true;
+  }
+  if (!boardsChanged && !seenChanged) return;
+  const patch = { boardSeen: seen };
+  if (boardsChanged) {
+    patch.boards = all; patch.board = all.A || {};
+    patch.boardSyncLog = [...logs.map(msg => ({ at: Date.now(), msg })), ...(S.boardSyncLog || [])].slice(0, 30);
+  }
+  saveSettings(patch);
+}
+function renderBoardSync() {
+  const el = $('#bdSyncBox'); if (!el) return;
+  const on = S.boardSync !== false, log = S.boardSyncLog || [], last = log[0];
+  el.innerHTML = `<label title="你在遊戲裡換地圖、改自動販售，看板會自動跟著改（看板上還沒套用的派工，遊戲沒動就保留）"><input type="checkbox" class="sw" id="bdSync" ${on ? 'checked' : ''}> 與遊戲同步</label>`
+    + (on && last ? ` <details class="bd-synclog"><summary class="dim sm">${Date.now() - last.at < 3600e3 ? '剛剛' : clock(last.at)}：${esc(last.msg.length > 36 ? last.msg.slice(0, 36) + '…' : last.msg)}</summary><div class="sm">${log.map(l => `<div><span class="dim">${clock(l.at)}</span> ${esc(l.msg)}</div>`).join('')}</div></details>` : '');
+}
+document.addEventListener('change', e => { if (e.target.id === 'bdSync') { saveSettings({ boardSync: e.target.checked }); if (e.target.checked) boardSyncFromGame(); renderBoardSync(); } });
+
 // ================= 冒險資料庫（圖示、道具資料） =================
 let EXT = { items: {}, mobs: {} }, EXT_BYNAME = {}, extLoading = null;
 const GAME_URL = 'https://play.szg08.com/';
@@ -5107,7 +5171,7 @@ function renderAll() {
   if (active === 'quiz') loadQuiz().then(renderQuiz);
   if (active === 'market') loadMarket().then(renderMarket);
   if (active === 'maps') { renderMaps(); loadBoss().then(() => renderBoss()); }
-  if (active === 'board') renderBoard();
+  if (active === 'board') { renderBoard(); renderBoardSync(); }
   if (active === 'forge') renderForge();
   if (active === 'board') facGuildTick();
   if (active === 'guild') renderGuild();
@@ -5140,6 +5204,7 @@ async function poll(force) {
       + (u.checkedAt ? `<span class="dim" title="${esc(u.error || '')}">已檢查 ${new Date(u.checkedAt).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}</span> ` : '')
       + `<button class="btn" id="chkUpd">檢查更新</button> `
       + `<label class="dim" title="GitHub 有新版時，伺服器在沒有工作執行時自動更新並重啟"><input type="checkbox" class="sw" id="autoUpd" ${auto ? 'checked' : ''}> 自動更新</label>`;
+    try { boardSyncFromGame(); } catch (e) { console.warn('[派工同步]', e); }
     // 正在輸入時不要重畫，避免打斷
     const ae = document.activeElement;
     const typing = ae && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT') && ae.type !== 'checkbox';
