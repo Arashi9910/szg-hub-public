@@ -882,7 +882,8 @@ function agentMain(ctx) {
 
     let lastStallAt = 0;
     async function stallTick(force) {
-      if (agentBusy || (!force && Date.now() - lastStallAt < 5 * 60 * 1000)) return null;
+      // 攤位每 5 分鐘回報一次（testStallMs 只給自動測試縮短用）
+      if (agentBusy || (!force && Date.now() - lastStallAt < (Number(GM_getValue('testStallMs', 0)) || 5 * 60 * 1000))) return null;
       if (!(await amLeader())) return null;
       const state = readState(); if (!state || !state.character || !account) return null;
       lastStallAt = Date.now();
@@ -891,13 +892,39 @@ function agentMain(ctx) {
       if (!m) return null;
       const mine = m.mine;
       const stall = mine ? { exists: true, open: !!mine.open, title: mine.title, count: mine.count || (mine.listings || []).length, proceeds: mine.proceeds || 0,
-        listings: (mine.listings || []).map(l => ({ id: l.id, kind: l.kind, key: l.key, name: l.name, qty: l.qty, price: l.price })), history: mine.history || [] } : { exists: false };
+        listings: (mine.listings || []).map(l => ({ id: l.id, kind: l.kind, key: l.key, uid: l.uid || (l.gear && l.gear.uid) || '', name: l.name, qty: l.qty, price: l.price })), history: mine.history || [] } : { exists: false };
       const r = await hub('POST', '/api/market/stall', { charId, stall });
+      if (mine && r && Array.isArray(r.delist) && r.delist.length) await delistOverdue(charId, r.delist);
       if (mine && mine.proceeds > 0 && r && r.autoClaim) {
         try { await game({ type: 'marketClaim', characterId: charId }); await hub('POST', '/api/market/log', { charId, msg: `已領取攤位收益 ${Number(mine.proceeds).toLocaleString()} 楓幣` }); }
         catch (e) { await hub('POST', '/api/market/log', { charId, msg: '領取收益失敗：' + e.message }).catch(() => {}); }
       }
       return m;
+    }
+
+    // 逾時下架：中控算好哪些商品放太久沒賣出，這裡用 marketCancel 取回到這隻角色的背包
+    async function delistOverdue(charId, rows) {
+      const log = msg => hub('POST', '/api/market/log', { charId, msg }).catch(() => {});
+      const done = [], failed = [];
+      let bag = null;
+      try { const j = await game({ type: 'sync', characterId: charId }); bag = new Set(((j.character || {}).equipmentBag || []).map(g => g.uid)); } catch (_) {}
+      for (const r of rows) {
+        if (agentBusy) break;
+        try {
+          const j = await gameRetry({ type: 'marketCancel', listingId: r.id, characterId: charId });
+          // 裝備取回後的 uid：比對下架前後的背包（商品資料不一定帶 uid）
+          const now = ((j && j.character) || {}).equipmentBag;
+          if (r.kind === 'gear' && Array.isArray(now) && bag) { const nu = now.map(g => g.uid).find(u => !bag.has(u)); if (nu) r.uid = nu; bag = new Set(now.map(g => g.uid)); }
+          done.push(r);
+          await sleep(1000);
+        } catch (e) { failed.push(`${r.name}（${e.message}）`); }
+      }
+      if (done.length) {
+        await hub('POST', '/api/market/delisted', { charId, rows: done }).catch(() => {});
+        await log('逾時下架：' + done.map(r => `${r.name}×${r.qty}（放了 ${r.hours} 小時）`).join('、') + '，已取回背包，之後不再自動上架');
+        lastStallAt = 0; lastHash = '';
+      }
+      if (failed.length) await log('逾時下架失敗：' + failed.join('、'));
     }
 
     let lastPlanHash = '';
@@ -1257,6 +1284,7 @@ function agentMain(ctx) {
       if (job.kind === 'guildDeposit' || job.kind === 'guildWithdraw' || job.kind === 'guildView') return runGuildJob(job, c);
       if (job.kind === 'guildSell') return runGuildSell(job, c);
       if (job.kind === 'guildMoney') return runGuildMoney(job, c);
+      if (job.kind === 'boss') return runBossJob(job, c);
       // 不認得的工作：多半是這個分頁的腳本太舊，重新整理一次拿新版（同一個工作只試一次）
       if (GM_getValue(ck('reloadForJob'), '') !== job.id) {
         GM_setValue(ck('reloadForJob'), job.id);
@@ -1266,6 +1294,104 @@ function agentMain(ctx) {
       }
       return report(job, { event: 'error', msg: '未知的工作類型：' + job.kind + '（重新整理後仍然不認得，請手動重新整理遊戲分頁）' });
     }
+    // ---------- 輪流打野王 ----------
+    // 王的狀態：同步帶 includeBossRespawns 拿到每隻野王的 deadline／spawned／available，定時回報給中控排程
+    // （只有中控設定要這隻角色打王時才查，fullSync 比一般同步重）
+    let bossStateAt = 0;
+    function bossRowsOf(j) {
+      return (j && Array.isArray(j.bossRespawns) ? j.bossRespawns : []).map(r => ({ map: r.map, mapName: r.mapName, mob: r.mob, name: r.name, instanceId: r.instanceId, deadline: r.deadline, spawned: r.spawned, available: r.available }));
+    }
+    async function postBossState(charId, j) {
+      if (!j || !Array.isArray(j.bossRespawns)) return;
+      bossStateAt = Date.now();
+      await hub('POST', '/api/boss/state', { charId, serverTime: j.serverTime, list: bossRowsOf(j) }).catch(() => {});
+    }
+    async function bossStateTick(force) {
+      if (agentBusy || passive()) return;
+      if (!force && Date.now() - bossStateAt < 4 * 60 * 1000) return;
+      const id = myChar(); if (!id) return;
+      const n = await hub('GET', '/api/boss/need?charId=' + encodeURIComponent(id)).catch(() => null);
+      if (!n || !n.need) return;
+      try { await postBossState(id, await gameRetry({ type: 'sync', fullSync: true, includeBossRespawns: true, characterId: id })); }
+      catch (e) { console.warn('[szg-hub boss state]', e); }
+    }
+    // 打王：記住原本的地圖 → 前往首領地圖 → 每 4 秒同步看王的血條 → 打死／時間到／倒下／打不動就回原本的地圖
+    async function runBossJob(job, c) {
+      const b = (job.batches[0] || {}).boss || {};
+      const id = c.id, t0 = Date.now(), maxMs = Math.max(1, Number(b.visitMax) || 20) * 60000;
+      const pct = (h, m) => m > 0 ? Math.max(0, Math.round(h / m * 1000) / 10) : 0;
+      const done = async (result, msg, extra = {}) => {
+        await hub('POST', '/api/boss/result', { charId: id, mob: b.mob, result, msg: `${b.name}：${msg}`, ms: Date.now() - t0, ...extra }).catch(() => {});
+        await report(job, { event: 'log', msg });
+        return report(job, { event: 'batchDone' });
+      };
+      // 1. 先確認王是不是真的在（排程用的狀態可能是幾分鐘前的）
+      const s0 = await gameRetry({ type: 'sync', fullSync: true, includeBossRespawns: true, characterId: id });
+      await postBossState(id, s0);
+      const row = (s0.bossRespawns || []).find(r => r.mob === b.mob);
+      // 原本的地圖：用剛同步到的（頁面自己存的狀態可能還是舊的）；人已經在某張首領地圖上就用中控記的
+      const bossMaps = new Set((s0.bossRespawns || []).map(r => r.map).concat(b.map));
+      const now0 = (s0.character && s0.character.map) || c.map;
+      const back = now0 && !bossMaps.has(now0) ? now0 : (b.back || '');
+      const backName = (catalog && catalog.mapsById[String(back)]) || b.backName || back;
+      const srvNow = Number(s0.serverTime) || Date.now();
+      if (row && row.available && row.deadline > srvNow) return done('cooling', `還在冷卻，約 ${Math.ceil((row.deadline - srvNow) / 60000)} 分鐘後重生，這次不去`);
+      const inst = (row && row.instanceId) || b.instanceId;
+      // 2. 前往
+      setBadge(null, `野王：前往 ${b.mapName} 打 ${b.name}…`);
+      try { await gameRetry({ type: 'map', map: b.map, characterId: id }); }
+      catch (e) { if (e.gameUpdated) throw e; return done('error', `前往 ${b.mapName} 失敗（${e.message}），這次不打`); }
+      await report(job, { event: 'log', msg: `已前往 ${b.mapName}（打完回 ${backName || '原地圖'}）` });
+      // 3. 看血條
+      let seen = false, gone = 0, hp = null, maxHp = null, lowest = Infinity, dropAt = Date.now(), postAt = 0, result = '';
+      while (!result) {
+        await sleepP(4000);
+        let j;
+        try { j = await gameRetry({ type: 'sync', characterId: id }); }
+        catch (e) { if (e.gameUpdated) throw e; if (Date.now() - t0 > maxMs) result = 'timeout'; continue; }
+        const ch = j.character || {};
+        const e = (j.enemies || []).find(x => x && x.id === b.mob);
+        const killedEv = ((j.summary && j.summary.events) || []).some(ev => ev && ev.mob === b.mob && ev.killed);
+        if (e) {
+          seen = true; gone = 0; hp = Number(e.hp) || 0; maxHp = Number(e.maxHp) || maxHp;
+          if (hp < lowest) { lowest = hp; dropAt = Date.now(); }
+        } else if (seen) gone++;
+        if (ch.map && ch.map !== b.map) result = 'moved';
+        else if (killedEv || (seen && (gone >= 2 || (e && hp <= 0)))) result = 'killed';
+        else if (!seen && Date.now() - t0 > 45000) result = 'absent';
+        else if (ch.hp != null && Number(ch.hp) <= 0) result = 'dead';
+        else if (Date.now() - t0 > maxMs) result = 'timeout';
+        else if (seen && Date.now() - dropAt > 3 * 60000) result = 'stuck';
+        if (!result && hp != null && Date.now() - postAt > 15000) {
+          postAt = Date.now();
+          setBadge(null, `野王：${b.name} 剩 ${pct(hp, maxHp)}%`);
+          hub('POST', '/api/boss/hp', { charId: id, instanceId: inst, mob: b.mob, hp, maxHp }).catch(() => {});
+          await report(job, { event: 'log', msg: `${b.name} 血量 ${pct(hp, maxHp)}%` });
+        }
+      }
+      // 打死了＝下次重生是滿血；其他情況記住剩下的血量（遊戲會保留）
+      await hub('POST', '/api/boss/hp', { charId: id, instanceId: inst, mob: b.mob, hp: result === 'killed' ? null : hp, maxHp }).catch(() => {});
+      // 4. 回原本的地圖（中途被你換走的就不動）
+      let backMsg = '';
+      if (result === 'dead') { try { await gameRetry({ type: 'revive', characterId: id }); } catch (_) {} }
+      if (result !== 'moved' && back) {
+        try { await gameRetry({ type: 'map', map: back, characterId: id }); backMsg = `，已回到 ${backName}`; }
+        catch (e1) {
+          try { await gameRetry({ type: 'escapeBoss', characterId: id }); await sleepP(1500); await gameRetry({ type: 'map', map: back, characterId: id }); backMsg = `，已回到 ${backName}`; }
+          catch (e2) { backMsg = `，回 ${backName} 失敗（${e2.message}），請手動換圖`; }
+        }
+      } else if (result !== 'moved') backMsg = '，不知道原本的地圖，留在原地';
+      try { await postBossState(id, await gameRetry({ type: 'sync', fullSync: true, includeBossRespawns: true, characterId: id })); } catch (_) {}
+      lastHash = '';
+      const mins = Math.max(1, Math.round((Date.now() - t0) / 60000));
+      const left = hp != null && maxHp ? `（王剩 ${pct(hp, maxHp)}%，血量會保留）` : '';
+      const text = {
+        killed: `打死了，花了約 ${mins} 分鐘`, timeout: `打了 ${mins} 分鐘還沒打死${left}`, dead: `角色倒下${left}`,
+        absent: '到了地圖但王不在場上', stuck: `3 分鐘內血量都沒有下降，先放棄${left}`, moved: '中途被換到別的地圖，停止',
+      }[result] || result;
+      return done(result, text + backMsg, { hp, maxHp });
+    }
+
     // ---------- 強化工坊：用神匠之魂（artisanScroll）批次衝卷 ----------
     // 遊戲規則：每衝 1 次扣 1 張卷軸＋10 萬楓幣（失敗也扣格）；一次最多 10 件，多件時要「名稱相同、剩餘次數相同、沒鎖定」；
     // 單件 {uid}、多件 {uids}；結果在 character.lastArtisan。這裡另外用衝之前／之後的裝備狀態算每件的結果，不依賴結果格式
@@ -1692,7 +1818,7 @@ function agentMain(ctx) {
       setTimeout(idleTick, 15000);
       setInterval(idleTick, 30000);
       setTimeout(() => stallTick().catch(() => {}), 40000);
-      setInterval(() => { if (!mktBusy) stallTick().catch(() => {}); }, 60000);
+      setInterval(() => { if (!mktBusy) stallTick().catch(() => {}); }, 20000);
       setInterval(marketScanTick, 31000);
       setTimeout(autoListTick, 70000);
       setInterval(autoListTick, 3 * 60 * 1000);
@@ -1701,6 +1827,8 @@ function agentMain(ctx) {
       setInterval(() => dpsReport().catch(() => {}), 30000);
       setTimeout(quizTick, 25000);
       setInterval(quizTick, 45000);
+      setTimeout(() => bossStateTick(true), 15000);
+      setInterval(() => bossStateTick(false), 60000);
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
     else start();

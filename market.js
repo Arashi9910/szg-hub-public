@@ -21,6 +21,8 @@ module.exports = function (getDb, save, charName, rollProfile) {
     m.stalls = m.stalls || {};      // charId → { at, open, count, listings, proceeds, history }
     m.sales = m.sales || [];        // 自己攤位成交紀錄（去重）
     m.listLog = m.listLog || [];
+    m.age = m.age || {};            // charId → { listingId: { first, qty, name } }：遊戲的商品沒有上架時間，中控自己記第一次看到的時間
+    m.blocked = m.blocked || {};    // 'i:道具key' 或 'g:裝備uid' → { name, at, charId }：逾時下架過的東西，不再自動上架
     return m;
   }
   function cfg() {
@@ -33,6 +35,8 @@ module.exports = function (getDb, save, charName, rollProfile) {
       chars: s.chars || {},
       rules: s.rules || [],
       stallTitle: s.stallTitle || '',
+      delistMode: s.delistMode || 'off',   // 逾時下架：off | preview | auto
+      delistHours: Number(s.delistHours) > 0 ? Number(s.delistHours) : 24,
     };
   }
   // 我方所有角色名稱（算行情時排除自己的掛單，避免跟自己比價）
@@ -156,8 +160,45 @@ module.exports = function (getDb, save, charName, rollProfile) {
       if (!seen.has(k)) { m.sales.push({ charId, ...h }); seen.add(k); }
     }
     m.sales = m.sales.filter(x => Date.now() - x.time < 30 * DAY).slice(-1000);
+    const out = trackAge(charId, s);
+    save();
+    return out;
+  }
+  // ---------- 逾時下架 ----------
+  // 每件商品從「中控第一次看到它在攤位上」開始計時；有賣掉一部分（數量變少）就重新計時。
+  // 超過設定的時數 → 交給頁面下架（marketCancel，東西回到那隻角色的背包），下架過的東西不再自動上架。
+  function trackAge(charId, s) {
+    const m = M(), c = cfg(), now = Date.now();
+    const old = m.age[charId] || {}, cur = {};
+    for (const l of (s.exists && s.listings) || []) {
+      const o = old[l.id];
+      cur[l.id] = o && l.qty >= o.qty ? { ...o, qty: l.qty } : { first: now, qty: l.qty, name: l.name, sold: !!o };
+    }
+    m.age[charId] = cur;
+    if (c.delistMode === 'off') return { delist: [] };
+    const limit = c.delistHours * HOUR, due = [];
+    for (const l of (s.exists && s.listings) || []) {
+      const a = cur[l.id]; if (now - a.first < limit) continue;
+      if (c.delistMode === 'preview') {
+        if (!a.previewed) { a.previewed = 1; log({ charId, msg: `試跑：${l.name}×${l.qty} 上架超過 ${c.delistHours} 小時沒賣出，會下架` }); }
+        continue;
+      }
+      due.push({ id: l.id, kind: l.kind, key: l.key, uid: l.uid || '', name: l.name, qty: l.qty, hours: Math.floor((now - a.first) / HOUR) });
+    }
+    return { delist: due };
+  }
+  // 頁面下架完成：記到「不再自動上架」清單
+  function delisted(charId, rows) {
+    const m = M();
+    for (const r of rows || []) {
+      const k = r.kind === 'gear' ? 'g:' + (r.uid || r.id) : 'i:' + r.key;
+      if (r.kind !== 'gear' && !r.key) continue;
+      m.blocked[k] = { name: r.name, at: Date.now(), charId };
+      if (m.age[charId]) delete m.age[charId][r.id];
+    }
     save();
   }
+  function unblock(k) { const m = M(); if (k === '*') m.blocked = {}; else delete m.blocked[k]; save(); }
 
   // ---------- 自動上架：定價 ----------
   function priceFor(rule, id, npcPrice, kind) {
@@ -243,6 +284,7 @@ module.exports = function (getDb, save, charName, rollProfile) {
       if (r.target === 'gear') {
         for (const g of s.gear || []) {
           if (g.loc !== '背包' || used.has('g:' + g.uid) || !gearRuleMatch(r, g)) continue;
+          if (M().blocked['g:' + g.uid]) { skipped.push({ name: g.name, why: '逾時下架過，不再自動上架', rule: r.name }); continue; }
           if (g.locked) { skipped.push({ name: g.name, why: '已鎖定', rule: r.name }); continue; }
           if (g.tradable === false) { skipped.push({ name: g.name, why: '不可交易', rule: r.name }); continue; }
           used.add('g:' + g.uid);
@@ -254,6 +296,7 @@ module.exports = function (getDb, save, charName, rollProfile) {
         for (const i of s.items || []) {
           if (i.loc !== '背包' || used.has(i.key) || !itemRuleMatch(r, i)) continue;
           used.add(i.key);
+          if (M().blocked['i:' + i.key]) { skipped.push({ name: i.name, why: '逾時下架過，不再自動上架', rule: r.name }); continue; }
           if (i.supply) { skipped.push({ name: i.name, why: '補給使用中', rule: r.name }); continue; }
           const can = Math.max(0, (i.tradableQty || 0) - Math.max(0, Number(r.keepQty) || 0));
           if (!can) { skipped.push({ name: i.name, why: r.keepQty ? `保留 ${r.keepQty} 個後沒有可上架數量` : '沒有可交易數量', rule: r.name }); continue; }
@@ -280,8 +323,10 @@ module.exports = function (getDb, save, charName, rollProfile) {
       scan: { queue: m.queue.length, lease: m.lease ? { name: charName(m.lease.charId), at: m.lease.at, n: m.lease.items.length } : null, lastFull: m.lastFull },
       stalls: Object.entries(m.stalls).map(([cid, s]) => ({ charId: cid, name: charName(cid), ...s })),
       sales: m.sales.slice(-200), log: m.listLog.slice(-100),
+      blocked: Object.entries(m.blocked).map(([k, v]) => ({ k, ...v, charName: charName(v.charId) })).sort((a, b) => b.at - a.at),
+      age: Object.fromEntries(Object.entries(m.age).map(([cid, x]) => [cid, Object.fromEntries(Object.entries(x).map(([id, a]) => [id, a.first]))])),
     };
   }
 
-  return { claim, report, reportStall, plan, summary, enqueueAll: f => { const n = enqueueAll(f); save(); return n; }, log: e => { log(e); save(); }, cfg };
+  return { claim, report, reportStall, delisted, unblock, plan, summary, enqueueAll: f => { const n = enqueueAll(f); save(); return n; }, log: e => { log(e); save(); }, cfg };
 };

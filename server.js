@@ -572,10 +572,126 @@ function automationInfo() {
   const m = db.market || {};
   return {
     idle: last(db.idleLog), gear: last(db.gearLog), guild: last(db.guildLog), quiz: last(db.quiz && db.quiz.log),
-    market: { lastScan: m.lastFull || 0, list: last(m.listLog) },
+    market: { lastScan: m.lastFull || 0, list: last(m.listLog) }, boss: last(db.boss && db.boss.log),
     update: { at: (updateInfo && updateInfo.checkedAt) || 0, error: (updateInfo && updateInfo.error) || '' },
   };
 }
+// ===== 輪流打野王 =====
+// 遊戲機制（2026-11-20 讀遊戲程式碼＋實際資料核對）：
+//  - 19 張有野外首領的地圖（catalog.maps[].bossSpawns），每隻王有自己的重生時間；王是「每隻角色一份」（solo:角色:地圖），
+//    同一個隊伍共用一份（party:隊伍:地圖）
+//  - 同步帶 includeBossRespawns:true（＋fullSync）會回 bossRespawns：[{map, mob, name, instanceId, deadline, spawned, available}]
+//    available＝王已死、可以付費重生（＝冷卻中，deadline 是預計重生時間）；deadline 0／已過且 available=false＝進地圖就會出現
+//  - 戰鬥中的怪在同步回應的 enemies（{id, hp, maxHp}）；離開首領地圖時王的血量與冷卻會保留
+//  - 付費重生（bossRespawn，10 點或 1000 萬楓幣）不使用
+// settings.boss = { mode: off|preview|auto, chars: {角色: true}, charSpec, mobs: null(全部)|[mob], estMax(分), visitMax(分) }
+// db.boss = { state: {角色: {at, offset, list}}, hp: {instanceId: {hp, maxHp, at}}, last: {角色|mob: {at, result}}, home: {角色: map}, log, seen }
+BAG_KINDS.add('boss'); KIND_MIN_AGENT.boss = '0.41.0';
+const BOSS_RETRY_MS = 30 * 60 * 1000;   // 沒打成功（逾時、倒下、王不在）的同一隻王，30 分鐘內不再去
+const BOSS_STATE_STALE = 20 * 60 * 1000; // 王的狀態超過這麼久沒更新就先不派
+function bossCfg() {
+  const b = db.settings.boss || {};
+  return { mode: b.mode || 'off', chars: b.chars || {}, charSpec: b.charSpec || null, mobs: Array.isArray(b.mobs) ? b.mobs : null,
+    estMax: Number(b.estMax) > 0 ? Number(b.estMax) : 15, visitMax: Number(b.visitMax) > 0 ? Number(b.visitMax) : 20 };
+}
+function bossDb() {
+  const b = db.boss || (db.boss = {});
+  for (const k of ['state', 'hp', 'last', 'home', 'seen']) b[k] = b[k] || {};
+  b.log = b.log || [];
+  return b;
+}
+function bossLog(charId, msg) {
+  const b = bossDb();
+  b.log.push({ at: Date.now(), charId, name: charId ? charName(charId) : '', msg: String(msg).slice(0, 200) });
+  if (b.log.length > 200) b.log.splice(0, b.log.length - 200);
+  save();
+}
+let worldMobs = null, worldMapNames = null, worldReadAt = 0;
+function loadWorldIndex() {
+  if (worldMobs && Object.keys(worldMobs).length && Date.now() - worldReadAt < 5 * 60 * 1000) return;
+  worldReadAt = Date.now();
+  try {
+    const w = JSON.parse(fs.readFileSync(WORLD_FILE, 'utf8'));
+    worldMobs = Object.fromEntries((w.mobs || []).map(m => [m.id, m]));
+    worldMapNames = Object.fromEntries((w.maps || []).map(m => [m.id, m.name]));
+  } catch (_) { worldMobs = worldMobs || {}; worldMapNames = worldMapNames || {}; }
+}
+const bossMapSet = () => new Set(Object.values(bossDb().state).flatMap(st => (st.list || []).map(r => r.map)));
+const charDps = charId => { const d = (db.dps || {})[charId]; return d && Date.now() - (d.receivedAt || 0) < 6 * 3600e3 ? ((d.w60 && d.w60.dps) || (d.w5 && d.w5.dps) || 0) : 0; };
+// 某隻角色每隻王的狀態（面板顯示與排程共用）
+function bossRows(charId) {
+  loadWorldIndex();
+  const c = bossCfg(), b = bossDb(), st = b.state[charId];
+  if (!st) return [];
+  const now = Date.now(), srvNow = now + (st.offset || 0), dps = charDps(charId);
+  return (st.list || []).map(r => {
+    const mob = worldMobs[r.mob] || {};
+    const cooling = !!(r.available && r.deadline > srvNow);
+    const ready = !cooling && (r.spawned || !(r.deadline > srvNow));
+    const h = b.hp[r.instanceId];
+    const maxHp = (h && h.maxHp) || mob.hp || 0;
+    const hp = h && now - h.at < 7 * 24 * 3600e3 ? h.hp : maxHp;
+    const estSec = dps > 0 && hp > 0 ? Math.round(hp / dps) : null;
+    const last = b.last[charId + '|' + r.mob] || null;
+    const selected = c.mobs ? c.mobs.includes(r.mob) : true;
+    let skip = '';
+    if (!selected) skip = '沒有勾選';
+    else if (cooling) skip = '冷卻中';
+    else if (estSec != null && estSec > c.estMax * 60) skip = `預估 ${Math.ceil(estSec / 60)} 分鐘才打得死，超過 ${c.estMax} 分鐘`;
+    else if (last && last.result !== 'killed' && last.result !== 'cooling' && now - last.at < BOSS_RETRY_MS) skip = `${Math.ceil((BOSS_RETRY_MS - (now - last.at)) / 60000)} 分鐘後再試（上次：${BOSS_RESULT[last.result] || last.result}）`;
+    return { mob: r.mob, name: r.name || mob.name || r.mob, map: r.map, mapName: r.mapName || worldMapNames[r.map] || r.map, instanceId: r.instanceId, party: /^party:/.test(r.instanceId || ''),
+      lv: mob.lv || 0, hp, maxHp, hpKnown: !!h, ready, cooling, remainMs: cooling ? r.deadline - srvNow : 0, estSec, selected, last, skip };
+  });
+}
+const BOSS_RESULT = { killed: '打死了', timeout: '時間到還沒打死', dead: '角色倒下', absent: '王不在場上', stuck: '打不動（血量沒有下降）', moved: '中途被換到別的地圖', cooling: '還在冷卻', error: '出錯' };
+function bossBusy(charId) { return db.jobs.some(j => ACTIVE.has(j.status) && (j.fromCharId === charId || j.toCharId === charId)); }
+function bossTick(force) {
+  const c = bossCfg(); if (c.mode === 'off') return;
+  const b = bossDb(), maps = bossMapSet();
+  const busyInst = new Set(db.jobs.filter(j => j.kind === 'boss' && ACTIVE.has(j.status)).map(j => j.batches[0].boss.instanceId));
+  for (const charId of Object.keys(c.chars).filter(id => c.chars[id])) {
+    const snap = db.chars[charId]; if (!snap || !snap.char) continue;
+    const code = snap.playerCode; if (!code || !tabOf(code, charId)) continue; // 要有自己的遊戲分頁
+    if (!snap.char.auto) continue;                                          // 沒在掛機的不動它
+    if (bossBusy(charId)) continue;
+    const st = b.state[charId]; if (!st || Date.now() - st.at > BOSS_STATE_STALE) continue;
+    if (snap.char.map && !maps.has(snap.char.map)) { b.home[charId] = snap.char.map; b.homeName = b.homeName || {}; b.homeName[charId] = snap.char.mapName || ''; }
+    const homeName = worldMapNames[b.home[charId]] || (b.homeName || {})[charId] || '原地圖';
+    const cand = bossRows(charId).filter(r => r.ready && !r.skip && !busyInst.has(r.instanceId))
+      .sort((x, y) => (x.estSec == null) - (y.estSec == null) || (x.estSec || 0) - (y.estSec || 0));
+    const r = cand[0]; if (!r) continue;
+    const est = r.estSec != null ? `預估 ${Math.max(1, Math.round(r.estSec / 60))} 分鐘` : '還沒有實戰 DPS，無法預估';
+    if (c.mode === 'preview') {
+      const key = charId + '|' + r.mob + '|' + Math.floor(Date.now() / BOSS_RETRY_MS);
+      if (!b.seen[key]) { b.seen[key] = 1; bossLog(charId, `試跑：會去 ${r.mapName} 打 ${r.name}（${est}，打完回 ${homeName}）`); }
+      continue;
+    }
+    const job = {
+      id: crypto.randomBytes(6).toString('hex'), kind: 'boss', status: 'approved', auto: true, createdAt: Date.now(), approvedAt: Date.now(),
+      fromCharId: charId, fromName: snap.char.name, fromCode: code, toCharId: charId, toName: snap.char.name, toCode: code,
+      batches: [{ items: [], gear: [], money: 0, boss: { mob: r.mob, name: r.name, map: r.map, mapName: r.mapName, instanceId: r.instanceId, back: b.home[charId] || '', backName: homeName, visitMax: c.visitMax } }],
+      batchIndex: 0, log: [], lastMsg: '',
+    };
+    jobLog(job, `自動：去 ${r.mapName} 打 ${r.name}（${est}）`);
+    db.jobs.push(job); busyInst.add(r.instanceId);
+    bossLog(charId, `出發：去 ${r.mapName} 打 ${r.name}（${est}）`);
+  }
+  for (const k of Object.keys(b.seen)) if (Number(k.split('|')[2]) < Math.floor(Date.now() / BOSS_RETRY_MS) - 1) delete b.seen[k];
+  save();
+}
+setInterval(() => { try { bossTick(false); } catch (e) { console.warn('[野王]', e); } }, 60 * 1000);
+function bossSummary() {
+  const c = bossCfg(), b = bossDb();
+  const ids = new Set([...Object.keys(b.state), ...Object.keys(c.chars).filter(k => c.chars[k])]);
+  const chars = [...ids].filter(id => db.chars[id]).map(id => {
+    const s = db.chars[id];
+    return { charId: id, name: s.char.name, lv: s.char.lv, map: s.char.map, mapName: s.char.mapName, auto: !!s.char.auto, tab: !!tabOf(s.playerCode, id), on: !!c.chars[id],
+      at: (b.state[id] || {}).at || 0, dps: charDps(id), rows: bossRows(id),
+      job: (db.jobs.filter(j => j.kind === 'boss' && j.fromCharId === id).slice(-1)[0]) || null };
+  });
+  return { cfg: c, chars, log: b.log.slice(-100) };
+}
+
 function send(res, code, body, type = 'application/json; charset=utf-8') {
   res.writeHead(code, {
     'Content-Type': type,
@@ -788,6 +904,34 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
 
+    // ---- 野王 ----
+    if (req.method === 'GET' && url.pathname === '/api/boss') return send(res, 200, bossSummary());
+    if (req.method === 'GET' && url.pathname === '/api/boss/need') {
+      const c = bossCfg(), id = url.searchParams.get('charId') || '';
+      return send(res, 200, { need: c.mode !== 'off' && !!c.chars[id] });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/boss/state') {
+      const e = JSON.parse(await readBody(req));
+      if (!e || !e.charId || !Array.isArray(e.list)) return send(res, 400, { error: 'bad boss state' });
+      bossDb().state[e.charId] = { at: Date.now(), offset: Number(e.serverTime) > 0 ? Number(e.serverTime) - Date.now() : 0,
+        list: e.list.slice(0, 60).map(r => ({ map: String(r.map || ''), mapName: String(r.mapName || ''), mob: String(r.mob || ''), name: String(r.name || ''), instanceId: String(r.instanceId || ''), deadline: Number(r.deadline) || 0, spawned: !!r.spawned, available: !!r.available })) };
+      save();
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/boss/hp') {
+      const e = JSON.parse(await readBody(req));
+      if (e && e.instanceId) { if (e.hp == null) delete bossDb().hp[e.instanceId]; else bossDb().hp[e.instanceId] = { hp: Number(e.hp) || 0, maxHp: Number(e.maxHp) || 0, at: Date.now() }; }
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/boss/result') {
+      const e = JSON.parse(await readBody(req));
+      if (!e || !e.charId || !e.mob) return send(res, 400, { error: 'bad boss result' });
+      bossDb().last[e.charId + '|' + e.mob] = { at: Date.now(), result: String(e.result || 'error'), ms: Number(e.ms) || 0 };
+      bossLog(e.charId, String(e.msg || BOSS_RESULT[e.result] || e.result));
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/boss/run-now') { bossTick(true); return send(res, 200, bossSummary()); }
+
     // ---- 自由市場 ----
     if (req.method === 'GET' && url.pathname === '/api/market') return send(res, 200, market.summary());
     if (req.method === 'POST' && url.pathname === '/api/market/claim') {
@@ -801,8 +945,18 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && url.pathname === '/api/market/stall') {
       const { charId, stall } = JSON.parse(await readBody(req));
-      if (charId && stall) market.reportStall(charId, stall);
-      return send(res, 200, { ok: true, autoClaim: market.cfg().autoClaim });
+      const r = charId && stall ? market.reportStall(charId, stall) : null;
+      return send(res, 200, { ok: true, autoClaim: market.cfg().autoClaim, delist: (r && r.delist) || [] });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/market/delisted') {
+      const { charId, rows } = JSON.parse(await readBody(req));
+      if (charId) market.delisted(charId, rows);
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/market/unblock') {
+      const { k } = JSON.parse(await readBody(req));
+      if (k) market.unblock(String(k));
+      return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/api/market/scan-now') return send(res, 200, { ok: true, added: market.enqueueAll(true) });
     if (req.method === 'GET' && url.pathname === '/api/market/plan') {
