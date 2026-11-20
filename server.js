@@ -29,7 +29,7 @@ async function checkUpdate() {
     const r = await updater.check();
     updateInfo = { current: r.current, latest: r.latest, hasUpdate: r.hasUpdate, notes: r.notes, checkedAt: Date.now(), error: '' };
     if (r.hasUpdate) {
-      const busy = db.jobs.some(j => ACTIVE.has(j.status) && j.kind !== 'idle');
+      const busy = updateBlockers().length > 0;
       if (db.settings.autoUpdate !== false && !busy) return await applyUpdateAndRestart();
       console.log(`有新版本 ${r.latest}（目前 ${r.current}）${busy ? '，等工作結束後自動更新' : '，可在面板按「更新並重啟」'}。`);
     }
@@ -41,6 +41,9 @@ async function checkUpdate() {
   }
 }
 
+// 更新（重啟伺服器）要等哪些工作結束：掛機指令、打王不用等——它們在遊戲分頁裡跑，伺服器重啟不影響，
+// 遊戲分頁也會等工作做完才重新整理換新腳本（打王會一直輪流，等它們會讓更新一直卡住）
+function updateBlockers() { return db.jobs.filter(j => ACTIVE.has(j.status) && j.kind !== 'idle' && j.kind !== 'boss'); }
 // 功能程式在 agent.js，由各設定檔的 Tampermonkey 透過 @require 載入
 function agentSource() { return stampVersion(fs.readFileSync(AGENT_FILE, 'utf8')); }
 async function applyUpdateAndRestart() {
@@ -868,7 +871,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, updateInfo);
     }
     if (req.method === 'POST' && url.pathname === '/api/update/apply') {
-      if (db.jobs.some(j => ACTIVE.has(j.status))) return send(res, 409, { error: '有交易工作正在執行，請等它結束或取消後再更新' });
+      if (updateBlockers().length) return send(res, 409, { error: '有交易工作正在執行，請等它結束或取消後再更新' });
       const r = await applyUpdateAndRestart();
       return send(res, 200, { ok: true, updated: r.updated, latest: r.latest });
     }
