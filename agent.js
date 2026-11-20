@@ -1803,29 +1803,47 @@ function agentMain(ctx) {
       }
     }
 
-    // 「開另一隻角色的分頁」按鈕：同帳號的另一隻沒有自己的分頁時，在右下角提示；按了開一個新視窗固定顯示那隻
+    // 「開另一隻角色的分頁」按鈕：同帳號的其他角色都列出來（不會整個消失）——沒有分頁的可以直接開；
+    // 看起來已經有分頁的顯示「已開」（關分頁時的標記可能沒寫進去，最多 20～100 秒後自動恢復；點了會先確認再開）
     // （分頁被藏到背景時遊戲會進離線掛機、資料暫停，所以用獨立視窗，兩個視窗都看得到最好）
+    function accountCharList(st) {
+      const code = (account && account.playerCode) || '';
+      let list = ((st && st.characters) || []).filter(c => c && c.id).map(c => ({ id: c.id, name: c.name }));
+      if (list.length) { try { GM_setValue('charNames:' + code, list); } catch (_) {} return list; }
+      // 頁面資料沒有角色清單時：用帳號的角色 id＋之前記住的名字
+      const names = Object.fromEntries((GM_getValue('charNames:' + code, []) || []).map(c => [c.id, c.name]));
+      return ((account && account.characterIds) || Object.keys(names)).map(id => ({ id, name: names[id] || id.slice(0, 6) }));
+    }
     function renderOpenOther() {
       if (!document.body) return;
       let box = document.getElementById('szg-hub-open');
       const st = readState();
       const me = myChar();
-      const others = passive() || !st ? [] : (st.characters || []).filter(c => c.id && c.id !== me && !otherTabHas(c.id));
-      const hideKey = 'hideOpenOther:' + ((account && account.playerCode) || '');
-      if (!others.length || Date.now() - (Number(GM_getValue(hideKey, 0)) || 0) < 7 * 86400e3) { if (box) box.remove(); return; }
+      const others = passive() ? [] : accountCharList(st).filter(c => c.id !== me);
+      if (!others.length) { if (box) box.remove(); return; }
       if (!box) {
         box = document.createElement('div');
         box.id = 'szg-hub-open';
         box.style.cssText = 'position:fixed;right:8px;bottom:34px;z-index:99999;font:12px sans-serif;display:flex;gap:4px;align-items:center';
         document.body.appendChild(box);
       }
-      const html = others.map(c => `<button data-szgopen="${c.id}" style="font:12px sans-serif;padding:3px 8px;border-radius:10px;border:1px solid #2c6e8f;background:#163a4d;color:#dff;cursor:pointer" title="開一個新視窗固定顯示 ${c.name}，兩隻同時在線（同一個帳號開兩個分頁）">＋ 開 ${c.name} 的分頁</button>`).join('')
-        + `<button data-szghide="1" style="font:11px sans-serif;padding:2px 6px;border-radius:10px;border:1px solid #555;background:#222;color:#aaa;cursor:pointer" title="7 天內不再顯示這個按鈕">✕</button>`;
+      const mini = sessionStorage.getItem('szgOpenMini') === '1';
+      const btn = 'font:12px sans-serif;padding:3px 8px;border-radius:10px;cursor:pointer;';
+      const html = mini
+        ? `<button data-szgmini="0" style="${btn}border:1px solid #2c6e8f;background:#163a4d;color:#dff" title="開同帳號其他角色的分頁">＋ 分頁</button>`
+        : others.map(c => {
+            const v = GM_getValue(tabKey(c.id), null), has = !!(v && !isMe(v) && tabFresh(v));
+            const left = has ? Math.max(1, Math.ceil(((v.hidden ? 100000 : 20000) - (Date.now() - v.at)) / 1000)) : 0;
+            return has
+              ? `<button data-szgopen="${c.id}" data-szghas="1" style="${btn}border:1px solid #444;background:#222;color:#999" title="${c.name} 看起來已經有自己的分頁。如果你剛關掉它，約 ${left} 秒後會恢復成可以開；也可以直接按，確認後開新分頁">${c.name} 已開</button>`
+              : `<button data-szgopen="${c.id}" style="${btn}border:1px solid #2c6e8f;background:#163a4d;color:#dff" title="開一個新視窗固定顯示 ${c.name}，兩隻同時在線（同一個帳號開兩個分頁）">＋ 開 ${c.name} 的分頁</button>`;
+          }).join('') + `<button data-szgmini="1" style="font:11px sans-serif;padding:2px 6px;border-radius:10px;border:1px solid #555;background:#222;color:#aaa;cursor:pointer" title="收起來（點「＋ 分頁」再展開）">✕</button>`;
       if (box.dataset.h !== html) { box.innerHTML = html; box.dataset.h = html; }
       box.onclick = e => {
         const b = e.target.closest('button'); if (!b) return;
-        if (b.dataset.szghide) { GM_setValue(hideKey, Date.now()); box.remove(); return; }
+        if (b.dataset.szgmini) { sessionStorage.setItem('szgOpenMini', b.dataset.szgmini); box.dataset.h = ''; renderOpenOther(); return; }
         const id = b.dataset.szgopen;
+        if (b.dataset.szghas && !W.confirm('這隻角色看起來已經有自己的分頁（可能在別的視窗）。\n如果剛關掉它，確定就直接開新的；重複開的那個會自動暫停。')) return;
         W.open(location.origin + '/game/?szgChar=' + encodeURIComponent(id), 'szg_' + id, 'popup=yes,width=1280,height=860,noopener');
       };
     }
