@@ -538,6 +538,28 @@ function agentMain(ctx) {
 
     // ---------- 背包操作：賣出／鎖定／解鎖 ----------
     // 在回應裡找報價單（有 id 與 rows 的物件）
+    // 安全報價（2026-11-20 讀遊戲程式碼＋實測）：報價單存在 character.inventoryQuote（{id, category, rows:[{uid, kind, key, name, qty, price}], total, expiresAt}），
+    // 賣完也不會清掉。背包剛好在變動（掛機撿東西、堆疊合併）時送出的 id 對不上，遊戲可能不產生新報價，回應裡還是「上一張」報價單 →
+    // 以前會拿到舊的那張（項目比選的多）而停止。這裡確認是「剛產生的新報價」、每一列都是選到的東西，不對就重新同步再試一次。
+    async function safeQuote(charId, category, ids) {
+      const want = new Set(ids);
+      let lastErr = '';
+      for (let attempt = 0; attempt < 2; attempt++) {
+        let before = '';
+        try { const s0 = await gameRetry({ type: 'sync', characterId: charId }); before = (s0 && s0.character && s0.character.inventoryQuote && s0.character.inventoryQuote.id) || ''; } catch (_) {}
+        const qr = await gameRetry({ type: 'inventoryQuote', category, ids, characterId: charId });
+        const q = (qr && qr.character && qr.character.inventoryQuote && Array.isArray(qr.character.inventoryQuote.rows) ? qr.character.inventoryQuote : null) || findQuote(qr);
+        if (!q || !q.id) { lastErr = '取得報價失敗'; await sleepP(1500); continue; }
+        if (q.id === before || (q.category && q.category !== category)) { lastErr = '拿到的是舊的報價單（背包剛好在變動）'; await sleepP(2000); continue; }
+        const extra = q.rows.filter(r => r.uid ? !want.has(r.uid) : false);
+        // 有沒選到的東西：可能同一隻角色剛好在做別的賣出（另一張報價單），等一下重新報價；第二次還是這樣才停
+        if (extra.length) { lastErr = `報價單裡有沒有選到的東西（${extra.slice(0, 5).map(r => r.name || r.key).join('、')}${extra.length > 5 ? '…' : ''}），為了安全沒有賣`; await sleepP(2500); continue; }
+        if (q.rows.some(r => !r.uid) && q.rows.length > ids.length) return { error: `報價單有 ${q.rows.length} 項，比選擇的 ${ids.length} 項多，已停止` };
+        const got = new Set(q.rows.map(r => r.uid).filter(Boolean));
+        return { q, missing: ids.filter(u => got.size && !got.has(u)).length };
+      }
+      return { error: lastErr + '，重試後還是不行，請稍後再按重試' };
+    }
     function findQuote(o, depth = 0) {
       if (!o || typeof o !== 'object' || depth > 4) return null;
       if (o.id && Array.isArray(o.rows)) return o;
@@ -804,11 +826,10 @@ function agentMain(ctx) {
         const ids = pick.map(x => x.raw.uid).filter(u => nowBag.has(u) && !nowBag.get(u).locked);
         if (!ids.length) return;
         setBadge(null, `自動賣出 ${ids.length} 件裝備…`);
-        const qr = await game({ type: 'inventoryQuote', category: 'equip', ids });
-        const q = findQuote(qr);
-        if (!q) { await log('自動賣出失敗：取得報價失敗'); return; }
-        if (q.rows.length > ids.length) { await log(`自動賣出取消：報價單 ${q.rows.length} 項比要賣的 ${ids.length} 項多`); return; }
-        await game({ type: 'inventorySell', quoteId: q.id });
+        const sq = await safeQuote(now.character.id, 'equip', ids);
+        if (sq.error) { await log('自動賣出取消：' + sq.error); return; }
+        const q = sq.q;
+        await game({ type: 'inventorySell', quoteId: q.id, characterId: now.character.id });
         await log(`自動賣出 ${q.rows.length} 件，共 ${(Number(q.total) || 0).toLocaleString()} 楓幣：${desc}`);
       } catch (e) {
         console.warn('[szg-hub autosell]', e);
@@ -1257,7 +1278,8 @@ function agentMain(ctx) {
         const skipped = [];
         for (const it of b.items || []) {
           if (sup.has(it.key)) { skipped.push(it.name + '（補給中）'); continue; }
-          const uids = (it.uids || []).filter(u => stackOk.has(u) && !stackOk.get(u).locked);
+          // 堆疊的 uid 是流水號，掛機撿東西會新增／合併堆疊：用剛同步到的背包，依道具重新挑「這樣道具所有沒鎖的堆疊」
+          const uids = (c.inventoryStacks || []).filter(st => st.key === it.key && !st.locked && st.qty > 0).map(st => st.uid);
           if (!uids.length) { skipped.push(it.name); continue; }
           (groups[it.cat || 'consume'] || (groups[it.cat || 'consume'] = [])).push(...uids);
         }
@@ -1270,12 +1292,12 @@ function agentMain(ctx) {
         let total = 0, count = 0;
         for (const [category, ids] of Object.entries(groups)) {
           setBadge(null, `賣出 ${ids.length} 項（${category}）…`);
-          const qr = await game({ type: 'inventoryQuote', category, ids });
-          const q = findQuote(qr);
-          if (!q) return report(job, { event: 'error', msg: `取得報價失敗（${category}），回應欄位：${Object.keys(qr || {}).join(',')}` });
-          if (q.rows.length > ids.length) return report(job, { event: 'error', msg: `報價單有 ${q.rows.length} 項，比選擇的 ${ids.length} 項多，已停止` });
-          await game({ type: 'inventorySell', quoteId: q.id, requestId: rid() });
+          const r = await safeQuote(c.id, category, ids);
+          if (r.error) return report(job, { event: 'error', msg: `${r.error}（${category}）${count ? `；前面已賣出 ${count} 項，共 ${total.toLocaleString()} 楓幣` : ''}` });
+          const q = r.q;
+          await game({ type: 'inventorySell', quoteId: q.id, characterId: c.id, requestId: rid() });
           total += Number(q.total) || 0; count += q.rows.length;
+          if (r.missing) await report(job, { event: 'log', msg: `${r.missing} 疊在報價時已經不在（可能剛被用掉或合併），略過` });
         }
         await report(job, { event: 'log', msg: `已賣出 ${count} 項，共 ${total.toLocaleString()} 楓幣` });
         return report(job, { event: 'batchDone' });
@@ -1612,10 +1634,9 @@ function agentMain(ctx) {
         if (!ids.length) continue;
         setBadge(null, `公倉賣出：賣出 ${ids.length} 件…`);
         try {
-          const qr = await gameRetry({ type: 'inventoryQuote', category: 'equip', ids, characterId: c.id });
-          const q = findQuote(qr);
-          if (!q) return report(job, { event: 'error', msg: `取得報價失敗（已領出 ${ids.length} 件在 ${c.name} 背包，沒有賣）` });
-          if (q.rows.length > ids.length) return report(job, { event: 'error', msg: `報價單有 ${q.rows.length} 項，比要賣的 ${ids.length} 項多，已停止（裝備在 ${c.name} 背包）` });
+          const sq = await safeQuote(c.id, 'equip', ids);
+          if (sq.error) return report(job, { event: 'error', msg: `${sq.error}（已領出的 ${ids.length} 件在 ${c.name} 背包，沒有賣）` });
+          const q = sq.q;
           await gameRetry({ type: 'inventorySell', quoteId: q.id, characterId: c.id, requestId: rid() });
           sold += q.rows.length; total += Number(q.total) || 0;
         } catch (e) { return report(job, { event: 'error', msg: `賣出失敗：${e.message}（已領出的裝備在 ${c.name} 背包）` }); }
