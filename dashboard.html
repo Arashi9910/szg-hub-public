@@ -421,7 +421,7 @@
   .ov-nm { display: flex; gap: 6px; align-items: center; }
   #dexSlot { gap: 4px; } #dexSlot .chip { padding: 2px 9px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px; background: var(--panel2); }
   #dexSlot .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .dex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+  .dex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; align-items: start; grid-auto-flow: row dense; }
   .dex-card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: grid; grid-template-columns: 44px 1fr; gap: 2px 8px; align-items: start; }
   .dex-card .ic { grid-row: span 2; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: var(--panel2); border-radius: 6px; }
   .dex-card .ic img { max-width: 40px; max-height: 40px; image-rendering: pixelated; }
