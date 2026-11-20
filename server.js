@@ -721,6 +721,50 @@ function bossTick(force) {
   save();
 }
 setInterval(() => { try { bossTick(false); } catch (e) { console.warn('[野王]', e); } }, 60 * 1000);
+// ===== 組隊（組隊分頁）=====
+// 遊戲指令（2026-11-21 讀 game.js）：partyCreate、partyJoin {code}（隊伍代碼，可跨帳號）、partyLeave、partyKick {memberId}、
+// partyInvite {code: 12 碼玩家 ID}、partyFollow {memberId}（一鍵同圖）；隊伍在同步回應最上層 party = {code, leader, members:[{id, name, map…}]}，最多 6 人。
+// 套用一個隊伍＝每個隊員一個 party 工作（各自的分頁做）：要重組時先離開原本的隊伍 → 隊長建隊、把代碼回報給中控 → 隊員拿代碼加入 → 換圖、開始掛機。
+// 隊伍已經是這幾個人就不動隊伍，只換圖＋開掛機。
+BAG_KINDS.add('party'); KIND_MIN_AGENT.party = '0.46.0';
+function partyRuns() { const r = db.partyRuns || (db.partyRuns = {}); for (const [k, v] of Object.entries(r)) if (Date.now() - v.at > 24 * 3600e3) delete r[k]; return r; }
+function applyParties(list) {
+  const pm = partyMap(), jobs = [], warn = [], runs = partyRuns();
+  loadWorldIndex();
+  for (const p of list || []) {
+    const members = [...new Set((p.members || []).filter(id => db.chars[id]))];
+    if (!members.length) continue;
+    if (members.length > 6) throw new Error(`${p.name || '隊伍'} 超過 6 人（遊戲上限）`);
+    for (const id of members) if (db.jobs.some(j => ACTIVE.has(j.status) && j.kind === 'party' && j.fromCharId === id)) throw new Error(`${charName(id)} 還有組隊工作在進行，等它做完再套用`);
+    const codes = members.map(id => pm.of[id] || '');
+    const same = members.length === 1 ? !codes[0] : !!(codes[0] && codes.every(c => c === codes[0]) && (pm.members[codes[0]] || []).length === members.length);
+    const runId = crypto.randomBytes(6).toString('hex'), leader = members[0];
+    const mapName = (worldMapNames || {})[p.map] || p.mapName || p.map || '';
+    runs[runId] = { at: Date.now(), partyId: p.id || '', name: p.name || '', leader, members, code: same && codes[0] ? codes[0] : null, map: p.map || '', mapName };
+    for (const id of members) {
+      const snap = db.chars[id];
+      if (!tabOf(snap.playerCode, id)) warn.push(`${snap.char.name} 沒有自己的遊戲分頁（開了才會執行）`);
+      const role = members.length === 1 ? 'solo' : id === leader ? 'leader' : 'member';
+      const job = {
+        id: crypto.randomBytes(6).toString('hex'), kind: 'party', status: 'approved', createdAt: Date.now(), approvedAt: Date.now(),
+        fromCharId: id, fromName: snap.char.name, fromCode: snap.playerCode, toCharId: id, toName: snap.char.name, toCode: snap.playerCode,
+        batches: [{ items: [], gear: [], money: 0, party: { runId, role, ops: !same, map: p.map || '', mapName, leaderName: charName(leader), name: p.name || '' } }],
+        batchIndex: 0, log: [], lastMsg: '',
+      };
+      jobLog(job, `組隊：${p.name || ''}${same ? '（隊伍不變）' : role === 'leader' ? '（隊長，建立隊伍）' : role === 'member' ? `（加入 ${charName(leader)} 的隊伍）` : '（單人）'}${p.map ? `，前往 ${mapName}` : ''}`);
+      db.jobs.push(job); jobs.push(job);
+    }
+  }
+  save();
+  return { jobs: jobs.length, warn };
+}
+function partyRunInfo(id) {
+  const r = partyRuns()[id]; if (!r) return { error: '找不到這次組隊（可能已過期）' };
+  const lj = db.jobs.filter(j => j.kind === 'party' && j.batches[0].party.runId === id && j.fromCharId === r.leader).slice(-1)[0];
+  if (!r.code && lj && ['failed', 'cancelled'].includes(lj.status)) return { error: `隊長 ${charName(r.leader)} 建立隊伍失敗：${lj.lastMsg || ''}` };
+  return { code: r.code || '' };
+}
+
 const bossHpTrack = {}; // instanceId → { t0, hp0, at }（只放記憶體）
 function bossLive() {
   const b = bossDb(), by = {};
@@ -749,6 +793,53 @@ function bossSummary() {
       job: (db.jobs.filter(j => j.kind === 'boss' && j.fromCharId === id).slice(-1)[0]) || null };
   });
   return { cfg: c, chars, live: bossLive(), log: b.log.slice(-100) };
+}
+
+// ===== 即時經驗速度 =====
+// 遊戲畫面的「平均每小時經驗」是整輪掛機的平均，換圖／換隊後要很久才看得出差別。
+// 中控每 10 秒收到每隻角色當下的經驗值，自己算「最近 3 分鐘」的每小時經驗（跨等級用經驗表補上）；
+// 換地圖或換隊伍時重新開始量（只用換之後的資料），並記下換之前 10 分鐘的速度當比較基準。只放記憶體。
+const EXP_WIN = 3 * 60 * 1000, EXP_BASE = 10 * 60 * 1000, EXP_KEEP = 15 * 60 * 1000;
+const expTrack = {}; // 角色 → { pts:[{t, lv, xp, need}], since, key, base:{rate, span}|null, prevKey }
+function expGain(a, b) {
+  if (b.lv === a.lv) return b.xp - a.xp;
+  if (b.lv < a.lv) return 0;
+  let g = Math.max(0, (a.need || 0) - a.xp) + b.xp;
+  for (let l = a.lv + 1; l < b.lv; l++) g += Number((db.expTable || {})[l]) || 0;
+  return g;
+}
+function expRate(pts, from) {
+  const ps = pts.filter(p => p.t >= from);
+  if (ps.length < 2) return null;
+  let g = 0; for (let i = 1; i < ps.length; i++) g += expGain(ps[i - 1], ps[i]);
+  const span = ps[ps.length - 1].t - ps[0].t;
+  return span >= 50000 ? { rate: Math.round(g / span * 3600000), span } : { rate: null, span };
+}
+function partyCodeOf(snap) { const p = snap.party && snap.party.party; return p && p.code && (p.members || []).length > 1 ? p.code : ''; }
+function expSample(snap) {
+  const c = snap.char; if (!c || !(c.lv > 0) || c.xp == null) return;
+  const now = Date.now(), tr = expTrack[c.id] || (expTrack[c.id] = { pts: [], since: now, key: '' });
+  const key = (c.map || '') + '|' + partyCodeOf(snap);
+  if (tr.key && key !== tr.key) {
+    // 換地圖／換隊伍：記下換之前 10 分鐘的速度當基準，從現在重新量
+    const b = expRate(tr.pts, now - EXP_BASE);
+    tr.base = b && b.rate != null ? { rate: b.rate, span: b.span, key: tr.key, at: now } : null;
+    tr.since = now;
+  }
+  tr.key = key;
+  const last = tr.pts[tr.pts.length - 1];
+  if (last && now - last.t < 8000) return;
+  tr.pts.push({ t: now, lv: c.lv, xp: Number(c.xp) || 0, need: Number(c.nextXp) || 0 });
+  while (tr.pts.length && now - tr.pts[0].t > EXP_KEEP) tr.pts.shift();
+}
+function expLive() {
+  const out = {}, now = Date.now();
+  for (const [id, tr] of Object.entries(expTrack)) {
+    const last = tr.pts[tr.pts.length - 1]; if (!last || now - last.t > 90000) continue; // 超過 90 秒沒新資料（分頁關了、離線掛機）不算
+    const r = expRate(tr.pts, Math.max(tr.since, now - EXP_WIN));
+    out[id] = { rate: r && r.rate, span: r ? r.span : 0, since: tr.since, base: tr.base || null };
+  }
+  return out;
 }
 
 function send(res, code, body, type = 'application/json; charset=utf-8') {
@@ -814,7 +905,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/data') {
       const tabsOut = {}; for (const [code, m] of Object.entries(tabs)) for (const [id, t] of Object.entries(m)) if (Date.now() - t.at < TAB_LIVE_MS) tabsOut[id] = { code, at: t.at, hidden: t.hidden, off: t.off };
-      return send(res, 200, { now: Date.now(), tabs: tabsOut, chars: db.chars, dps: db.dps || {}, settings: db.settings, jobs: db.jobs.slice(-100), expTable: db.expTable || {}, idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo, alerts: alertSummary(), auto: automationInfo() });
+      return send(res, 200, { now: Date.now(), tabs: tabsOut, chars: db.chars, dps: db.dps || {}, expLive: expLive(), settings: db.settings, jobs: db.jobs.slice(-100), expTable: db.expTable || {}, idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo, alerts: alertSummary(), auto: automationInfo() });
     }
 
     if (req.method === 'POST' && url.pathname === '/api/push') {
@@ -829,6 +920,7 @@ const server = http.createServer(async (req, res) => {
         if (snap.playerCode) snap.codeFromCache = true;
       }
       db.chars[snap.char.id] = snap;
+      expSample(snap);
       // 經驗表：遊戲給的「這一級需要多少經驗」是精確值，記下來給升級時間估算用
       if (snap.char.nextXpExact && snap.char.lv > 0 && snap.char.nextXp > 0) {
         db.expTable = db.expTable || {};
@@ -962,6 +1054,18 @@ const server = http.createServer(async (req, res) => {
       try { fs.writeFileSync(WORLD_FILE + '.tmp', body); fs.renameSync(WORLD_FILE + '.tmp', WORLD_FILE); } catch (e) { return send(res, 500, { error: e.message }); }
       return send(res, 200, { ok: true });
     }
+
+    // ---- 組隊 ----
+    if (req.method === 'POST' && url.pathname === '/api/party/apply') {
+      const e = JSON.parse(await readBody(req));
+      return send(res, 200, applyParties(e.parties));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/party/code') {
+      const e = JSON.parse(await readBody(req)); const r = partyRuns()[e.runId];
+      if (r && e.code) { r.code = String(e.code); save(); }
+      return send(res, 200, { ok: !!r });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/party/run') return send(res, 200, partyRunInfo(url.searchParams.get('id') || ''));
 
     // ---- 野王 ----
     if (req.method === 'GET' && url.pathname === '/api/boss') return send(res, 200, bossSummary());

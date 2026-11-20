@@ -395,6 +395,26 @@
   .pet-show { display: none; background: none; border: 0; color: var(--dim); cursor: pointer; font: inherit; font-size: 12px; padding: 4px 12px; }
   .pet-card.off .pet-stage, .pet-card.off .pet-hide { display: none; } .pet-card.off .pet-show { display: block; }
   .ov-auto { padding: 8px 12px; }
+  .pt-hd { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .pt-pool-hd { display: flex; gap: 10px; align-items: baseline; margin-bottom: 6px; }
+  .pt-pool { display: flex; flex-wrap: wrap; gap: 6px; min-height: 34px; border-radius: 6px; }
+  .pt-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+  .pt-card { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+  .pt-card.drop, .pt-pool.drop { outline: 2px dashed var(--accent); outline-offset: 2px; }
+  .pt-card .pt-top { display: flex; gap: 6px; align-items: center; }
+  .pt-card .pt-name { width: 92px; font-weight: 600; }
+  .pt-card select { flex: 1; min-width: 0; }
+  .pt-chip { display: inline-flex; gap: 6px; align-items: center; padding: 3px 9px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel2); cursor: grab; user-select: none; font-size: 13px; }
+  .pt-chip.sel { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .pt-chip.notab { opacity: .55; }
+  .pt-mem { display: flex; gap: 8px; align-items: center; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); cursor: grab; }
+  .pt-mem.sel { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .pt-mem .lead { cursor: pointer; opacity: .25; } .pt-mem .lead.on { opacity: 1; cursor: default; }
+  .pt-mem .nm { font-weight: 600; } .pt-mem .rt { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .pt-mem .x { cursor: pointer; color: var(--dim); padding: 0 4px; }
+  .pt-live { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; padding: 6px 8px; border-radius: 6px; background: var(--bg); }
+  .pt-live .big { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .pt-st { font-size: 12px; }
   #bdSyncBox { display: inline-flex; gap: 8px; align-items: center; } .bd-synclog { display: inline-block; position: relative; }
   .bd-synclog > div { position: absolute; z-index: 30; top: 100%; left: 0; width: 460px; max-height: 300px; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
   .hpbar { display: inline-block; width: 90px; height: 7px; background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; vertical-align: middle; overflow: hidden; }
@@ -452,6 +472,7 @@
     <button data-tab="trade">交易</button>
     <button data-tab="bag">背包</button>
     <button data-tab="board">派工</button>
+    <button data-tab="party">組隊</button>
     <button data-tab="maps">地圖</button>
     <button data-tab="market">市場</button>
     <button data-tab="quiz">知識王</button>
@@ -608,6 +629,18 @@
       <div class="dim sm">建立後要在右上角「工作」確認執行；執行時雙方的遊戲分頁都要開著。</div>
     </aside>
   </section>
+  <!-- 組隊 -->
+  <section id="party">
+    <div class="card">
+      <div class="pt-hd"><b>組隊</b><span class="dim sm" id="ptSum"></span><span style="flex:1"></span>
+        <button class="btn" id="ptAdd">＋ 新隊伍</button><button class="btn" id="ptImport" title="照遊戲裡目前的隊伍和所在地圖建立卡片">⤓ 從目前隊伍匯入</button><button class="btn" id="ptSuggest" title="用地圖頁「組隊效率試算」同一套估算，替有分頁的角色排一版分組和地圖">✦ 自動排一版</button><button class="btn primary" id="ptApplyAll">▶ 套用全部</button><span class="dim sm" id="ptMsg"></span></div>
+      <div class="dim sm">把角色拖進隊伍卡片（或點一下角色再點卡片），選地圖，按「套用」：中控會讓隊員離開原本的隊伍、由第一位（👑 隊長）建隊、其他人加入，再一起換到地圖並開始掛機；隊伍已經是這幾個人就只換圖。每隊最多 6 人，角色要有自己的遊戲分頁。
+        卡片上的經驗是<b>最近 3 分鐘實際量到的每小時經驗</b>（換圖或換隊後重新量，約 1 分鐘開始有數字），並和出發前 10 分鐘比較。</div>
+    </div>
+    <div class="card"><div class="pt-pool-hd"><b>還沒分隊</b><span class="dim sm">拖到下面的卡片，或點一下再點卡片</span></div><div id="ptPool" class="pt-pool" data-ptdrop=""></div></div>
+    <div id="ptCards" class="pt-cards"></div>
+  </section>
+
   <!-- 派工看板 -->
   <section id="board">
     <div class="card">
@@ -1299,7 +1332,7 @@ function renderOverview() {
       <td>${accCell}</td>
       <td><div><b class="cn">${esc(c.name)}</b>${isMain ? ' <span class="tag main">本尊</span>' : ''}${switchBtn(c.id, r.s.accountId)}</div><div class="dim sm">${esc(c.jobName || '')}</div></td>
       <td><span class="lvl">Lv <b>${c.lv}</b></span>${exp == null ? '' : `<span class="expbar" title="經驗 ${exp.toFixed(2)}%"><i style="width:${exp}%"></i></span><span class="dim sm">${exp.toFixed(1)}%</span>`}</td>
-      <td class="num">${c.hourlyExp ? short(c.hourlyExp) : '<span class="dim">—</span>'}</td>
+      <td class="num" title="上面：遊戲的整輪平均；下面：中控量的最近 3 分鐘（換圖、換隊後重新量）">${c.hourlyExp ? short(c.hourlyExp) : '<span class="dim">—</span>'}${(() => { const x = (DATA.expLive || {})[c.id]; return x && x.rate != null ? `<div class="sm dim">近3分 ${short(x.rate)}</div>` : ''; })()}</td>
       <td class="num">${lvTimeCell(lvT(r), c)}</td>${tgt ? `<td class="num">${lvTimeCell(tgT(r), c, tgt)}</td>` : ''}
       <td class="num">${dpsCell(c.id)}</td>
       <td>${esc(c.mapName)}</td>
@@ -2899,6 +2932,159 @@ document.addEventListener('change', async e => {
 document.addEventListener('input', e => { if (e.target.id === 'mkSearch') renderMarket(); });
 
 
+// ================= 組隊 =================
+// settings.parties = [{id, name, members:[角色 id]（第一位是隊長）, map}]；套用 → /api/party/apply（每個隊員一個 party 工作）
+ui.pt = { sel: null };
+const ptList = () => (S.parties || []).map(p => ({ ...p, members: [...(p.members || [])] }));
+function savePt(list) { S.parties = list; return saveSettings({ parties: list }); }
+const ptNewId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+function ptChars() { return mapCandidates().map(c => ({ ...c, tab: hasTab(c.id), mapName: (mapOf(c.map) || {}).name || '' })); }
+// 遊戲裡目前的隊伍（2 人以上）：代碼與成員數
+function ptNow(id) { const p = DATA.chars[id] && DATA.chars[id].party && DATA.chars[id].party.party; return p && p.code && (p.members || []).length > 1 ? { code: p.code, n: p.members.length, ids: p.members.map(m => m.id) } : null; }
+let ptMapHtml = '';
+function ptMapOptions() {
+  if (ptMapHtml || !WORLD) return ptMapHtml;
+  const byR = {}; for (const m of WORLD.maps) (byR[m.region || '其他'] || (byR[m.region || '其他'] = [])).push(m);
+  ptMapHtml = '<option value="">（不換圖）</option>' + Object.entries(byR).map(([r, ms]) => `<optgroup label="${esc(r)}">${ms.sort((a, b) => a.minLevel - b.minLevel || (a.lvMin || 0) - (b.lvMin || 0)).map(m => `<option value="${esc(m.id)}">${esc(m.name)}（Lv${m.minLevel}＋${m.lvMin != null ? `，怪 ${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}` : ''}）</option>`).join('')}</optgroup>`).join('');
+  return ptMapHtml;
+}
+const rateTxt = r => r == null ? '—' : short(r);
+function ptLive(members) {
+  const L = DATA.expLive || {};
+  const xs = members.map(id => L[id]).filter(Boolean), withRate = xs.filter(x => x.rate != null);
+  const sum = withRate.reduce((a, x) => a + x.rate, 0);
+  const span = xs.length ? Math.min(...xs.map(x => x.span || 0)) : 0;
+  const bases = members.map(id => L[id] && L[id].base);
+  const base = bases.every(b => b && b.rate != null) ? bases.reduce((a, b) => a + b.rate, 0) : null;
+  return { n: withRate.length, sum, span, base, all: withRate.length === members.length && members.length > 0 };
+}
+function ptStatus(p) {
+  const jobs = (DATA.jobs || []).filter(j => j.kind === 'party' && p.members.includes(j.fromCharId));
+  const active = jobs.filter(j => ['approved', 'running'].includes(j.status));
+  if (active.length) return { cls: 'warn', html: '套用中：' + active.map(j => `${esc(j.fromName)} ${esc(j.lastMsg || '排隊中')}`).join('；') };
+  const failed = jobs.filter(j => j.status === 'failed' && Date.now() - (j.updatedAt || j.createdAt) < 15 * 60e3);
+  const diff = [];
+  const now = p.members.map(ptNow);
+  if (p.members.length > 1) {
+    const code = now[0] && now[0].code;
+    if (!code || now.some(x => !x || x.code !== code) || now[0].n !== p.members.length) diff.push('隊伍還不是這幾個人');
+  } else if (p.members.length === 1 && now[0]) diff.push('還在別的隊伍裡');
+  const away = p.map ? p.members.filter(id => DATA.chars[id] && DATA.chars[id].char.map !== p.map).map(charNameOf) : [];
+  if (away.length) diff.push(`${away.join('、')} 不在這張圖`);
+  const notab = p.members.filter(id => !hasTab(id)).map(charNameOf);
+  if (failed.length) return { cls: 'bad', html: '上次套用失敗：' + failed.map(j => `${esc(j.fromName)} ${esc(j.lastMsg || '')}`).join('；') };
+  if (!p.members.length) return { cls: 'dim', html: '把角色拖進來' };
+  if (!diff.length) return { cls: 'good', html: '✓ 已就位' + (notab.length ? `<span class="warn">（${esc(notab.join('、'))} 沒有自己的分頁）</span>` : '') };
+  return { cls: 'dim', html: '要套用：' + esc(diff.join('；')) + (notab.length ? `<span class="warn">；${esc(notab.join('、'))} 沒有自己的分頁，開了才會執行</span>` : '') };
+}
+function ptEstimate(p) {
+  try {
+    const m = mapOf(p.map); if (!m || !p.members.length) return null;
+    const cs = mapCandidates().filter(c => p.members.includes(c.id));
+    for (const c of cs) calibrateChar(c);
+    const known = cs.filter(c => c.power);
+    for (const c of cs) if (!c.power) { const ref = known[0]; c.power = ref ? ref.power * Math.pow(c.lv / ref.lv, 1.8) : Math.pow(c.lv, 2) * 5; }
+    return groupEstimate(cs, m).total || null;
+  } catch (_) { return null; }
+}
+function renderParty(force) {
+  if (!WORLD) { loadWorld().then(() => WORLD && renderParty()); }
+  const sec = $('#party'); if (!sec) return;
+  if (!force && sec.contains(document.activeElement) && ['INPUT', 'SELECT'].includes(document.activeElement.tagName)) return;
+  const list = ptList(), chars = ptChars(), byId = Object.fromEntries(chars.map(c => [c.id, c]));
+  const inCard = new Set(list.flatMap(p => p.members));
+  const chip = c => { const now = ptNow(c.id); return `<span class="pt-chip ${c.tab ? '' : 'notab'} ${ui.pt.sel === c.id ? 'sel' : ''}" draggable="true" data-ptchar="${c.id}" title="${esc(`${c.name} Lv${c.lv}・${c.mapName || '位置未知'}${c.tab ? '' : '・沒有自己的遊戲分頁'}${now ? '\n目前隊伍：' + now.ids.map(charNameOf).join('、') : ''}`)}"><b>${esc(c.name)}</b><span class="dim sm">Lv${c.lv}${c.mapName ? '・' + esc(c.mapName) : ''}</span>${now ? '<span class="dim sm">👥</span>' : ''}</span>`; };
+  const pool = chars.filter(c => !inCard.has(c.id));
+  $('#ptPool').innerHTML = pool.length ? pool.map(chip).join('') : '<span class="dim sm">全部角色都分好隊了</span>';
+  const L = DATA.expLive || {};
+  $('#ptCards').innerHTML = list.map(p => {
+    const st = ptStatus(p), lv = ptLive(p.members), est = ptEstimate(p);
+    const pct = lv.all && lv.base ? (lv.sum - lv.base) / lv.base : null;
+    const measuring = lv.n && lv.span < 170000;
+    const mem = p.members.map((id, i) => {
+      const c = byId[id] || { id, name: charNameOf(id), lv: '?', mapName: '' }, x = L[id];
+      const wrong = p.map && DATA.chars[id] && DATA.chars[id].char.map !== p.map;
+      return `<div class="pt-mem ${ui.pt.sel === id ? 'sel' : ''}" draggable="true" data-ptchar="${id}">
+        <span class="lead ${i === 0 ? 'on' : ''}" data-ptlead="${p.id}|${id}" title="${i === 0 ? '隊長（建立隊伍的人）' : '設為隊長'}">👑</span>
+        <span class="nm">${esc(c.name)}</span><span class="dim sm">Lv${c.lv}・<span class="${wrong ? 'warn' : ''}">${esc(c.mapName || '位置未知')}</span>${c.tab ? '' : '・<span class="warn">沒分頁</span>'}</span>
+        <span class="rt sm" title="最近 3 分鐘每小時經驗">${x && x.rate != null ? short(x.rate) + '/時' : '<span class="dim">—</span>'}</span>
+        <span class="x" data-ptrm="${p.id}|${id}" title="移出隊伍">✕</span></div>`;
+    }).join('');
+    return `<div class="card pt-card" data-ptdrop="${p.id}">
+      <div class="pt-top"><input class="pt-name" data-ptname="${p.id}" value="${esc(p.name || '')}"><select data-ptmap="${p.id}">${ptMapOptions()}</select>
+        <button class="btn sm primary" data-ptapply="${p.id}" ${p.members.length ? '' : 'disabled'}>▶ 套用</button><button class="btn sm" data-ptdel="${p.id}" title="刪除這張卡片（不會動到遊戲裡的隊伍）">✕</button></div>
+      <div class="pt-st ${st.cls}">${st.html}</div>
+      <div class="pt-live"><span class="dim sm">全隊每小時經驗</span><span class="big">${lv.n ? short(lv.sum) : '—'}</span>
+        <span class="sm">${measuring ? `<span class="dim">測量中（已量 ${Math.floor(lv.span / 60000)}:${String(Math.floor(lv.span / 1000) % 60).padStart(2, '0')}）</span>` : lv.n ? '<span class="dim">最近 3 分鐘</span>' : '<span class="dim">等資料（換圖後約 1 分鐘）</span>'}</span>
+        ${pct != null ? `<span class="${pct >= 0 ? 'good' : 'bad'}">${pct >= 0 ? '▲' : '▼'}${Math.abs(pct * 100).toFixed(0)}%</span><span class="dim sm">出發前 ${short(lv.base)}</span>` : ''}
+        ${est ? `<span class="dim sm" style="margin-left:auto" title="地圖頁組隊效率試算的估計值，只是參考">試算 ${short(est)}</span>` : ''}</div>
+      <div class="pt-mems">${mem || '<div class="dim sm" style="padding:10px">把角色拖進來（最多 6 人）</div>'}</div>
+    </div>`;
+  }).join('') || '<div class="card dim">還沒有隊伍：按「＋ 新隊伍」、「⤓ 從目前隊伍匯入」或「✦ 自動排一版」。</div>';
+  list.forEach(p => { const sel = document.querySelector(`[data-ptmap="${p.id}"]`); if (sel) sel.value = p.map || ''; });
+  const live = list.filter(p => p.members.length), ready = live.filter(p => ptStatus(p).cls === 'good').length;
+  $('#ptSum').textContent = list.length ? `${list.length} 隊・${inCard.size} 隻角色・已就位 ${ready}／${live.length}` : '';
+}
+function ptMove(charId, toId) {
+  const list = ptList();
+  for (const p of list) p.members = p.members.filter(x => x !== charId);
+  if (toId) { const p = list.find(x => x.id === toId); if (!p) return; if (p.members.length >= 6) { alert('一隊最多 6 人'); return; } p.members.push(charId); }
+  ui.pt.sel = null; savePt(list); renderParty();
+}
+async function ptApply(ids) {
+  const list = ptList().filter(p => p.members.length && (!ids || ids.includes(p.id)));
+  if (!list.length) { $('#ptMsg').textContent = '沒有可以套用的隊伍'; return; }
+  const lines = list.map(p => `${p.name || '隊伍'}：${p.members.map(charNameOf).join('、')}${p.map ? ' → ' + ((mapOf(p.map) || {}).name || p.map) : ''}`);
+  if (!confirm(`套用以下隊伍？\n\n${lines.join('\n')}\n\n隊伍不是這幾個人的會先離開原本的隊伍、重新組隊；換圖後會開始掛機。`)) return;
+  try {
+    const r = await api('/api/party/apply', { parties: list.map(p => ({ id: p.id, name: p.name, members: p.members, map: p.map, mapName: (mapOf(p.map) || {}).name || '' })) });
+    $('#ptMsg').textContent = `已送出 ${r.jobs} 個工作${r.warn && r.warn.length ? '；' + r.warn.join('、') : ''}`;
+    await poll(true);
+  } catch (e) { alert('套用失敗：' + e.message); }
+}
+document.addEventListener('dragstart', e => { const t = e.target.closest && e.target.closest('[data-ptchar]'); if (!t) return; e.dataTransfer.setData('text/szg-pt', t.dataset.ptchar); e.dataTransfer.effectAllowed = 'move'; });
+document.addEventListener('dragover', e => { const z = e.target.closest && e.target.closest('[data-ptdrop]'); if (!z || !e.dataTransfer.types.includes('text/szg-pt')) return; e.preventDefault(); document.querySelectorAll('.drop').forEach(x => x !== z && x.classList.remove('drop')); z.classList.add('drop'); });
+document.addEventListener('dragleave', e => { const z = e.target.closest && e.target.closest('[data-ptdrop]'); if (z && !z.contains(e.relatedTarget)) z.classList.remove('drop'); });
+document.addEventListener('drop', e => { const z = e.target.closest && e.target.closest('[data-ptdrop]'); if (!z) return; const id = e.dataTransfer.getData('text/szg-pt'); if (!id) return; e.preventDefault(); z.classList.remove('drop'); ptMove(id, z.dataset.ptdrop); });
+document.addEventListener('click', async e => {
+  const t = e.target; if (!t.closest || !t.closest('#party')) return;
+  if (t.dataset.ptlead) { const [pid, cid] = t.dataset.ptlead.split('|'); const list = ptList(), p = list.find(x => x.id === pid); if (p) { p.members = [cid, ...p.members.filter(x => x !== cid)]; savePt(list); renderParty(); } return; }
+  if (t.dataset.ptrm) { const [, cid] = t.dataset.ptrm.split('|'); ptMove(cid, ''); return; }
+  if (t.dataset.ptdel) { const list = ptList().filter(p => p.id !== t.dataset.ptdel); savePt(list); renderParty(); return; }
+  if (t.dataset.ptapply) { await ptApply([t.dataset.ptapply]); return; }
+  if (t.id === 'ptApplyAll') { await ptApply(null); return; }
+  if (t.id === 'ptAdd') { const list = ptList(); list.push({ id: ptNewId(), name: `隊伍 ${list.length + 1}`, members: [], map: '' }); savePt(list); renderParty(); return; }
+  if (t.id === 'ptImport') {
+    const seen = new Set(), list = [];
+    for (const c of ptChars()) { const now = ptNow(c.id); if (!now || seen.has(now.code)) continue; seen.add(now.code); const lead = (DATA.chars[c.id].party.party.leader) || now.ids[0]; const mem = [lead, ...now.ids.filter(x => x !== lead)].filter(x => ptChars().some(c => c.id === x));
+      const ms = [...new Set(mem.map(x => DATA.chars[x] && DATA.chars[x].char.map).filter(Boolean))]; // 大家都在同一張圖才設地圖，不然「不換圖」
+      list.push({ id: ptNewId(), name: `隊伍 ${list.length + 1}`, members: mem, map: ms.length === 1 ? ms[0] : '' }); }
+    if (!list.length) { $('#ptMsg').textContent = '目前回報的角色都沒有隊伍'; return; }
+    if (ptList().length && !confirm(`用遊戲裡目前的 ${list.length} 個隊伍取代現在的卡片？`)) return;
+    savePt(list); renderParty(); $('#ptMsg').textContent = `已匯入 ${list.length} 個隊伍`; return;
+  }
+  if (t.id === 'ptSuggest') {
+    if (!WORLD) { $('#ptMsg').textContent = '還沒有地圖資料'; return; }
+    const pick = mapCandidates().filter(c => hasTab(c.id));
+    if (!pick.length) { $('#ptMsg').textContent = '沒有開著分頁的角色'; return; }
+    if (ptList().length && !confirm('用建議分組取代現在的卡片？')) return;
+    const res = planGroups(pick, 6, false);
+    savePt(res.map((r, i) => ({ id: ptNewId(), name: `隊伍 ${i + 1}`, members: r.g.map(c => c.id), map: r.best ? r.best.map.id : '' })));
+    renderParty(); $('#ptMsg').textContent = `排好 ${res.length} 隊（依試算，請檢查後再套用）`; return;
+  }
+  // 點選移動：先點角色，再點卡片（或「還沒分隊」）
+  const ch = t.closest('[data-ptchar]');
+  if (ch && !t.closest('[data-ptrm],[data-ptlead]')) { ui.pt.sel = ui.pt.sel === ch.dataset.ptchar ? null : ch.dataset.ptchar; renderParty(); return; }
+  const z = t.closest('[data-ptdrop]');
+  if (z && ui.pt.sel && !t.closest('button,select,input')) { ptMove(ui.pt.sel, z.dataset.ptdrop); return; }
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset && t.dataset.ptmap) { const list = ptList(), p = list.find(x => x.id === t.dataset.ptmap); if (p) { p.map = t.value; savePt(list); t.blur(); renderParty(true); } return; }
+  if (t.dataset && t.dataset.ptname) { const list = ptList(), p = list.find(x => x.id === t.dataset.ptname); if (p) { p.name = t.value.trim().slice(0, 20); savePt(list); } return; }
+});
+// 組隊頁開著時每 10 秒的 poll 會重畫；經驗數字是伺服器算好的
+
 // ================= 輪流打野王 =================
 let BOSS = null, bossLoadAt = 0;
 const bossCfg = () => ({ mode: 'off', chars: {}, mobs: null, estMax: 15, visitMax: 20, presetBoss: 0, presetTrain: 0, ...(S.boss || {}) });
@@ -3180,7 +3366,12 @@ function groupEstimate(members, map) {
 function runPlanner() {
   const pick = mapCandidates().filter(c => ui.mpSel.has(c.id));
   if (!pick.length) { $('#ppOut').innerHTML = '<div class="warn">先在上方勾選角色</div>'; return; }
-  const size = Math.min(6, Math.max(1, Number($('#ppSize').value) || 6)), keepMap = $('#ppKeepMap').checked;
+  const res = planGroups(pick, Math.min(6, Math.max(1, Number($('#ppSize').value) || 6)), $('#ppKeepMap').checked);
+  ui.ppRes = res;
+  renderPlannerOut(res);
+}
+// 建議分組（地圖頁的組隊效率試算、組隊頁的「自動排一版」共用）：回傳 [{g: 角色們, best: {map, total…}, alt, cur}]
+function planGroups(pick, size, keepMap) {
   // 1) 反推輸出能力：每小時經驗 ÷ 目前地圖的經驗/血量（以單人估）
   // 出手速度上限：每隻每小時最多約 2,400 隻（約 1.5 秒一隻）；目前實測擊殺數更高的就用實測值
   for (const c of pick) calibrateChar(c);
@@ -3206,7 +3397,9 @@ function runPlanner() {
     const ranked = maps.map(m => groupEstimate(g, m)).sort((a, b) => b.total - a.total);
     return { g, best: ranked[0], alt: ranked.slice(1, 3), cur: g.reduce((a, c) => a + c.cur, 0) };
   });
-  ui.ppRes = res;
+  return res;
+}
+function renderPlannerOut(res) {
   $('#ppOut').innerHTML = res.map((r, i) => {
     if (!r.best) return `<div class="card"><b>第 ${i + 1} 組</b>：找不到所有人都能進的地圖</div>`;
     const b = r.best, gain = r.cur ? (b.total / r.cur - 1) : null;
@@ -5227,6 +5420,7 @@ function renderAll() {
   if (active === 'market') loadMarket().then(renderMarket);
   if (active === 'maps') { renderMaps(); loadBoss().then(() => renderBoss()); }
   if (active === 'board') { renderBoard(); renderBoardSync(); }
+  if (active === 'party') renderParty();
   if (active === 'forge') renderForge();
   if (active === 'board') facGuildTick();
   if (active === 'guild') renderGuild();

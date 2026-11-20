@@ -1345,6 +1345,7 @@ function agentMain(ctx) {
       if (job.kind === 'guildSell') return runGuildSell(job, c);
       if (job.kind === 'guildMoney') return runGuildMoney(job, c);
       if (job.kind === 'boss') return runBossJob(job, c);
+      if (job.kind === 'party') return runPartyJob(job, c);
       // 不認得的工作：多半是這個分頁的腳本太舊，重新整理一次拿新版（同一個工作只試一次）
       if (GM_getValue(ck('reloadForJob'), '') !== job.id) {
         GM_setValue(ck('reloadForJob'), job.id);
@@ -1354,6 +1355,55 @@ function agentMain(ctx) {
       }
       return report(job, { event: 'error', msg: '未知的工作類型：' + job.kind + '（重新整理後仍然不認得，請手動重新整理遊戲分頁）' });
     }
+    // ---------- 組隊（組隊分頁套用）----------
+    // 要重組時：離開原本的隊伍 → 隊長 partyCreate、把隊伍代碼回報中控 → 隊員等代碼、partyJoin → 換圖（換圖會停掛機）→ 開始掛機
+    async function runPartyJob(job, c) {
+      const p = (job.batches[0] || {}).party || {}, id = c.id;
+      const log = msg => report(job, { event: 'log', msg });
+      const partyCode = j => (j && j.party && j.party.code) || '';
+      try {
+        if (p.ops) {
+          const s0 = await gameRetry({ type: 'sync', characterId: id });
+          if (partyCode(s0)) { setBadge(null, '組隊：離開原本的隊伍…'); await gameRetry({ type: 'partyLeave', characterId: id }); await log('已離開原本的隊伍'); await sleepP(800); }
+          if (p.role === 'leader') {
+            setBadge(null, '組隊：建立隊伍…');
+            let j = await gameRetry({ type: 'partyCreate', characterId: id });
+            let code = partyCode(j);
+            if (!code) { await sleepP(1000); code = partyCode(await gameRetry({ type: 'sync', characterId: id })); }
+            if (!code) return report(job, { event: 'error', msg: '建立隊伍後拿不到隊伍代碼' });
+            await hub('POST', '/api/party/code', { runId: p.runId, code });
+            await log(`已建立隊伍（代碼 ${code}）`);
+          } else if (p.role === 'member') {
+            let code = '';
+            const t0 = Date.now();
+            while (Date.now() - t0 < 150000) {
+              const r = await hub('GET', '/api/party/run?id=' + encodeURIComponent(p.runId)).catch(() => null);
+              if (r && r.error) return report(job, { event: 'error', msg: r.error });
+              if (r && r.code) { code = r.code; break; }
+              setBadge(null, `組隊：等隊長 ${p.leaderName} 建立隊伍…`);
+              await sleepP(3000);
+            }
+            if (!code) return report(job, { event: 'error', msg: `等了 2 分半，隊長 ${p.leaderName} 還沒建好隊伍（他的遊戲分頁要開著）` });
+            setBadge(null, `組隊：加入 ${p.leaderName} 的隊伍…`);
+            await gameRetry({ type: 'partyJoin', code, characterId: id });
+            await log(`已加入 ${p.leaderName} 的隊伍`);
+          }
+        }
+        const s1 = await gameRetry({ type: 'sync', characterId: id });
+        const here = s1 && s1.character && s1.character.map;
+        let moved = false;
+        if (p.map && here !== p.map) { setBadge(null, `組隊：前往 ${p.mapName}…`); await gameRetry({ type: 'map', map: p.map, characterId: id }); moved = true; await sleepP(1200); }
+        let started = true;
+        try { await gameRetry({ type: 'start', characterId: id }); } catch (_) { started = false; }
+        lastHash = '';
+        await log(`${moved ? `已前往 ${p.mapName}，` : ''}${started ? '已開始掛機' : '開始掛機失敗，請手動開始'}`);
+        return report(job, { event: 'batchDone' });
+      } catch (e) {
+        if (e.gameUpdated) throw e;
+        return report(job, { event: 'error', msg: e.message });
+      }
+    }
+
     // ---------- 輪流打野王 ----------
     // 王的狀態：同步帶 includeBossRespawns 拿到每隻野王的 deadline／spawned／available，定時回報給中控排程
     // （只有中控設定要這隻角色打王時才查，fullSync 比一般同步重）
