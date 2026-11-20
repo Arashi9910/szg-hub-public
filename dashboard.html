@@ -553,7 +553,7 @@
       <div class="bar"><span class="dim sm" style="width:36px">部位</span><div class="chips" id="dexSlot"></div></div>
       <div class="bar"><span class="dim sm" style="width:36px">排序</span><div class="seg" id="dexSort"><button data-dexsort="lv">等級</button><button data-dexsort="slot">部位</button><button data-dexsort="atk">攻擊</button></div>
         <label class="sm"><input type="checkbox" id="dexOwned"> 只看我有的</label></div>
-      <div class="dim sm">素質是標準值，括號是掉落時的浮動範圍（推估：標準值 ±10%，至少 ±1；物攻／魔攻最多 ±5、其他最多 ±10，用你身上幾千筆掉落紀錄對過）。選某個職業時，「全職業」的裝備也會一起列出來。</div>
+      <div class="dim sm">素質是標準值，括號是掉落時的浮動範圍（推估：標準值 ±10%，至少 ±1；物攻／魔攻最多 ±5、其他最多 ±10，用你身上幾千筆掉落紀錄對過）。選某個職業時只列那個職業的裝備；全職業裝備請點「全職業」。</div>
     </div>
     <div id="dexGrid" class="dex-grid"></div>
   </section>
@@ -5493,7 +5493,7 @@ function renderDex() {
   let rows = list.filter(e => {
     const [id, name, type, , lv, job] = e;
     if (jobBit === 0 && job !== 0) return false;
-    if (jobBit && !(job === 0 || (job > 0 && (job & jobBit)))) return false;
+    if (jobBit && !(job > 0 && (job & jobBit))) return false; // 選某職業＝只列該職業的裝備（不含全職業）
     if (lv < lo || lv > hi) return false;
     if (d.lv === 'mine' && !chars.some(c => (c.lv || 0) >= lv && (job === 0 || (job > 0 && (job & (c.branchBit || 0)))))) return false;
     if (d.slot === 'weapon' ? !isWeaponType(type) : d.slot && type !== d.slot) return false;
