@@ -3892,12 +3892,54 @@ function boardSyncFromGame() {
   }
   saveSettings(patch);
 }
+// ---- 空地圖自動移除 ----
+// 看板上的地圖沒有任何角色（要去的派工、或人已經在那裡；拖去待命的不算）超過 N 分鐘（預設 10）就從看板移除。
+// 剛加進來的地圖也是從那時開始算，有時間把角色拖上去；販售範本、目標道具保留（存在 sell／goals，不跟著刪）。
+// 計時存在 settings.boardEmpty = {組別: {地圖: 開始空的時間}}（看板設定 boardCfg 只存固定欄位，不能放在裡面）
+function boardPruneEmpty() {
+  if (S.boardPrune === false || boardPending || !snaps().length) return;
+  const mins = Math.max(0.05, Number(S.boardPruneMin) || 10), now = Date.now();
+  // 打王中的角色人不在原本的地圖，但打完會回去：原地圖算有人
+  const bossHome = {}; for (const j of DATA.jobs || []) if (j.kind === 'boss' && ['approved', 'running'].includes(j.status) && j.batches[0].boss.back) bossHome[j.fromCharId] = j.batches[0].boss.back;
+  const all = { A: S.board || {}, ...(S.boards || {}) }, empty = JSON.parse(JSON.stringify(S.boardEmpty || {}));
+  const ids = new Set(); for (const sn of snaps()) { ids.add(sn.char.id); for (const x of sn.accountChars || []) ids.add(x.id); }
+  const logs = []; let changed = false, emptyChanged = false;
+  for (const g of ['A', 'B']) {
+    const b = all[g]; if (!b || !b.lanes) continue;
+    const lanes = b.lanes, assign = b.assign || {}, onBoard = new Set(Object.values(lanes).flat());
+    const used = new Set(Object.values(assign).filter(m => m && m !== '__pool')); // 看板上排的派工（不管是哪一組的角色）
+    for (const id of ids) {
+      if (charGroup(id) !== g) continue;
+      const a = assign[id], map = (DATA.chars[id] && DATA.chars[id].char.map) || null;
+      if (a && a !== '__pool') used.add(a); else if (a !== '__pool' && map && onBoard.has(map)) used.add(map);
+      if (bossHome[id]) used.add(bossHome[id]);
+    }
+    const e = empty[g] || (empty[g] = {});
+    for (const m of Object.keys(e)) if (!onBoard.has(m) || used.has(m)) { delete e[m]; emptyChanged = true; }
+    const drop = [];
+    for (const m of onBoard) {
+      if (used.has(m)) continue;
+      if (!e[m]) { e[m] = now; emptyChanged = true; continue; }
+      if (now - e[m] >= mins * 60000) drop.push(m);
+    }
+    if (!drop.length) continue;
+    const nb = { ...b, lanes: Object.fromEntries(Object.entries(lanes).map(([k, v]) => [k, (v || []).filter(m => !drop.includes(m))])) };
+    all[g] = nb; changed = true;
+    for (const m of drop) { delete e[m]; logs.push(`${(mapOf(m) || {}).name || m} 超過 ${mins} 分鐘沒有角色，已從${g} 組看板移除（販售範本、目標保留）`); }
+  }
+  if (!changed && !emptyChanged) return;
+  const patch = { boardEmpty: empty };
+  if (changed) { patch.boards = all; patch.board = all.A || {}; patch.boardSyncLog = [...logs.map(msg => ({ at: now, msg })), ...(S.boardSyncLog || [])].slice(0, 30); }
+  saveSettings(patch);
+}
 function renderBoardSync() {
   const el = $('#bdSyncBox'); if (!el) return;
   const on = S.boardSync !== false, log = S.boardSyncLog || [], last = log[0];
   el.innerHTML = `<label title="你在遊戲裡換地圖、改自動販售，看板會自動跟著改（看板上還沒套用的派工，遊戲沒動就保留）"><input type="checkbox" class="sw" id="bdSync" ${on ? 'checked' : ''}> 與遊戲同步</label>`
-    + (on && last ? ` <details class="bd-synclog"><summary class="dim sm">${Date.now() - last.at < 3600e3 ? '剛剛' : clock(last.at)}：${esc(last.msg.length > 36 ? last.msg.slice(0, 36) + '…' : last.msg)}</summary><div class="sm">${log.map(l => `<div><span class="dim">${clock(l.at)}</span> ${esc(l.msg)}</div>`).join('')}</div></details>` : '');
+    + `<label title="看板上的地圖沒有任何角色（要去的、或人已經在那裡；拖去待命的不算）超過 ${Math.max(1, Number(S.boardPruneMin) || 10)} 分鐘就自動移除；販售範本、目標道具會保留"><input type="checkbox" class="sw" id="bdPrune" ${S.boardPrune !== false ? 'checked' : ''}> 空地圖自動移除</label>`
+    + (last ? ` <details class="bd-synclog"><summary class="dim sm">${Date.now() - last.at < 3600e3 ? '剛剛' : clock(last.at)}：${esc(last.msg.length > 36 ? last.msg.slice(0, 36) + '…' : last.msg)}</summary><div class="sm">${log.map(l => `<div><span class="dim">${clock(l.at)}</span> ${esc(l.msg)}</div>`).join('')}</div></details>` : '');
 }
+document.addEventListener('change', e => { if (e.target.id === 'bdPrune') { saveSettings({ boardPrune: e.target.checked }); renderBoardSync(); } });
 document.addEventListener('change', e => { if (e.target.id === 'bdSync') { saveSettings({ boardSync: e.target.checked }); if (e.target.checked) boardSyncFromGame(); renderBoardSync(); } });
 
 // ================= 冒險資料庫（圖示、道具資料） =================
@@ -5218,6 +5260,7 @@ async function poll(force) {
       + `<button class="btn" id="chkUpd">檢查更新</button> `
       + `<label class="dim" title="GitHub 有新版時，伺服器在沒有工作執行時自動更新並重啟"><input type="checkbox" class="sw" id="autoUpd" ${auto ? 'checked' : ''}> 自動更新</label>`;
     try { boardSyncFromGame(); } catch (e) { console.warn('[派工同步]', e); }
+    try { boardPruneEmpty(); } catch (e) { console.warn('[空地圖移除]', e); }
     // 正在輸入時不要重畫，避免打斷
     const ae = document.activeElement;
     const typing = ae && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT') && ae.type !== 'checkbox';
