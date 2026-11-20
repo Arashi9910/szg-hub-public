@@ -18,7 +18,8 @@ const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const DASHBOARD = path.join(__dirname, 'dashboard.html');
 const USERSCRIPT = path.join(__dirname, 'szg-hub.user.js');
 const AGENT_FILE = path.join(__dirname, 'agent.js');
-const WORLD_FILE = path.join(__dirname, 'data', 'world.json'); // 遊戲的地圖／怪物／掉落表（由遊戲頁面上傳）
+const WORLD_FILE = path.join(__dirname, 'data', 'world.json');
+const AVATAR_DIR = path.join(__dirname, 'data', 'avatars'); // 角色全身照（站姿 GIF） // 遊戲的地圖／怪物／掉落表（由遊戲頁面上傳）
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -748,7 +749,7 @@ function applyParties(list) {
       const job = {
         id: crypto.randomBytes(6).toString('hex'), kind: 'party', status: 'approved', createdAt: Date.now(), approvedAt: Date.now(),
         fromCharId: id, fromName: snap.char.name, fromCode: snap.playerCode, toCharId: id, toName: snap.char.name, toCode: snap.playerCode,
-        batches: [{ items: [], gear: [], money: 0, party: { runId, role, ops: !same, map: p.map || '', mapName, leaderName: charName(leader), name: p.name || '' } }],
+        batches: [{ items: [], gear: [], money: 0, party: { runId, role, ops: !same, map: p.map || '', mapName, leaderName: charName(leader), name: p.name || '', sell: p.map ? cleanSell(p.sell) : undefined } }],
         batchIndex: 0, log: [], lastMsg: '',
       };
       jobLog(job, `組隊：${p.name || ''}${same ? '（隊伍不變）' : role === 'leader' ? '（隊長，建立隊伍）' : role === 'member' ? `（加入 ${charName(leader)} 的隊伍）` : '（單人）'}${p.map ? `，前往 ${mapName}` : ''}`);
@@ -881,6 +882,13 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, userscriptSource(), 'text/javascript; charset=utf-8');
     }
 
+    // 派工「流水線」3D：three.js 打包檔＋視圖模組（同源，給 dashboard 動態 import）
+    if (req.method === 'GET' && (url.pathname === '/three-bundle.mjs' || url.pathname === '/pipeline3d.mjs')) {
+      const f = path.join(__dirname, url.pathname.slice(1));
+      if (!fs.existsSync(f)) return send(res, 404, { error: 'missing ' + url.pathname });
+      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': url.searchParams.get('v') ? 'max-age=604800' : 'no-store' });
+      return res.end(fs.readFileSync(f));
+    }
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       return send(res, 200, fs.readFileSync(DASHBOARD, 'utf8'), 'text/html; charset=utf-8');
     }
@@ -905,7 +913,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/data') {
       const tabsOut = {}; for (const [code, m] of Object.entries(tabs)) for (const [id, t] of Object.entries(m)) if (Date.now() - t.at < TAB_LIVE_MS) tabsOut[id] = { code, at: t.at, hidden: t.hidden, off: t.off };
-      return send(res, 200, { now: Date.now(), tabs: tabsOut, chars: db.chars, dps: db.dps || {}, expLive: expLive(), settings: db.settings, jobs: db.jobs.slice(-100), expTable: db.expTable || {}, idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo, alerts: alertSummary(), auto: automationInfo() });
+      return send(res, 200, { now: Date.now(), tabs: tabsOut, chars: db.chars, dps: db.dps || {}, expLive: expLive(), avatars: Object.fromEntries(Object.entries(db.avatars || {}).map(([k, v]) => [k, v.at])), settings: db.settings, jobs: db.jobs.slice(-100), expTable: db.expTable || {}, idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo, alerts: alertSummary(), auto: automationInfo() });
     }
 
     if (req.method === 'POST' && url.pathname === '/api/push') {
@@ -1053,6 +1061,24 @@ const server = http.createServer(async (req, res) => {
       if (!w || !Array.isArray(w.maps)) return send(res, 400, { error: 'bad world' });
       try { fs.writeFileSync(WORLD_FILE + '.tmp', body); fs.renameSync(WORLD_FILE + '.tmp', WORLD_FILE); } catch (e) { return send(res, 500, { error: e.message }); }
       return send(res, 200, { ok: true });
+    }
+
+    // ---- 角色全身照（遊戲分頁用遊戲自己的外觀產生器做好站姿 GIF 傳上來）----
+    if (req.method === 'POST' && url.pathname === '/api/avatar') {
+      const e = JSON.parse(await readBody(req, 2 * 1024 * 1024));
+      const id = String((e && e.charId) || '').replace(/[^\w-]/g, '');
+      const buf = e && e.gif ? Buffer.from(String(e.gif), 'base64') : null;
+      if (!id || !buf || buf.length < 20 || buf.slice(0, 3).toString() !== 'GIF') return send(res, 400, { error: 'bad avatar' });
+      fs.mkdirSync(AVATAR_DIR, { recursive: true });
+      fs.writeFileSync(path.join(AVATAR_DIR, id + '.gif'), buf);
+      db.avatars = db.avatars || {}; db.avatars[id] = { at: Date.now(), key: String(e.key || '').slice(0, 300) }; save();
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === 'GET' && url.pathname.startsWith('/api/avatar/')) {
+      const id = url.pathname.slice('/api/avatar/'.length).replace(/[^\w-]/g, '');
+      const f = path.join(AVATAR_DIR, id + '.gif');
+      if (!id || !fs.existsSync(f)) return send(res, 404, { error: 'no avatar' });
+      res.writeHead(200, { 'Content-Type': 'image/gif', 'Cache-Control': 'max-age=86400' }); return res.end(fs.readFileSync(f));
     }
 
     // ---- 組隊 ----

@@ -1355,6 +1355,34 @@ function agentMain(ctx) {
       }
       return report(job, { event: 'error', msg: '未知的工作類型：' + job.kind + '（重新整理後仍然不認得，請手動重新整理遊戲分頁）' });
     }
+    // ---------- 角色全身照 ----------
+    // 遊戲頁面的 MapleAppearance（appearance.js）：key(角色, 動作)＝外觀簽章；load(角色, 'attack') 會一起產生站姿 GIF（stand：blob 網址，78×78）。
+    // 外觀變了（換裝、換髮型）才重新上傳給中控（存成 data/avatars/<角色>.gif），面板的組隊卡片、流水線用
+    const avatarAt = {};
+    async function uploadAvatar(ch) {
+      const MA = W.MapleAppearance; if (!MA || !ch || !ch.id) return;
+      let key = ''; try { key = MA.key(ch, 'attack'); } catch (_) { return; }
+      if (GM_getValue('avatarKey:' + ch.id, '') === key) return;
+      const v = await MA.load(ch, 'attack');
+      if (!v || !v.stand) return;
+      const blob = await (await fetch(v.stand)).blob();
+      const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(blob); });
+      if (!b64) return;
+      await hub('POST', '/api/avatar', { charId: ch.id, key, gif: b64 });
+      GM_setValue('avatarKey:' + ch.id, key);
+    }
+    async function avatarTick() {
+      if (passive() || agentBusy) return;
+      const st = readState(); if (!st || !st.character) return;
+      try { await uploadAvatar(st.character); } catch (e) { console.warn('[szg-hub avatar]', e); }
+      // 同帳號沒有自己分頁的角色：同步一次拿完整的角色資料（30 分鐘一次）
+      for (const sib of st.characters || []) {
+        if (sib.id === st.character.id || otherTabHas(sib.id) || Date.now() - (avatarAt[sib.id] || 0) < 30 * 60000) continue;
+        avatarAt[sib.id] = Date.now();
+        try { const j = await gameRetry({ type: 'sync', characterId: sib.id }); if (j && j.character && j.character.id === sib.id) await uploadAvatar(j.character); } catch (_) {}
+      }
+    }
+
     // ---------- 組隊（組隊分頁套用）----------
     // 要重組時：離開原本的隊伍 → 隊長 partyCreate、把隊伍代碼回報中控 → 隊員等代碼、partyJoin → 換圖（換圖會停掛機）→ 開始掛機
     async function runPartyJob(job, c) {
@@ -1393,10 +1421,13 @@ function agentMain(ctx) {
         const here = s1 && s1.character && s1.character.map;
         let moved = false;
         if (p.map && here !== p.map) { setBadge(null, `組隊：前往 ${p.mapName}…`); await gameRetry({ type: 'map', map: p.map, characterId: id }); moved = true; await sleepP(1200); }
+        // 派工看板上這張圖的自動販售範本（遊戲只接受目前所在地圖的設定，所以換圖後才套用）
+        let sellMsg = '';
+        if (p.map && p.sell) { try { await gameRetry({ type: 'autoSell', characterId: id, map: p.map, config: p.sell }); sellMsg = `套用自動販售（${p.sell.enabled ? p.sell.itemIds.length + ' 項' : '關閉'}），`; } catch (e) { sellMsg = `自動販售沒套用（${e.message}），`; } }
         let started = true;
         try { await gameRetry({ type: 'start', characterId: id }); } catch (_) { started = false; }
         lastHash = '';
-        await log(`${moved ? `已前往 ${p.mapName}，` : ''}${started ? '已開始掛機' : '開始掛機失敗，請手動開始'}`);
+        await log(`${moved ? `已前往 ${p.mapName}，` : ''}${sellMsg}${started ? '已開始掛機' : '開始掛機失敗，請手動開始'}`);
         return report(job, { event: 'batchDone' });
       } catch (e) {
         if (e.gameUpdated) throw e;
@@ -1984,6 +2015,8 @@ function agentMain(ctx) {
       setInterval(quizTick, 45000);
       // 做很久的工作時（agentRunning，不會來問工作）每 20 秒報到一次
       setInterval(() => { if (agentRunning && !passive() && account && account.playerCode) hub('GET', '/api/agent/beat?' + pollQs(myChar())).catch(() => {}); }, 20000);
+      setTimeout(() => avatarTick().catch(() => {}), 20000);
+      setInterval(() => avatarTick().catch(() => {}), 5 * 60 * 1000);
       setTimeout(() => bossStateTick(true), 15000);
       setInterval(() => bossStateTick(false), 60000);
     }
