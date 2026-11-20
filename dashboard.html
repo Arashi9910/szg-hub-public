@@ -3867,7 +3867,7 @@ function boardSyncFromGame() {
       if (!gameChanged) continue;
       const x = sn.autoSellAll[m];
       b.sell[m] = { enabled: !!x.enabled, itemIds: [...(x.itemIds || [])] }; changed = true;
-      logs.push(`${nm} 在遊戲裡改了 ${mn(m)} 的自動販售（${x.enabled ? (x.itemIds || []).length + ' 項' : '關閉'}），已更新看板範本`);
+      logs.push(prev ? `${nm} 在遊戲裡改了 ${mn(m)} 的自動販售（${x.enabled ? (x.itemIds || []).length + ' 項' : '關閉'}），已更新看板範本` : `匯入 ${nm} 在 ${mn(m)} 的自動販售當範本（${x.enabled ? (x.itemIds || []).length + ' 項' : '關閉'}）`);
     }
     if (changed) boardsChanged = true;
   }
