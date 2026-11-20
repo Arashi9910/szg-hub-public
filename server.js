@@ -1113,13 +1113,14 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/idle-policy') {
       const p = db.settings.idlePolicy || {};
-      return send(res, 200, { policy: { autoRenew: !!p.autoRenew, renewBeforeMin: Number(p.renewBeforeMin) || 30, stopAfterHours: Number(p.stopAfterHours) || 0, wakeHours: Number(p.wakeHours) || 0 },
+      return send(res, 200, { policy: { autoRenew: !!p.autoRenew, renewBeforeMin: Number(p.renewBeforeMin) || 30, stopAfterHours: Number(p.stopAfterHours) || 0, wakeHours: Number(p.wakeHours) || 0,
+        autoRevive: p.autoRevive !== false, reviveMaxPerHour: Number(p.reviveMaxPerHour) || 6 }, // 死掉自動原地復活：預設開
         excluded: db.settings.idleExcluded || {}, last: db.settings.idleLast || {} });
     }
     if (req.method === 'POST' && url.pathname === '/api/idle-log') {
       const e = JSON.parse(await readBody(req));
       if (e && e.charId && e.msg) {
-        idleLog({ charId: e.charId, name: charName(e.charId), msg: String(e.msg).slice(0, 200) });
+        idleLog({ charId: e.charId, name: charName(e.charId), msg: String(e.msg).slice(0, 200), ...(e.kind ? { kind: String(e.kind) } : {}) });
         if (e.action) db.settings.idleLast = { ...(db.settings.idleLast || {}), [e.charId]: { action: e.action, at: Date.now(), by: 'auto' } };
       }
       return send(res, 200, { ok: true });

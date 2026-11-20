@@ -688,6 +688,43 @@ function agentMain(ctx) {
     //  - 掛滿 N 小時自動暫停（N=0 代表不限）
     //  - 自動續掛：到期前 M 分鐘重新開始；已經到期停掉的自動開始。從面板手動暫停的不會被重新開始。
     const H = 3600 * 1000, IDLE_CAP = 24 * H;
+    // 死掉自動原地復活（2026-11-21 讀遊戲程式碼）：死亡＝character.hp <= 0，畫面跳「原地復活／暫時等待」；
+    // 原地復活＝{type:'revive'}。遊戲自己的自動復活（{type:'autoRevive', config:{enabled, max}}）每輪預設只有 3 次，用完就停在死亡畫面。
+    // 每次死亡扣本級升級經驗 5%，所以每隻每小時最多復活 N 次（預設 6），超過就停下來讓你處理（地圖可能太難）
+    const reviveAt = {};
+    async function reviveTick(state, p, excluded) {
+      const c = state.character, cands = [];
+      if (Number(c.hp) <= 0) cands.push({ id: c.id, name: c.name, own: true });
+      for (const sib of state.characters || []) {
+        if (sib.id === c.id || otherTabHas(sib.id)) continue;
+        if (sib.hp != null ? Number(sib.hp) <= 0 : !sib.auto) cands.push({ id: sib.id, name: sib.name, check: sib.hp == null });
+      }
+      const max = Math.max(1, Number(p.reviveMaxPerHour) || 6);
+      for (const x of cands) {
+        if (excluded[x.id] || Date.now() - (reviveAt[x.id] || 0) < (x.check ? 120000 : 45000)) continue;
+        reviveAt[x.id] = Date.now();
+        if (x.check) { // 背景角色只知道沒在掛機：同步一次確認是不是死了
+          try { const j = await gameRetry({ type: 'sync', characterId: x.id }); if (!(j && j.character && j.character.id === x.id && Number(j.character.hp) <= 0)) continue; } catch (_) { continue; }
+        }
+        const key = 'revives:' + x.id, list = (GM_getValue(key, []) || []).filter(t => Date.now() - t < H);
+        if (list.length >= max) {
+          if (Date.now() - (Number(GM_getValue('reviveLimit:' + x.id, 0)) || 0) > H) {
+            GM_setValue('reviveLimit:' + x.id, Date.now());
+            await hub('POST', '/api/idle-log', { charId: x.id, kind: 'reviveLimit', msg: `一小時內已經自動復活 ${list.length} 次（上限 ${max} 次），這次先不復活（地圖可能太難，請換圖或調整）` }).catch(() => {});
+          }
+          continue;
+        }
+        try {
+          const j = await gameRetry({ type: 'revive', characterId: x.id });
+          list.push(Date.now()); GM_setValue(key, list);
+          let started = '';
+          const ch = j && j.character;
+          if (ch && ch.id === x.id && !ch.auto) { try { await gameRetry({ type: 'start', characterId: x.id }); started = '並重新開始掛機'; } catch (_) {} }
+          if (x.own) { try { const dd = document.getElementById('deathDialog'); if (dd && dd.open) dd.close(); } catch (_) {} lastHash = ''; }
+          await hub('POST', '/api/idle-log', { charId: x.id, kind: 'revive', msg: `角色死亡，已自動原地復活${started}（這小時第 ${list.length} 次，每次扣本級經驗 5%）` }).catch(() => {});
+        } catch (e) { await hub('POST', '/api/idle-log', { charId: x.id, msg: '自動原地復活失敗：' + e.message }).catch(() => {}); }
+      }
+    }
     async function idleTick() {
       try {
         if (passive()) return;
@@ -704,6 +741,7 @@ function agentMain(ctx) {
         const p = r.policy, excluded = r.excluded || {}, last = r.last || {};
         const since = trackOffline();
         if (p.wakeHours > 0 && since && Date.now() - since >= p.wakeHours * H) await wakePage(`離線掛機已 ${p.wakeHours} 小時`);
+        if (p.autoRevive) await reviveTick(state, p, excluded);
         if (!p.autoRenew && !p.stopAfterHours) return;
         const skew = (state.serverTime || Date.now()) - Date.now();
         const now = Date.now() + skew;
