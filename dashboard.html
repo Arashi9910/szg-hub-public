@@ -413,24 +413,12 @@
   .pt-mem .lead { position: absolute; top: 3px; left: 5px; } .pt-mem .x { position: absolute; top: 2px; right: 3px; }
   .pt-mem .mp { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pt-mem .rt { margin: 0; }
-  .pipe-wrap { position: relative; height: calc(100vh - 230px); min-height: 460px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #070b14; }
-  .pipe3d { position: absolute; inset: 0; }
-  .pipe3d canvas { display: block; }
-  .p3d-labels { position: absolute; inset: 0; pointer-events: none; }
-  .p3d-lbl { color: #e2e8f0; font-size: 12px; text-align: center; line-height: 1.3; text-shadow: 0 1px 3px #000, 0 0 8px #000; white-space: nowrap; }
-  .p3d-lbl .rt { color: #86efac; font-variant-numeric: tabular-nums; font-weight: 600; } .p3d-lbl .big { font-size: 18px; } .p3d-lbl .dim { color: #94a3b8; }
-  .p3d-lbl.flow { font-size: 11px; color: #bbf7d0; opacity: .85; }
-  .p3d-lbl .bd { font-size: 10px; padding: 0 5px; border-radius: 8px; background: #334155; } .p3d-lbl .bd.boss { background: #9f1239; } .p3d-lbl .bd.moving, .p3d-lbl .bd.away { background: #854d0e; }
-  .p3d-loot { display: flex; align-items: center; gap: 2px; filter: drop-shadow(0 0 6px #93c5fd); } .p3d-loot img { width: 24px; height: 24px; image-rendering: pixelated; }
-  .p3d-loot.goal { filter: drop-shadow(0 0 10px #facc15); } .p3d-loot.goal img { width: 32px; height: 32px; }
-  .p3d-loot b { font-size: 10px; color: #fff; text-shadow: 0 0 3px #000; } .p3d-loot span { font-size: 11px; color: #fff; background: #1e293b; border-radius: 4px; padding: 0 3px; }
-  .pipe-hud { position: absolute; top: 8px; left: 8px; right: 8px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; pointer-events: none; }
-  .pipe-hud > * { pointer-events: auto; } .pipe-hud .pill { background: rgba(15,23,42,.8); border: 1px solid #1e3a5f; border-radius: 14px; padding: 3px 10px; font-size: 12px; color: #cbd5e1; }
-  .pipe-tip { position: absolute; bottom: 6px; left: 10px; pointer-events: none; }
-  .pipe-err { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; color: #cbd5e1; }
-  .pt-card.flash { box-shadow: 0 0 0 2px var(--accent); transition: box-shadow .3s; }
   .ava { width: 64px; height: 64px; object-fit: contain; image-rendering: pixelated; pointer-events: none; }
   .ava.sm { width: 26px; height: 26px; margin: -4px 0; }
+  .ava.ov { width: 40px; height: 40px; margin: -6px 0; flex: none; } .ava-none.ov { font-size: 18px; }
+  .ava.fn { width: 52px; height: 52px; float: left; margin: -2px 6px 0 -4px; } .ava-none.fn { font-size: 22px; }
+  .ava.bc { width: 34px; height: 34px; float: left; margin: -2px 6px 0 -2px; } .ava-none.bc { font-size: 16px; }
+  .ov-nm { display: flex; gap: 6px; align-items: center; }
   .ava-none { display: inline-flex; align-items: center; justify-content: center; font-size: 30px; opacity: .3; } .ava-none.sm { font-size: 14px; }
   .pt-mem.sel { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
   .pt-mem .lead { cursor: pointer; opacity: .25; } .pt-mem .lead.on { opacity: 1; cursor: default; }
@@ -670,13 +658,10 @@
     <div class="card">
       <h3>派工看板</h3>
       <div class="dim help-src">把角色拖到地圖上決定去哪裡（也可以點一下角色再點地圖）。地圖分成「練功、打卷軸、打裝備」三條路線，每張圖可以設定：🎯 要打的目標道具（看板會估計派去的角色每小時大約打到幾個）、💰 自動販售（撿到就賣給商店的道具，遊戲伺服器處理，分頁沒開也有效）。排好後按「套用派工」：要移動的角色換過去，並套用那張圖的自動販售。遊戲只能設定「目前所在地圖」的自動販售，所以換圖和設定是一起做的。估計值和地圖分頁的組隊試算用同一套方法，只是參考。</div>
-      <div class="bar"><div class="seg" id="bdViewSeg"><button data-bview2="pipe" title="3D 流水線：隊伍 → 地圖 → 經驗／商店／背包，流動速度跟著中控即時量到的經驗">✨ 流水線</button><button data-bview2="factory"><span data-ic="factory"></span> 工廠圖</button><button data-bview2="list"><span data-ic="list"></span> 清單</button></div>
+      <div class="bar"><div class="seg" id="bdViewSeg"><button data-bview2="factory"><span data-ic="factory"></span> 工廠圖</button><button data-bview2="list"><span data-ic="list"></span> 清單</button></div>
         <span id="bdGroupBox"></span><button class="btn" id="bdApply">▶ 套用派工</button><button class="btn" id="bdImport" title="把角色目前所在的地圖放上看板，並用你在遊戲裡設好的自動販售當範本">⤓ 匯入目前設定</button><button class="btn" id="bdClear">清除派工</button><span id="bdSyncBox"></span>
         <select id="bdAddMap" style="max-width:260px"><option value="">＋ 加入地圖…</option></select><span class="dim" id="bdMsg"></span></div>
     </div>
-    <div id="bdPipe" class="pipe-wrap" style="display:none"><div id="bdPipe3d" class="pipe3d"></div>
-      <div class="pipe-hud" id="bdPipeHud"></div>
-      <div class="pipe-tip dim sm">拖曳旋轉・右鍵平移・滾輪縮放・點隊伍到「組隊」調配・點地圖站設定自動販售</div></div>
     <div id="bdFactory" class="fac"></div>
     <div class="board" id="bdList">
       <div class="pool-col card"><div class="lane-hd"><b>角色</b><input id="bdSearch" placeholder="搜尋" style="width:90px" autocomplete="off"></div><div id="bdPool" class="pool"></div><div class="dim sm" style="margin-top:6px">拖回這裡＝不派工</div></div>
@@ -957,6 +942,9 @@ const STALE_MS = 5 * 60 * 1000;
 
 // ================= 狀態 =================
 let DATA = { chars: {}, settings: {} };
+// 角色全身照（遊戲分頁上傳的站姿 GIF）；還沒有的用剪影
+const avatarSrc = id => (DATA.avatars || {})[id] ? `/api/avatar/${encodeURIComponent(id)}?t=${DATA.avatars[id]}` : '';
+const avatarImg = (id, cls = '') => { const u = avatarSrc(id); return u ? `<img class="ava ${cls}" src="${u}" alt="" draggable="false">` : `<span class="ava ava-none ${cls}" title="遊戲分頁開著約 1 分鐘後會有全身照">👤</span>`; };
 let S = { accountLabels: {}, mainCharId: null, presets: [], slotStats: {} };
 let statNames = DEFAULT_STAT_NAMES;
 const ui = {
@@ -1344,7 +1332,7 @@ function renderOverview() {
     const cls = [r.active ? '' : 'alt', newAcc ? 'accstart' : '', r.stale || (r.s && r.s.idleOffline) ? 'stale' : '', sel ? 'picked' : ''].join(' ');
     const accCell = k !== 'account' || newAcc ? `<input class="label-edit" data-acc="${esc(r.missing ? c.accountId : r.s.accountId)}" value="${esc(r.account)}">` : '';
     if (r.missing) {
-      h += `<tr class="${cls}"><td><input type="checkbox" data-isel="${c.id}" ${sel ? 'checked' : ''}></td><td></td><td>${accCell}</td><td><div>${esc(c.name)}${switchBtn(c.id, c.accountId)}</div><div class="dim sm">${esc(c.job || '')}</div></td><td>Lv${c.lv}</td>
+      h += `<tr class="${cls}"><td><input type="checkbox" data-isel="${c.id}" ${sel ? 'checked' : ''}></td><td></td><td>${accCell}</td><td><div class="ov-nm">${avatarImg(c.id, 'ov')}<div><div>${esc(c.name)}${switchBtn(c.id, c.accountId)}</div><div class="dim sm">${esc(c.job || '')}</div></div></div></td><td>Lv${c.lv}</td>
         <td colspan="${3 + xcol}" class="dim">尚未同步（開它的遊戲分頁，或按「⇄ 切換」一次就會出現）</td><td>${c.auto ? '<span><span class="lamp"></span> 掛機中</span>' : '<span class="bad"><span class="lamp bad"></span> 未掛機</span>'} ${autoToggle(c.id)}</td><td colspan="${ncol - 9 - xcol}"></td></tr>`;
       continue;
     }
@@ -1357,7 +1345,7 @@ function renderOverview() {
       <td><input type="checkbox" data-isel="${c.id}" ${sel ? 'checked' : ''}></td>
       <td><span class="star ${isMain ? 'on' : ''}" data-main="${c.id}" title="設為本尊">★</span></td>
       <td>${accCell}</td>
-      <td><div><b class="cn">${esc(c.name)}</b>${isMain ? ' <span class="tag main">本尊</span>' : ''}${switchBtn(c.id, r.s.accountId)}</div><div class="dim sm">${esc(c.jobName || '')}</div></td>
+      <td><div class="ov-nm">${avatarImg(c.id, 'ov')}<div><div><b class="cn">${esc(c.name)}</b>${isMain ? ' <span class="tag main">本尊</span>' : ''}${switchBtn(c.id, r.s.accountId)}</div><div class="dim sm">${esc(c.jobName || '')}</div></div></div></td>
       <td><span class="lvl">Lv <b>${c.lv}</b></span>${exp == null ? '' : `<span class="expbar" title="經驗 ${exp.toFixed(2)}%"><i style="width:${exp}%"></i></span><span class="dim sm">${exp.toFixed(1)}%</span>`}</td>
       <td class="num" title="上面：遊戲的整輪平均；下面：中控量的最近 3 分鐘（換圖、換隊後重新量）">${c.hourlyExp ? short(c.hourlyExp) : '<span class="dim">—</span>'}${(() => { const x = (DATA.expLive || {})[c.id]; return x && x.rate != null ? `<div class="sm dim">近3分 ${short(x.rate)}</div>` : ''; })()}</td>
       <td class="num">${lvTimeCell(lvT(r), c)}</td>${tgt ? `<td class="num">${lvTimeCell(tgT(r), c, tgt)}</td>` : ''}
@@ -2962,9 +2950,6 @@ document.addEventListener('input', e => { if (e.target.id === 'mkSearch') render
 // ================= 組隊 =================
 // settings.parties = [{id, name, members:[角色 id]（第一位是隊長）, map}]；套用 → /api/party/apply（每個隊員一個 party 工作）
 ui.pt = { sel: null };
-// 角色全身照（遊戲分頁上傳的站姿 GIF）；還沒有的用剪影
-const avatarSrc = id => (DATA.avatars || {})[id] ? `/api/avatar/${encodeURIComponent(id)}?t=${DATA.avatars[id]}` : '';
-const avatarImg = (id, cls = '') => { const u = avatarSrc(id); return u ? `<img class="ava ${cls}" src="${u}" alt="" draggable="false">` : `<span class="ava ava-none ${cls}" title="遊戲分頁開著約 1 分鐘後會有全身照">👤</span>`; };
 const ptList = () => (S.parties || []).map(p => ({ ...p, members: [...(p.members || [])] }));
 function savePt(list) { S.parties = list; return saveSettings({ parties: list }); }
 const ptNewId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
@@ -3567,11 +3552,11 @@ function dropRate(est, map, itemId) {
 }
 function assignedMap(cfg, c) { return cfg.assign[c.id] || null; }
 function renderBoard() {
-  const fv = ui.board.view === 'factory', pv = ui.board.view === 'pipe';
+  if (ui.board.view === 'pipe') ui.board.view = 'factory'; // v0.47 的 3D 流水線已拿掉
+  const fv = ui.board.view === 'factory';
   document.querySelectorAll('#bdViewSeg button').forEach(b => b.classList.toggle('on', b.dataset.bview2 === ui.board.view));
-  if ($('#bdFactory')) { $('#bdFactory').style.display = fv ? '' : 'none'; $('#bdList').style.display = fv || pv ? 'none' : ''; $('#bdPipe').style.display = pv ? '' : 'none'; }
-  if (!WORLD) { loadWorld().then(() => WORLD && renderBoard()); if (pv) renderPipe(); $('#bdLanes').innerHTML = '<div class="card dim">還沒有地圖資料：打開任一個遊戲分頁，約 10 秒後會自動上傳。</div>'; return; }
-  if (pv) renderPipe();
+  if ($('#bdFactory')) { $('#bdFactory').style.display = fv ? '' : 'none'; $('#bdList').style.display = fv ? 'none' : ''; }
+  if (!WORLD) { loadWorld().then(() => WORLD && renderBoard()); $('#bdLanes').innerHTML = '<div class="card dim">還沒有地圖資料：打開任一個遊戲分頁，約 10 秒後會自動上傳。</div>'; return; }
   if (ui.board.dragging || ui.fac.drag) return;
   const cfg = boardCfg(), grp = boardGroup(), chars = boardChars().filter(c => c.group === grp), onBoard = new Set(Object.values(cfg.lanes).flat());
   if ($('#bdGroupBox')) $('#bdGroupBox').innerHTML = boardGroupSeg();
@@ -3599,7 +3584,7 @@ function renderBoard() {
 function boardCard(c, cfg) {
   const d = dpsOf(c.id), cur = mapOf(c.map), to = cfg.assign[c.id] && cfg.assign[c.id] !== c.map ? mapOf(cfg.assign[c.id]) : null;
   return `<div class="bcard ${c.active ? '' : 'inactive'} ${ui.board.pick === c.id ? 'picked' : ''}" draggable="true" data-bdchar="${c.id}" title="拖到地圖上派工；也可以點一下選取，再點地圖">
-    <div><b>${esc(c.name)}</b> <span class="dim sm">Lv${c.lv}・${esc(c.jobName || '')}</span>${c.active ? '' : ' <span class="tag" title="沒有自己的遊戲分頁（背景掛機），換圖可能被遊戲拒絕">背景</span>'}</div>
+    ${avatarImg(c.id, 'bc')}<div><b>${esc(c.name)}</b> <span class="dim sm">Lv${c.lv}・${esc(c.jobName || '')}</span>${c.active ? '' : ' <span class="tag" title="沒有自己的遊戲分頁（背景掛機），換圖可能被遊戲拒絕">背景</span>'}</div>
     <div class="dim sm">${to ? `<span class="warn">${esc(cur ? cur.name : '?')} → ${esc(to.name)}</span>` : esc(cur ? cur.name : '—')}${d ? `・DPS ${short(d.w5.dps || d.w60.dps)}` : ''}</div></div>`;
 }
 function boardMapCard(lane, m, here, cfg) {
@@ -3756,7 +3741,7 @@ const LANE_NAME = { train: '練功', scroll: '打卷軸', gear: '打裝備' };
 const FN_W = { c: 190, m: 260, s: 210 };
 function facDefaults(cfg, chars) {
   const pos = {}, laneOrder = ['train', 'scroll', 'gear'];
-  chars.forEach((c, i) => pos['c:' + c.id] = [30, 30 + i * 84]);
+  chars.forEach((c, i) => pos['c:' + c.id] = [30, 30 + i * 100]);
   let y = 30;
   for (const lane of laneOrder) for (const id of cfg.lanes[lane]) { pos['m:' + id] = [330, y]; const g = lane === 'train' ? 0 : Math.min(5, (cfg.goals[id] || []).length || 1); y += 130 + g * 20; }
   pos.exp = [700, 30]; pos.shop = [700, 200]; pos.bag = [700, 370]; pos.forge = [990, 370]; pos.out = [1270, 300];
@@ -3789,7 +3774,7 @@ function renderFactory() {
   for (const c of chars) {
     const to = where(c), pend = cfg.assign[c.id] && cfg.assign[c.id] !== '__pool' && cfg.assign[c.id] !== c.map, d = dpsOf(c.id);
     html += node('c:' + c.id, 'fchar' + (pend ? ' pend' : '') + (c.active ? '' : ' bgc'), FN_W.c, `<div class="fn-hd" data-fdrag><b>${esc(c.name)}</b><span class="dim sm">Lv${c.lv}</span>${c.active ? '' : '<span class="tag sm" title="沒有自己的遊戲分頁，在背景掛機；可以先排，套用時會略過（開它的分頁或切換過去就能套用）">背景掛機</span>'}<a class="sm dim" data-bdmovegrp="${c.id}" title="把這隻移到另一組">→${grp === 'A' ? 'B' : 'A'}</a></div>
-      <div class="fn-bd sm"><span class="dim">${esc(c.jobName || '')}</span>${d ? ` ・DPS ${short(d.w5.dps || d.w60.dps)}` : ''}<div class="dim">${pend ? `<span class="warn">${esc((mapOf(c.map) || {}).name || '?')} → ${esc((mapOf(to) || {}).name || '')}</span> <a data-funassign="${c.id}" title="取消派工">✕</a>` : esc((mapOf(c.map) || {}).name || '—')}</div></div>
+      <div class="fn-bd sm">${avatarImg(c.id, 'fn')}<span class="dim">${esc(c.jobName || '')}</span>${d ? ` ・DPS ${short(d.w5.dps || d.w60.dps)}` : ''}<div class="dim">${pend ? `<span class="warn">${esc((mapOf(c.map) || {}).name || '?')} → ${esc((mapOf(to) || {}).name || '')}</span> <a data-funassign="${c.id}" title="取消派工">✕</a>` : esc((mapOf(c.map) || {}).name || '—')}</div></div>
       <span class="port out" data-fport="${c.id}" title="拖曳連到地圖＝派工"></span>`);
   }
   for (const id of onBoard) {
@@ -3828,87 +3813,6 @@ function renderFactory() {
       <span class="dim sm">拖曳角色右邊的 ● 連到地圖＝派工・拖標題移動節點・拖空白處平移・滾輪縮放</span></div>`;
   requestAnimationFrame(() => { drawWires(); renderRecent(); });
 }
-// ---- 派工「流水線」3D 視圖（組隊為主：每個隊伍一座平台 → 地圖站 → 經驗／商店／背包） ----
-ui.pipe = { inst: null, loading: null, err: '', shop: 0, bag: 0 };
-function pipeModel() {
-  const cfg = boardCfg(), grp = boardGroup(), L = DATA.expLive || {}, jobs = DATA.jobs || [];
-  const chars = boardChars().filter(c => c.group === grp), byId = Object.fromEntries(boardChars().map(c => [c.id, c]));
-  const onBoard = Object.values(cfg.lanes).flat();
-  const where = c => cfg.assign[c.id] && cfg.assign[c.id] !== '__pool' ? cfg.assign[c.id] : c.map;
-  const live = id => DATA.chars[id] ? DATA.chars[id].char.map : (byId[id] || {}).map;
-  const busy = id => jobs.find(j => j.fromCharId === id && ['approved', 'running'].includes(j.status) && ['party', 'boss', 'move'].includes(j.kind));
-  const used = new Set(), pods = [];
-  const mem = id => { const c = byId[id] || {}; return { id, name: c.name || charNameOf(id), lv: c.lv, ava: avatarSrc(id) }; };
-  const podState = ids => { const b = ids.map(busy).find(Boolean); if (b) return [b.kind === 'boss' ? 'boss' : 'moving', b.kind === 'boss' ? '打王中' : '移動中']; if (!ids.some(hasTab)) return ['idle', '背景']; return ['ok', '']; };
-  for (const p of ptList()) {
-    const ids = p.members.filter(id => byId[id] || DATA.chars[id]); if (!ids.length) continue;
-    ids.forEach(id => used.add(id));
-    const map = p.map || live(ids[0]); const lv = ptLive(ids), [state, badge] = podState(ids);
-    const away = p.map && ids.some(id => live(id) !== p.map);
-    pods.push({ key: 'pt:' + p.id, pid: p.id, kind: 'party', label: p.name || '隊伍', members: ids.map(mem), map, rate: lv.n ? lv.sum : null, state: away && state === 'ok' ? 'away' : state, badge: away && state === 'ok' ? '待套用' : badge });
-  }
-  // 沒排進隊伍的：這一組在看板地圖上、或有分頁的角色，各自一座小平台
-  for (const c of chars) {
-    if (used.has(c.id) || !c.map && !cfg.assign[c.id]) continue;
-    const to = where(c); if (!to || (!onBoard.includes(to) && !c.active)) continue;
-    const x = L[c.id], [state, badge] = podState([c.id]), pend = to !== c.map;
-    pods.push({ key: 'c:' + c.id, kind: 'solo', label: c.name, members: [mem(c.id)], map: to, rate: x && x.rate != null ? x.rate : null, state: pend && state === 'ok' ? 'away' : state, badge: pend && state === 'ok' ? '待套用' : badge });
-  }
-  const sMap = new Map();
-  for (const id of onBoard) sMap.set(id, null);
-  for (const p of pods) if (p.map && !sMap.has(p.map)) sMap.set(p.map, null);
-  const stations = [...sMap.keys()].map(id => { const m = mapOf(id); if (!m) return null; const here = pods.filter(p => p.map === id), lane = onBoard.includes(id) ? facMapLane(cfg, id) : 'train', sell = cfg.sell[id];
-    return { id, name: m.name, lane, n: here.reduce((a, p) => a + p.members.length, 0), rate: here.reduce((a, p) => a + (p.rate || 0), 0), sell: !!(sell && sell.enabled), goals: (cfg.goals[id] || []).length }; }).filter(Boolean)
-    .sort((a, b) => (b.n > 0) - (a.n > 0) || ['train', 'scroll', 'gear'].indexOf(a.lane) - ['train', 'scroll', 'gear'].indexOf(b.lane));
-  const laneCol = { train: '#4ade80', scroll: '#a78bfa', gear: '#f08a5d' };
-  const flows = [];
-  for (const p of pods) if (p.map) flows.push({ from: 'p:' + p.key, to: 's:' + p.map, rate: p.rate || (p.state === 'ok' ? 1 : 0), color: { ok: '#38bdf8', moving: '#facc15', away: '#fb923c', boss: '#f43f5e', idle: '#64748b' }[p.state] });
-  for (const s of stations) {
-    if (!s.n) continue;
-    flows.push({ from: 's:' + s.id, to: 'k:exp', rate: s.rate, color: '#4ade80', label: s.rate ? '+' + short(s.rate) : '' });
-    flows.push({ from: 's:' + s.id, to: 'k:shop', rate: s.sell ? Math.max(1, s.rate / 10) : 0, color: '#facc15' });
-    flows.push({ from: 's:' + s.id, to: 'k:bag', rate: s.lane !== 'train' || s.goals ? Math.max(1, s.rate / 10) : 0, color: laneCol[s.lane] });
-  }
-  return { pods, stations, flows, sinks: { exp: stations.reduce((a, s) => a + s.rate, 0), shopMaps: stations.filter(s => s.sell && s.n).length, shopRecent: ui.pipe.shop, bagRecent: ui.pipe.bag } };
-}
-function pipeHud(m) {
-  const n = m.pods.reduce((a, p) => a + p.members.length, 0), pend = m.pods.filter(p => p.state === 'away').length;
-  $("#bdPipeHud").innerHTML = `<span class="pill">隊伍 <b>${m.pods.filter(p => p.kind === 'party').length}</b>・角色 <b>${n}</b></span><span class="pill good">經驗 <b>${short(m.sinks.exp)}</b>/時</span>${pend ? `<span class="pill warn">${pend} 組還沒套用</span>` : ''}
-    <button class="btn sm primary" data-goto="party" title="到組隊分頁調配誰跟誰一隊、去哪張圖">👥 調配隊伍</button><button class="btn sm" id="pipeReset" title="鏡頭回到預設角度">⟲ 視角</button>`;
-}
-async function renderPipe() {
-  const box = $('#bdPipe3d'); if (!box) return;
-  const m = pipeModel(); pipeHud(m);
-  if (ui.pipe.err) { box.innerHTML = `<div class="pipe-err"><b>3D 流水線開不起來</b><div class="dim">${esc(ui.pipe.err)}</div><button class="btn" data-bview2="factory">改看工廠圖</button></div>`; return; }
-  if (!ui.pipe.inst) {
-    if (!ui.pipe.loading) ui.pipe.loading = import('/pipeline3d.mjs?v=' + encodeURIComponent(DATA.scriptVersion || '1')).then(mod => {
-      ui.pipe.inst = mod.mount(box, { onPick: pipePick }); window.__pipe = ui.pipe.inst; renderPipe();
-    }).catch(e => { ui.pipe.err = e.message || String(e); renderPipe(); });
-    if (!box.innerHTML) box.innerHTML = '<div class="pipe-err dim">載入 3D 引擎中…</div>';
-    return;
-  }
-  ui.pipe.inst.update(m);
-}
-function pipePick(p) {
-  if (p.type === 'pod') {
-    if (p.key.startsWith('pt:')) { ui.pt.focus = p.key.slice(3); document.querySelector('nav button[data-tab="party"]').click(); setTimeout(() => { const c = document.querySelector(`.pt-card[data-ptdrop="${CSS.escape(ui.pt.focus)}"]`); if (c) { c.scrollIntoView({ behavior: 'smooth', block: 'center' }); c.classList.add('flash'); setTimeout(() => c.classList.remove('flash'), 1600); } }, 120); }
-    else { ui.pt.sel = p.key.slice(2); document.querySelector('nav button[data-tab="party"]').click(); }
-    return;
-  }
-  if (p.type === 'station') { ui.board.sellEdit = p.key; ui.board.sellDraft = null; ui.board.goalEdit = null; renderBoard(); setTimeout(() => $('#bdSell').scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50); return; }
-  if (p.type === 'sink') document.querySelector(`nav button[data-tab="${p.key === 'exp' ? 'overview' : 'bag'}"]`).click();
-}
-function pipeLoot(events) {
-  if (!ui.pipe.inst) return;
-  const cfg = boardCfg();
-  events.forEach((ev, i) => setTimeout(() => {
-    if (ev.name === '楓幣') return;
-    const id = idOfName(ev.name), goal = !!id && (cfg.goals[ev.map] || []).map(String).includes(String(id));
-    if (ev.sold) ui.pipe.shop += ev.money || 0; else ui.pipe.bag += ev.qty || 1;
-    ui.pipe.inst.loot({ map: ev.map, name: ev.name, qty: ev.qty, sold: ev.sold, goal, img: id ? itemImg(id) : '' });
-  }, i * 220));
-}
-document.addEventListener('click', e => { if (e.target.id === 'pipeReset' && ui.pipe.inst) ui.pipe.inst.resetView(); });
 // ---- 整組切成目前角色（總覽、派工看板共用） ----
 // 這一組裡沒有自己分頁、但帳號有開分頁（可以切過去）的角色
 function groupInactive(g) { return groupChars(g).filter(id => { const a = accOfChar(id); return a && !hasTab(id) && accTabs(a).length > 0; }); }
@@ -4050,13 +3954,11 @@ function idOfName(n) {
   return nameIdx ? nameIdx[n] : null;
 }
 async function pollLoot() {
-  const onBoard = document.querySelector('nav button.on') && document.querySelector('nav button.on').dataset.tab === 'board' && !document.hidden;
-  const on = onBoard && ui.board.view === 'factory';
+  const on = document.querySelector('nav button.on') && document.querySelector('nav button.on').dataset.tab === 'board' && ui.board.view === 'factory' && !document.hidden;
   try {
     const r = await (await fetch('/api/loot?since=' + (ui.fac.lootSeq || 0))).json();
     if (!ui.fac.lootSeq) { ui.fac.lootSeq = r.seq || 0; return; } // 第一次只取目前位置，不重播舊的
     ui.fac.lootSeq = r.seq || ui.fac.lootSeq;
-    if (onBoard && ui.board.view === 'pipe') { pipeLoot(r.events); return; }
     if (!on || ui.fac.fx === 'off') return;
     const cfg = boardCfg();
     r.events.forEach((ev, i) => setTimeout(() => flyLoot(ev, cfg), i * 220));

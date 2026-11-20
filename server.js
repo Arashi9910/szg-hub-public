@@ -883,13 +883,6 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, userscriptSource(), 'text/javascript; charset=utf-8');
     }
 
-    // 派工「流水線」3D：three.js 打包檔＋視圖模組（同源，給 dashboard 動態 import）
-    if (req.method === 'GET' && (url.pathname === '/three-bundle.mjs' || url.pathname === '/pipeline3d.mjs')) {
-      const f = path.join(__dirname, url.pathname.slice(1));
-      if (!fs.existsSync(f)) return send(res, 404, { error: 'missing ' + url.pathname });
-      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': url.searchParams.get('v') ? 'max-age=604800' : 'no-store' });
-      return res.end(fs.readFileSync(f));
-    }
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       return send(res, 200, fs.readFileSync(DASHBOARD, 'utf8'), 'text/html; charset=utf-8');
     }
