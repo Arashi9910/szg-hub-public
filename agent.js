@@ -233,7 +233,7 @@ function agentMain(ctx) {
     }
     // 把地圖、怪物、掉落表整理後交給中控（面板的「地圖」分頁用）；同一版本只傳一次
     async function uploadWorld(cat) {
-      const ver = 'w4:' + String(cat.version || '') + ':' + Object.keys(cat.maps || {}).length + ':' + (cat.mobs || []).length + ':' + Object.keys(cat.drops || {}).length;
+      const ver = 'w5:' + String(cat.version || '') + ':' + Object.keys(cat.maps || {}).length + ':' + (cat.mobs || []).length + ':' + Object.keys(cat.drops || {}).length;
       const have = await hub('GET', '/api/world/version');
       if (have && have.version === ver) return;
       const names = {};
@@ -257,6 +257,11 @@ function agentMain(ctx) {
         maps: Object.values(cat.maps || {}).map(m => ({ id: m.id, msId: m.msId, name: m.name, region: m.region, minLevel: m.minLevel || 0, mobIds: m.mobIds || [], boss: (m.bossSpawns || []).map(b => b.mobId) })),
         mobs: (cat.mobs || []).map(m => ({ id: m.id, msId: m.msId, name: m.name, lv: m.lv, hp: m.hp, xp: m.xp, money: m.money, isBoss: !!m.isBoss, acc: m.meta && m.meta.accuracy, eva: m.meta && m.meta.evasion, def: m.defense })),
         drops, mobDrops, names, skills, jobs,
+        // 裝備圖鑑：[id, 名稱, 部位(equipmentType), 分類, 需求等級, 需求職業(位元；0＝全職業), 標準素質{incX}, 可衝次數, 需求能力[力,敏,智,幸]]；不含點裝
+        equipment: Object.values(cat.equipment || {}).filter(e => e && (e.id || e.itemId) && !(e.meta && e.meta.cash)).map(e => { const m = e.meta || {}, st = {};
+          for (const [k, v] of Object.entries({ ...(e.base || {}), ...m })) if (/^inc[A-Z]/.test(k) && typeof v === 'number' && v) st[k] = v;
+          return [e.id || e.itemId, e.name || '', e.equipmentType || '', (e.type && (e.type.subCategory || e.type.category)) || '', m.reqLevel || 0, m.reqJob || 0, st, m.tuc || 0, [m.reqSTR || 0, m.reqDEX || 0, m.reqINT || 0, m.reqLUK || 0]]; }),
+        statNames: cat.statNames || {},
         // 卷軸：[名稱, 適用部位（對應裝備的 type）, 成功率, 詛咒（失敗時裝備消失機率 %）, 素質]，給強化工坊用
         scrolls: Object.fromEntries(Object.entries(cat.scrolls || {}).map(([k, sc]) => [k, [sc.name, sc.target, Number(sc.rate) || 0, Number(sc.cursed) || 0, sc.stats || {}]])),
         // 每張地圖可設定自動販售的掉落物：[itemId, 種類, 名稱, 商店價, 可賣, 分類, 掉落的怪物 id]

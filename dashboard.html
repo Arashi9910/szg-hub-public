@@ -419,6 +419,16 @@
   .ava.fn { width: 52px; height: 52px; float: left; margin: -2px 6px 0 -4px; } .ava-none.fn { font-size: 22px; }
   .ava.bc { width: 34px; height: 34px; float: left; margin: -2px 6px 0 -2px; } .ava-none.bc { font-size: 16px; }
   .ov-nm { display: flex; gap: 6px; align-items: center; }
+  #dexSlot { gap: 4px; } #dexSlot .chip { padding: 2px 9px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-size: 12px; background: var(--panel2); }
+  #dexSlot .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .dex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+  .dex-card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: grid; grid-template-columns: 44px 1fr; gap: 2px 8px; align-items: start; }
+  .dex-card .ic { grid-row: span 2; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: var(--panel2); border-radius: 6px; }
+  .dex-card .ic img { max-width: 40px; max-height: 40px; image-rendering: pixelated; }
+  .dex-card .nm { font-weight: 600; line-height: 1.25; } .dex-card .sub { font-size: 12px; color: var(--dim); }
+  .dex-card .st { grid-column: 1 / -1; font-size: 12px; display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .dex-card .st .fl { color: var(--dim); font-size: 11px; } .dex-card .rq { grid-column: 1 / -1; font-size: 11px; color: var(--dim); }
+  .dex-card .own { color: var(--good); font-size: 11px; } .dex-more { grid-column: 1 / -1; text-align: center; padding: 10px; }
   .ava-none { display: inline-flex; align-items: center; justify-content: center; font-size: 30px; opacity: .3; } .ava-none.sm { font-size: 14px; }
   .pt-mem.sel { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
   .pt-mem .lead { cursor: pointer; opacity: .25; } .pt-mem .lead.on { opacity: 1; cursor: default; }
@@ -481,6 +491,7 @@
   <nav>
     <button data-tab="overview" class="on">總覽</button>
     <button data-tab="gear">裝備</button>
+    <button data-tab="dex">圖鑑</button>
     <button data-tab="trade">交易</button>
     <button data-tab="bag">背包</button>
     <button data-tab="board">派工</button>
@@ -533,6 +544,20 @@
   </section>
 
   <!-- 裝備 -->
+  <!-- 裝備圖鑑 -->
+  <section id="dex">
+    <div class="card">
+      <div class="bar" style="margin:0"><b>裝備圖鑑</b><span class="dim sm" id="dexCount"></span><span style="flex:1"></span><input id="dexQ" placeholder="搜尋名稱" style="width:160px" autocomplete="off"></div>
+      <div class="bar"><span class="dim sm" style="width:36px">職業</span><div class="seg" id="dexJob"></div></div>
+      <div class="bar"><span class="dim sm" style="width:36px">等級</span><div class="seg" id="dexLv"></div><span class="dim sm">或</span><input type="number" id="dexLvMin" placeholder="最低" style="width:64px" min="0" max="200"><span>～</span><input type="number" id="dexLvMax" placeholder="最高" style="width:64px" min="0" max="200"></div>
+      <div class="bar"><span class="dim sm" style="width:36px">部位</span><div class="chips" id="dexSlot"></div></div>
+      <div class="bar"><span class="dim sm" style="width:36px">排序</span><div class="seg" id="dexSort"><button data-dexsort="lv">等級</button><button data-dexsort="slot">部位</button><button data-dexsort="atk">攻擊</button></div>
+        <label class="sm"><input type="checkbox" id="dexOwned"> 只看我有的</label></div>
+      <div class="dim sm">素質是標準值，括號是掉落時的浮動範圍（推估：標準值 ±10%，至少 ±1；物攻／魔攻最多 ±5、其他最多 ±10，用你身上幾千筆掉落紀錄對過）。選某個職業時，「全職業」的裝備也會一起列出來。</div>
+    </div>
+    <div id="dexGrid" class="dex-grid"></div>
+  </section>
+
   <section id="gear">
     <div class="card gear-top">
       <div class="bar" style="margin:0">
@@ -5427,6 +5452,91 @@ function petClick(p, e) {
   petFrame(p);
 }
 
+// ================= 裝備圖鑑 =================
+// 資料：WORLD.equipment（遊戲分頁上傳）＝[id, 名稱, 部位, 分類, 需求等級, 需求職業位元, 標準素質, 可衝次數, [力,敏,智,幸]]
+ui.dex = (() => { try { return { job: 'all', lv: 'all', slot: '', sort: 'lv', q: '', owned: false, lvMin: '', lvMax: '', ...JSON.parse(localStorage.getItem('dex') || '{}'), limit: 120 }; } catch (_) { return { job: 'all', lv: 'all', slot: '', sort: 'lv', q: '', owned: false, lvMin: '', lvMax: '', limit: 120 }; } })();
+const dexSave = () => { try { const { limit, ...o } = ui.dex; localStorage.setItem('dex', JSON.stringify(o)); } catch (_) {} };
+const DEX_JOBS = [['all', '全部', null], ['common', '全職業', 0], ['1', '劍士', 1], ['2', '法師', 2], ['4', '弓箭手', 4], ['8', '盜賊', 8], ['16', '海盜', 16]];
+const DEX_LV = [['all', '全部'], ['0-9', '0～9'], ['10-29', '10～29'], ['30-49', '30～49'], ['50-69', '50～69'], ['70-89', '70～89'], ['90-109', '90～109'], ['110-200', '110＋'], ['mine', '我的角色可穿']];
+// 掉落浮動範圍（推估，見圖鑑說明）
+const dexFloat = (k, b) => b > 0 ? Math.min(k === 'incPAD' || k === 'incMAD' ? 5 : 10, Math.max(1, Math.ceil(b * 0.1))) : 0;
+const dexJobText = j => j === 0 ? '全職業' : j < 0 ? '初心者' : JOBS.filter(([, b]) => b && (j & b)).map(([n]) => n).join('／');
+const dexSlotName = t => SLOT_LABEL[t] || GTYPE_LABEL[t] || ({ shoulder: '肩膀' }[t]) || t;
+const DEX_SLOT_ORDER = ['weapon', 'hat', 'top', 'overall', 'bottom', 'shoes', 'gloves', 'cape', 'shield', 'earring', 'face', 'eye', 'pendant', 'ring', 'belt', 'shoulder', 'medal'];
+function dexOwnedIds() {
+  const n = {};
+  for (const s of snaps()) for (const g of s.gear || []) if (g.itemId) n[g.itemId] = (n[g.itemId] || 0) + 1;
+  return n;
+}
+function renderDex() {
+  const d = ui.dex, list = (WORLD && WORLD.equipment) || null;
+  $('#dexJob').innerHTML = DEX_JOBS.map(([k, n]) => `<button data-dexjob="${k}" class="${d.job === k ? 'on' : ''}">${n}</button>`).join('');
+  $('#dexLv').innerHTML = DEX_LV.map(([k, n]) => `<button data-dexlv="${k}" class="${d.lv === k ? 'on' : ''}" ${k === 'mine' ? 'title="至少有一隻角色等級和職業都穿得上"' : ''}>${n}</button>`).join('');
+  document.querySelectorAll('#dexSort button').forEach(b => b.classList.toggle('on', b.dataset.dexsort === d.sort));
+  if (document.activeElement !== $('#dexQ')) $('#dexQ').value = d.q;
+  if (document.activeElement !== $('#dexLvMin')) $('#dexLvMin').value = d.lvMin;
+  if (document.activeElement !== $('#dexLvMax')) $('#dexLvMax').value = d.lvMax;
+  $('#dexOwned').checked = !!d.owned;
+  if (!list) { if (!WORLD) loadWorld().then(() => WORLD && renderDex()); $('#dexGrid').innerHTML = '<div class="card dim">還沒有圖鑑資料：遊戲分頁更新到新版腳本後（約 1 分鐘）會自動上傳。</div>'; $('#dexSlot').innerHTML = ''; $('#dexCount').textContent = ''; return; }
+  // 部位：武器合成一類（下面再細分武器種類）
+  const slots = [...new Set(list.map(e => isWeaponType(e[2]) ? 'weapon' : e[2]))].sort((a, b) => (DEX_SLOT_ORDER.indexOf(a) + 1 || 99) - (DEX_SLOT_ORDER.indexOf(b) + 1 || 99));
+  const wtypes = [...new Set(list.filter(e => isWeaponType(e[2])).map(e => e[2]))];
+  $('#dexSlot').innerHTML = `<span class="chip ${!d.slot ? 'on' : ''}" data-dexslot="">全部</span>` + slots.map(t => `<span class="chip ${d.slot === t ? 'on' : ''}" data-dexslot="${t}">${dexSlotName(t)}</span>`).join('')
+    + (d.slot === 'weapon' || isWeaponType(d.slot) ? `<span class="dim sm" style="margin:0 4px">｜</span>` + wtypes.map(t => `<span class="chip ${d.slot === t ? 'on' : ''}" data-dexslot="${t}">${dexSlotName(t)}</span>`).join('') : '');
+  const owned = dexOwnedIds();
+  const chars = snaps().map(s => s.char);
+  const jobBit = d.job === 'all' ? null : d.job === 'common' ? 0 : Number(d.job);
+  let lo = 0, hi = 999;
+  if (/^\d+-\d+$/.test(d.lv)) [lo, hi] = d.lv.split('-').map(Number);
+  if (d.lvMin !== '' && d.lvMin != null) lo = Number(d.lvMin); if (d.lvMax !== '' && d.lvMax != null) hi = Number(d.lvMax);
+  const q = d.q.trim();
+  let rows = list.filter(e => {
+    const [id, name, type, , lv, job] = e;
+    if (jobBit === 0 && job !== 0) return false;
+    if (jobBit && !(job === 0 || (job > 0 && (job & jobBit)))) return false;
+    if (lv < lo || lv > hi) return false;
+    if (d.lv === 'mine' && !chars.some(c => (c.lv || 0) >= lv && (job === 0 || (job > 0 && (job & (c.branchBit || 0)))))) return false;
+    if (d.slot === 'weapon' ? !isWeaponType(type) : d.slot && type !== d.slot) return false;
+    if (q && !name.includes(q)) return false;
+    if (d.owned && !owned[id]) return false;
+    return true;
+  });
+  const atk = e => (e[6].incPAD || 0) + (e[6].incMAD || 0);
+  const slotIdx = e => { const t = isWeaponType(e[2]) ? 'weapon' : e[2]; return DEX_SLOT_ORDER.indexOf(t) + 1 || 99; };
+  rows.sort(d.sort === 'atk' ? (a, b) => atk(b) - atk(a) || a[4] - b[4] : d.sort === 'slot' ? (a, b) => slotIdx(a) - slotIdx(b) || a[2].localeCompare(b[2]) || a[4] - b[4] : (a, b) => a[4] - b[4] || slotIdx(a) - slotIdx(b) || a[1].localeCompare(b[1]));
+  $('#dexCount').textContent = `${rows.length} / ${list.length} 件`;
+  const sn = k => statNames[k] || (WORLD.statNames || {})[k] || k;
+  const keys = st => [...STAT_ORDER.filter(k => st[k]), ...Object.keys(st).filter(k => !STAT_ORDER.includes(k))];
+  const card = e => {
+    const [id, name, type, , lv, job, st, tuc, rq] = e, u = itemImg(id), n = owned[id];
+    const req = ['力', '敏', '智', '幸'].map((x, i) => rq[i] ? `${x} ${rq[i]}` : '').filter(Boolean).join('・');
+    return `<div class="dex-card" title="${esc(itemTip(id) || name)}"><div class="ic">${u ? `<img src="${esc(u)}" loading="lazy" alt="" onerror="this.remove()">` : ''}</div>
+      <div class="nm">${esc(name)}${n ? ` <span class="own">✓ 有 ${n} 件</span>` : ''}</div>
+      <div class="sub">Lv${lv}・${esc(dexSlotName(type))}・${esc(dexJobText(job))}${tuc ? `・可衝 ${tuc} 次` : ''}</div>
+      <div class="st">${keys(st).map(k => { const f = k === 'incBossDmg' ? 0 : dexFloat(k, st[k]); return `<span>${esc(sn(k))} <b>${st[k]}</b>${f ? `<span class="fl">（±${f}）</span>` : ''}</span>`; }).join('') || '<span class="dim">沒有素質</span>'}</div>
+      ${req ? `<div class="rq">需求 ${req}</div>` : ''}</div>`;
+  };
+  $('#dexGrid').innerHTML = rows.slice(0, d.limit).map(card).join('') + (rows.length > d.limit ? `<div class="dex-more"><button class="btn" data-dexmore>再顯示 ${Math.min(240, rows.length - d.limit)} 件（還有 ${rows.length - d.limit} 件）</button></div>` : '') || '<div class="card dim">沒有符合的裝備</div>';
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-dexjob],[data-dexlv],[data-dexslot],[data-dexsort],[data-dexmore]'); if (!t) return;
+  const d = ui.dex, x = t.dataset;
+  if (x.dexjob) d.job = x.dexjob;
+  if (x.dexlv) { d.lv = x.dexlv; d.lvMin = ''; d.lvMax = ''; }
+  if (x.dexslot != null) d.slot = x.dexslot;
+  if (x.dexsort) d.sort = x.dexsort;
+  if (x.dexmore != null) d.limit += 240; else d.limit = 120;
+  dexSave(); renderDex();
+});
+document.addEventListener('input', e => {
+  const id = e.target.id; if (!['dexQ', 'dexLvMin', 'dexLvMax', 'dexOwned'].includes(id)) return;
+  const d = ui.dex;
+  if (id === 'dexQ') d.q = e.target.value;
+  if (id === 'dexLvMin' || id === 'dexLvMax') { d[id === 'dexLvMin' ? 'lvMin' : 'lvMax'] = e.target.value; d.lv = 'custom'; }
+  if (id === 'dexOwned') d.owned = e.target.checked;
+  d.limit = 120; dexSave(); renderDex();
+});
+
 function renderAll() {
   loadExt();
   renderVg();
@@ -5434,6 +5544,7 @@ function renderAll() {
   const active = document.querySelector('nav button.on').dataset.tab;
   if (active === 'overview') { renderOverview(); renderIdleCard(); }
   if (active === 'gear') { renderGear(); renderAS(); }
+  if (active === 'dex') renderDex();
   if (active === 'trade') renderTrade();
   if (active === 'bag') renderBag();
   if (active === 'quiz') loadQuiz().then(renderQuiz);
