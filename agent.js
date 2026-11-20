@@ -399,7 +399,7 @@ function agentMain(ctx) {
           tradeId: (account && account.playerCode) || rememberedCode() || undefined,
           money: c.money || 0, warehouseMesos: c.warehouseMesos || 0,
           map: c.map, mapName: catalog.mapsById[String(c.map)] || c.map,
-          auto: !!c.auto, until: c.until || null,
+          auto: !!c.auto, until: c.until || null, settingsSlot: Number(c.settingsSlot) || 1,
           hp: c.hp, maxhp: c.maxhp, mp: c.mp, maxmp: c.maxmp, kills: c.kills || 0,
           // 楓幣收入：遊戲主控台的「累計賺得」和本次掛機報告（賺了多少、掛了多久），中控算每小時楓幣用
           earned: Number(c.earned) || 0,
@@ -1337,6 +1337,14 @@ function agentMain(ctx) {
       const srvNow = Number(s0.serverTime) || Date.now();
       if (row && row.available && row.deadline > srvNow) return done('cooling', `還在冷卻，約 ${Math.ceil((row.deadline - srvNow) / 60000)} 分鐘後重生，這次不去`);
       const inst = (row && row.instanceId) || b.instanceId;
+      // 掛機設定組合（遊戲的 1／2／3，{type:'settingsPreset', slot}；沒設定過＝1）：打王用一套、練功用一套
+      const slot0 = Number(s0.character && s0.character.settingsSlot) || 1;
+      let slotNow = slot0;
+      const usePreset = async n => {
+        n = Number(n) || 0; if (!n || n === slotNow) return '';
+        try { await gameRetry({ type: 'settingsPreset', slot: n, characterId: id }); slotNow = n; return `，換成掛機設定 ${n}`; }
+        catch (e) { return `（換掛機設定 ${n} 失敗：${e.message}）`; }
+      };
       // 2. 前往
       setBadge(null, `野王：前往 ${b.mapName} 打 ${b.name}…`);
       try { await gameRetry({ type: 'map', map: b.map, characterId: id }); }
@@ -1344,8 +1352,9 @@ function agentMain(ctx) {
       // 真實遊戲換地圖會停止掛機（2026-11-20 實測）：到了就重新開始掛機，角色才會打王
       const startIdle = async () => { try { await gameRetry({ type: 'start', characterId: id }); return true; } catch (e) { return false; } };
       await sleepP(1200);
+      const presetMsg = await usePreset(b.presetBoss);
       const idleOk = await startIdle();
-      await report(job, { event: 'log', msg: `已前往 ${b.mapName}${idleOk ? '，已開始掛機' : '（開始掛機失敗）'}（打完回 ${backName || '原地圖'}）` });
+      await report(job, { event: 'log', msg: `已前往 ${b.mapName}${presetMsg}${idleOk ? '，已開始掛機' : '（開始掛機失敗）'}（打完回 ${backName || '原地圖'}）` });
       let idleAt = Date.now();
       // 3. 看血條
       let cdChecked = false, seen = false, gone = 0, hp = null, maxHp = null, lowest = Infinity, dropAt = Date.now(), postAt = 0, result = '';
@@ -1398,8 +1407,8 @@ function agentMain(ctx) {
           try { await gameRetry({ type: 'escapeBoss', characterId: id }); await sleepP(1500); await gameRetry({ type: 'map', map: back, characterId: id }); backOk = true; }
           catch (e2) { backMsg = `，回 ${backName} 失敗（${e2.message}），請手動換圖`; }
         }
-        if (backOk) { await sleepP(1200); backMsg = `，已回到 ${backName}` + ((await startIdle()) ? '並開始掛機' : '（開始掛機失敗，請手動開始）'); }
-      } else if (result !== 'moved') { await startIdle(); backMsg = '，不知道原本的地圖，留在原地繼續掛機'; }
+        if (backOk) { await sleepP(1200); const pm = await usePreset(b.presetTrain || slot0); backMsg = `，已回到 ${backName}${pm}` + ((await startIdle()) ? '並開始掛機' : '（開始掛機失敗，請手動開始）'); }
+      } else if (result !== 'moved') { const pm = await usePreset(b.presetTrain || slot0); await startIdle(); backMsg = `，不知道原本的地圖，留在原地繼續掛機${pm}`; }
       try { await postBossState(id, await gameRetry({ type: 'sync', fullSync: true, includeBossRespawns: true, characterId: id })); } catch (_) {}
       lastHash = '';
       const mins = Math.max(1, Math.round((Date.now() - t0) / 60000));

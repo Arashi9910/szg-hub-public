@@ -640,6 +640,9 @@
       <details id="bossSetBox"><summary id="bossSetSum">設定</summary>
         <div class="bar" style="margin-top:8px"><span>預估超過</span><input type="number" id="bossEst" min="1" max="240" style="width:60px"><span>分鐘打不死的不去</span>
           <span style="margin-left:12px">每次最多打</span><input type="number" id="bossVisit" min="1" max="240" style="width:60px"><span>分鐘</span></div>
+        <div class="bar"><span>掛機設定</span><span>打王用</span><select id="bossPresetBoss"><option value="0">不切換</option><option value="1">設定 1</option><option value="2">設定 2</option><option value="3">設定 3</option></select>
+          <span style="margin-left:8px">回練功圖用</span><select id="bossPresetTrain"><option value="0">出發前用的那套</option><option value="1">設定 1</option><option value="2">設定 2</option><option value="3">設定 3</option></select>
+          <span class="dim sm">遊戲的掛機設定 1／2／3 各自獨立，第一次切到沒用過的那套是空白的，請先在遊戲裡設好</span></div>
         <div class="bar"><span>角色</span><span id="bossChars"></span></div>
         <div class="bar"><span>王</span><label><input type="checkbox" class="sw" id="bossAllMobs"> 全部</label><span class="chips" id="bossMobs"></span></div>
         <div class="dim sm">每分鐘檢查一次：勾選的角色<b>在掛機、有自己的遊戲分頁</b>時，挑一隻已經重生的王（預估最快打死的先去），換過去開始掛機打王，看血條打死後換回原本的地圖並重新開始掛機。
@@ -2890,7 +2893,7 @@ document.addEventListener('input', e => { if (e.target.id === 'mkSearch') render
 
 // ================= 輪流打野王 =================
 let BOSS = null, bossLoadAt = 0;
-const bossCfg = () => ({ mode: 'off', chars: {}, mobs: null, estMax: 15, visitMax: 20, ...(S.boss || {}) });
+const bossCfg = () => ({ mode: 'off', chars: {}, mobs: null, estMax: 15, visitMax: 20, presetBoss: 0, presetTrain: 0, ...(S.boss || {}) });
 function saveBoss(patch) { return saveSettings({ boss: { ...bossCfg(), ...patch } }); }
 async function loadBoss(force) {
   if (!force && BOSS && Date.now() - bossLoadAt < 8000) return;
@@ -2914,6 +2917,7 @@ function renderBoss(force) {
   const editing = card.contains(document.activeElement) && document.activeElement.tagName === 'INPUT' && document.activeElement.type === 'number';
   if (force || !editing) {
     $('#bossMode').value = c.mode; $('#bossEst').value = c.estMax; $('#bossVisit').value = c.visitMax;
+    if (!$('#bossSetBox').contains(document.activeElement) || document.activeElement.tagName !== 'SELECT') { $('#bossPresetBoss').value = String(c.presetBoss || 0); $('#bossPresetTrain').value = String(c.presetTrain || 0); }
     if (force || !$('#bossSetBox').contains(document.activeElement)) {
       $('#bossChars').innerHTML = charPickHTML('boss', { noFuture: true });
       cpMapSync(c.charSpec, c.chars, chars => saveBoss({ chars }));
@@ -2929,7 +2933,7 @@ function renderBoss(force) {
   for (const x of chars) { if (x.party) { if (!byCode[x.party.code]) units.push(byCode[x.party.code] = []); byCode[x.party.code].push(x); } else units.push([x]); }
   const live = (BOSS && BOSS.live) || [];
   const nChars = Object.values(c.chars).filter(Boolean).length;
-  $('#bossSetSum').textContent = `設定：${nChars} 隻角色${units.length ? `（${units.length} 組出發）` : ''}・${Array.isArray(c.mobs) ? c.mobs.length + ' 隻王' : '全部的王'}・預估超過 ${c.estMax} 分不去・每次最多 ${c.visitMax} 分`;
+  $('#bossSetSum').textContent = `設定：${nChars} 隻角色${units.length ? `（${units.length} 組出發）` : ''}・${Array.isArray(c.mobs) ? c.mobs.length + ' 隻王' : '全部的王'}・預估超過 ${c.estMax} 分不去・每次最多 ${c.visitMax} 分${Number(c.presetBoss) ? `・打王用掛機設定 ${c.presetBoss}、練功用${Number(c.presetTrain) ? '設定 ' + c.presetTrain : '出發前那套'}` : ''}`;
   // ── 正在打 ──
   $('#bossLive').innerHTML = live.map(g => {
     const p = g.hp != null && g.maxHp ? Math.max(0, Math.min(100, g.hp / g.maxHp * 100)) : null;
@@ -2962,7 +2966,7 @@ function renderBoss(force) {
   const head = u => {
     const warn = u.filter(x => !x.tab || !x.auto).map(x => `${x.name}：${!x.tab ? '沒有自己的遊戲分頁' : '沒在掛機'}，不會出發`);
     const nm = u.map(x => `${esc(shortName(x.name))}${u.length > 1 && !x.picked ? '<span class="dim">*</span>' : ''}`).join('＋');
-    return `<th class="nosort bhd" title="${esc(u.map(x => `${x.name} Lv${x.lv}・${x.mapName || ''}・DPS ${x.dps ? Math.round(x.dps) : '—'}`).concat(warn).join('\n'))}">${nm}${warn.length ? ' <span class="warn">!</span>' : ''}${u.length > 1 ? '<div class="dim sm">隊伍</div>' : ''}</th>`;
+    return `<th class="nosort bhd" title="${esc(u.map(x => `${x.name} Lv${x.lv}・${x.mapName || ''}・DPS ${x.dps ? Math.round(x.dps) : '—'}・目前掛機設定 ${x.slot || 1}`).concat(warn).join('\n'))}">${nm}${warn.length ? ' <span class="warn">!</span>' : ''}${u.length > 1 ? '<div class="dim sm">隊伍</div>' : ''}</th>`;
   };
   if (!units.length) $('#bossGrid').innerHTML = '<div class="dim" style="margin:8px 0">還沒有勾選角色：打開下面的「設定」選角色和要打的王。</div>';
   else if (!mobList.length) $('#bossGrid').innerHTML = '<div class="dim" style="margin:8px 0">等遊戲分頁回報王的狀態（約 1 分鐘）…</div>';
@@ -2984,6 +2988,7 @@ document.addEventListener('change', async e => {
     if (t.value === 'auto' && !confirm('開啟後，勾選的角色會自動換到野王的地圖打王，打完（或時間到）再換回原本的地圖。建議先用「試跑」看紀錄確認會去打哪幾隻。確定開啟？')) { t.value = bossCfg().mode; enhanceSegs($('#bossCard')); return; }
     await saveBoss({ mode: t.value }); $('#bossMsg').textContent = '已儲存'; return;
   }
+  if (t.id === 'bossPresetBoss' || t.id === 'bossPresetTrain') { await saveBoss({ [t.id === 'bossPresetBoss' ? 'presetBoss' : 'presetTrain']: Number(t.value) || 0 }); renderBoss(true); return; }
   if (t.id === 'bossEst') { await saveBoss({ estMax: Math.min(240, Math.max(1, Number(t.value) || 15)) }); return; }
   if (t.id === 'bossVisit') { await saveBoss({ visitMax: Math.min(240, Math.max(1, Number(t.value) || 20)) }); return; }
   if (t.id === 'bossAllMobs') { await saveBoss({ mobs: t.checked ? null : bossList().map(b => b.mob) }); renderBoss(true); return; }

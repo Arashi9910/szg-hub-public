@@ -586,13 +586,16 @@ function automationInfo() {
 //  - 付費重生（bossRespawn，10 點或 1000 萬楓幣）不使用
 // settings.boss = { mode: off|preview|auto, chars: {角色: true}, charSpec, mobs: null(全部)|[mob], estMax(分), visitMax(分) }
 // db.boss = { state: {角色: {at, offset, list}}, hp: {instanceId: {hp, maxHp, at}}, last: {角色|mob: {at, result}}, home: {角色: map}, log, seen }
-BAG_KINDS.add('boss'); KIND_MIN_AGENT.boss = '0.41.0';
+// 0.43.0：換圖後開始掛機、掛機設定組合。舊腳本的分頁會先重新整理換新腳本再接工作（避免舊腳本打王不開掛機、站著發呆）
+BAG_KINDS.add('boss'); KIND_MIN_AGENT.boss = '0.43.0';
 const BOSS_RETRY_MS = 30 * 60 * 1000;   // 沒打成功（逾時、倒下、王不在）的同一隻王，30 分鐘內不再去
 const BOSS_STATE_STALE = 20 * 60 * 1000; // 王的狀態超過這麼久沒更新就先不派
 function bossCfg() {
   const b = db.settings.boss || {};
   return { mode: b.mode || 'off', chars: b.chars || {}, charSpec: b.charSpec || null, mobs: Array.isArray(b.mobs) ? b.mobs : null,
-    estMax: Number(b.estMax) > 0 ? Number(b.estMax) : 15, visitMax: Number(b.visitMax) > 0 ? Number(b.visitMax) : 20 };
+    estMax: Number(b.estMax) > 0 ? Number(b.estMax) : 15, visitMax: Number(b.visitMax) > 0 ? Number(b.visitMax) : 20,
+    presetBoss: [1, 2, 3].includes(Number(b.presetBoss)) ? Number(b.presetBoss) : 0,   // 0＝不切換
+    presetTrain: [1, 2, 3].includes(Number(b.presetTrain)) ? Number(b.presetTrain) : 0 }; // 0＝換回出發前用的那套
 }
 function bossDb() {
   const b = db.boss || (db.boss = {});
@@ -702,7 +705,7 @@ function bossTick(force) {
       const job = {
         id: crypto.randomBytes(6).toString('hex'), kind: 'boss', status: 'approved', auto: true, createdAt: now, approvedAt: now,
         fromCharId: id, fromName: snap.char.name, fromCode: snap.playerCode, toCharId: id, toName: snap.char.name, toCode: snap.playerCode,
-        batches: [{ items: [], gear: [], money: 0, boss: { mob: r.mob, name: r.name, map: r.map, mapName: r.mapName, instanceId: r.instanceId, back: b.home[id] || '', backName: homeName, visitMax: c.visitMax, party: unit.code ? names : null } }],
+        batches: [{ items: [], gear: [], money: 0, boss: { mob: r.mob, name: r.name, map: r.map, mapName: r.mapName, instanceId: r.instanceId, back: b.home[id] || '', backName: homeName, visitMax: c.visitMax, presetBoss: c.presetBoss, presetTrain: c.presetTrain, party: unit.code ? names : null } }],
         batchIndex: 0, log: [], lastMsg: '',
       };
       jobLog(job, `自動：${who}去 ${r.mapName} 打 ${r.name}（${est}）`);
@@ -738,7 +741,7 @@ function bossSummary() {
   const chars = [...ids].filter(id => db.chars[id]).map(id => {
     const s = db.chars[id], unit = bossUnitOf(id, pm);
     const pdps = unit.code ? unit.ids.reduce((t, x) => t + charDps(x), 0) : null;
-    return { charId: id, party: unit.code ? { code: unit.code, ids: unit.ids, names: unit.ids.map(x => db.chars[x].char.name) } : null, partyDps: pdps, name: s.char.name, lv: s.char.lv, map: s.char.map, mapName: s.char.mapName, auto: !!s.char.auto, tab: !!tabOf(s.playerCode, id), on: unit.ids.some(x => c.chars[x]), picked: !!c.chars[id],
+    return { charId: id, slot: s.char.settingsSlot || 1, party: unit.code ? { code: unit.code, ids: unit.ids, names: unit.ids.map(x => db.chars[x].char.name) } : null, partyDps: pdps, name: s.char.name, lv: s.char.lv, map: s.char.map, mapName: s.char.mapName, auto: !!s.char.auto, tab: !!tabOf(s.playerCode, id), on: unit.ids.some(x => c.chars[x]), picked: !!c.chars[id],
       at: (b.state[id] || {}).at || 0, dps: charDps(id), rows: bossRows(id, pdps),
       job: (db.jobs.filter(j => j.kind === 'boss' && j.fromCharId === id).slice(-1)[0]) || null };
   });
