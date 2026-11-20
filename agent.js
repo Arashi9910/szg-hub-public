@@ -1356,7 +1356,7 @@ function agentMain(ctx) {
       return report(job, { event: 'error', msg: '未知的工作類型：' + job.kind + '（重新整理後仍然不認得，請手動重新整理遊戲分頁）' });
     }
     // ---------- 角色全身照 ----------
-    // 遊戲頁面的 MapleAppearance（appearance.js）：key(角色, 動作)＝外觀簽章；load(角色, 'attack') 會一起產生站姿 GIF（stand：blob 網址，78×78）。
+    // 遊戲頁面的 MapleAppearance（appearance.js）：key(角色)＝外觀簽章（URL 參數字串）；站姿 GIF 在 /api/appearance?<key>&action=stand（78×78）。
     // 外觀變了（換裝、換髮型）才重新上傳給中控（存成 data/avatars/<角色>.gif），面板的組隊卡片、流水線用
     const avatarAt = {};
     // 失敗原因回報給中控（GET /api/avatar-diag 看得到），方便查為什麼沒有全身照
@@ -1367,11 +1367,14 @@ function agentMain(ctx) {
       if (!MA) return avatarDiag(ch.id, 'noMA', typeof W.MapleAppearance);
       let key = ''; try { key = MA.key(ch, 'attack'); } catch (e) { return avatarDiag(ch.id, 'key', e && e.message); }
       if (GM_getValue('avatarKey:' + ch.id, '') === key) return;
-      let v; try { v = await MA.load(ch, 'attack'); } catch (e) { return avatarDiag(ch.id, 'load', e && e.message); }
-      if (!v || !v.stand) return avatarDiag(ch.id, 'nostand', v ? Object.keys(v).join(',') : 'null');
-      // stand 是頁面建立的 blob 網址；Tampermonkey 沙箱的 fetch 不一定讀得到，用頁面自己的 fetch
+      // 站姿 GIF：直接跟遊戲要（appearance.js 的 fetchPart：/api/appearance?<key>&action=stand）。
+      // 不讀 load() 給的 blob 網址：實機頁面的 fetch 讀 blob: 會「Failed to fetch」（v0.47.2 回報）
       let blob;
-      try { blob = await (await (W.fetch || fetch).call(W, v.stand)).blob(); } catch (e) { return avatarDiag(ch.id, 'blob', e && e.message); }
+      try {
+        const r = await (W.fetch || fetch).call(W, '/api/appearance?' + key + '&action=stand');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        blob = await r.blob();
+      } catch (e) { return avatarDiag(ch.id, 'stand', e && e.message); }
       const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(blob); });
       if (!b64) return avatarDiag(ch.id, 'b64', blob && blob.size);
       try { await hub('POST', '/api/avatar', { charId: ch.id, key, gif: b64 }); } catch (e) { return avatarDiag(ch.id, 'post', e && e.message); }
