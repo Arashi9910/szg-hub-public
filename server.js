@@ -715,6 +715,21 @@ function bossTick(force) {
   save();
 }
 setInterval(() => { try { bossTick(false); } catch (e) { console.warn('[野王]', e); } }, 60 * 1000);
+const bossHpTrack = {}; // instanceId → { t0, hp0, at }（只放記憶體）
+function bossLive() {
+  const b = bossDb(), by = {};
+  for (const j of db.jobs.filter(j => j.kind === 'boss' && ACTIVE.has(j.status))) {
+    const x = j.batches[0].boss, g = by[x.instanceId] || (by[x.instanceId] = { instanceId: x.instanceId, mob: x.mob, name: x.name, mapName: x.mapName, names: [], startedAt: j.createdAt, msg: '' });
+    g.names.push(j.fromName); g.startedAt = Math.min(g.startedAt, j.createdAt); if (j.lastMsg) g.msg = j.lastMsg;
+  }
+  return Object.values(by).map(g => {
+    const h = b.hp[g.instanceId], t = bossHpTrack[g.instanceId];
+    const fresh = h && h.at >= g.startedAt;
+    let etaSec = null, perMin = null;
+    if (fresh && t && h.at > t.t0 + 8000 && t.hp0 > h.hp) { const rate = (t.hp0 - h.hp) / ((h.at - t.t0) / 1000); perMin = rate * 60; etaSec = Math.round(h.hp / rate); }
+    return { ...g, hp: fresh ? h.hp : null, maxHp: h ? h.maxHp : null, hpAt: fresh ? h.at : 0, perMin, etaSec };
+  });
+}
 function bossSummary() {
   const c = bossCfg(), b = bossDb();
   const pm = partyMap();
@@ -727,7 +742,7 @@ function bossSummary() {
       at: (b.state[id] || {}).at || 0, dps: charDps(id), rows: bossRows(id, pdps),
       job: (db.jobs.filter(j => j.kind === 'boss' && j.fromCharId === id).slice(-1)[0]) || null };
   });
-  return { cfg: c, chars, log: b.log.slice(-100) };
+  return { cfg: c, chars, live: bossLive(), log: b.log.slice(-100) };
 }
 
 function send(res, code, body, type = 'application/json; charset=utf-8') {
@@ -958,7 +973,13 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && url.pathname === '/api/boss/hp') {
       const e = JSON.parse(await readBody(req));
-      if (e && e.instanceId) { if (e.hp == null) delete bossDb().hp[e.instanceId]; else bossDb().hp[e.instanceId] = { hp: Number(e.hp) || 0, maxHp: Number(e.maxHp) || 0, at: Date.now() }; }
+      if (e && e.instanceId) {
+        if (e.hp == null) delete bossDb().hp[e.instanceId]; else bossDb().hp[e.instanceId] = { hp: Number(e.hp) || 0, maxHp: Number(e.maxHp) || 0, at: Date.now() };
+        // 即時進度：這一趟第一次看到的血量與時間（算每分鐘掉多少、還要多久）
+        const t = bossHpTrack[e.instanceId];
+        if (e.hp != null && (!t || Date.now() - t.at > 60000)) bossHpTrack[e.instanceId] = { t0: Date.now(), hp0: Number(e.hp) || 0, at: Date.now() };
+        else if (t) t.at = Date.now();
+      }
       return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && url.pathname === '/api/boss/result') {

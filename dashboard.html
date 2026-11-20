@@ -398,7 +398,16 @@
   .hpbar { display: inline-block; width: 90px; height: 7px; background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; vertical-align: middle; overflow: hidden; }
   .hpbar i { display: block; height: 100%; background: var(--bad); }
   table.boss-t td { padding-top: 3px; padding-bottom: 3px; }
-  .boss-grp { margin: 10px 0 14px; padding-top: 8px; border-top: 1px solid var(--line); }
+  .boss-hd { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 8px; }
+  .boss-live { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 8px 10px; margin: 0 0 8px; border: 1px solid var(--line); border-left: 3px solid var(--bad); border-radius: 6px; background: var(--panel2); }
+  .boss-live .bl-name { min-width: 180px; } .boss-live .bl-pct { font-variant-numeric: tabular-nums; min-width: 52px; }
+  .hpbar.big { width: 240px; height: 10px; } .hpbar i { transition: width .6s; }
+  .boss-grid-wrap { overflow-x: auto; }
+  table.boss-grid { width: auto; } table.boss-grid td, table.boss-grid th { padding: 3px 10px; white-space: nowrap; }
+  table.boss-grid th.bhd { text-align: center; } table.boss-grid td.bcell { text-align: center; }
+  .bc { display: inline-block; min-width: 44px; padding: 0 6px; border-radius: 9px; font-size: 12px; }
+  .bc.ok { background: rgba(80, 200, 120, .18); color: var(--good); } .bc.busy { background: rgba(230, 107, 107, .2); color: var(--bad); font-weight: 600; }
+  .bc.cd { color: var(--dim); font-variant-numeric: tabular-nums; } .bc.skip { color: var(--warn); }
   .ov-auto-hd { display: flex; gap: 10px; align-items: baseline; margin-bottom: 6px; }
   .ov-auto-list { display: flex; flex-wrap: wrap; gap: 6px; }
   .auto-chip { display: inline-flex; gap: 6px; align-items: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 4px 9px; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
@@ -617,18 +626,23 @@
   <section id="maps">
     <div class="card" id="wMissing" style="display:none"><span class="warn">還沒有地圖資料：打開任一個遊戲分頁（腳本 v0.14 以上），約 10 秒後會自動上傳。</span></div>
     <div class="card" id="bossCard">
-      <h3>輪流打野王</h3>
-      <div class="bar">
-        <span>模式</span><select id="bossMode" data-seg><option value="off" data-short="關">關閉</option><option value="preview" data-short="試跑">試跑（只記錄會去打哪隻）</option><option value="auto" data-short="自動出發">自動出發</option></select>
-        <span>預估超過</span><input type="number" id="bossEst" min="1" max="240" style="width:60px"><span>分鐘打不死的不去</span>
-        <span>每次最多打</span><input type="number" id="bossVisit" min="1" max="240" style="width:60px"><span>分鐘</span>
-        <button class="btn" id="bossRun">立即檢查</button><span class="dim" id="bossMsg"></span>
+      <div class="boss-hd">
+        <b>輪流打野王</b>
+        <select id="bossMode" data-seg><option value="off" data-short="關">關閉</option><option value="preview" data-short="試跑">試跑（只記錄會去打哪隻）</option><option value="auto" data-short="自動出發">自動出發</option></select>
+        <span class="dim sm" id="bossSum"></span>
+        <span style="flex:1"></span>
+        <span class="dim sm" id="bossMsg"></span><button class="btn sm" id="bossRun">立即檢查</button>
       </div>
-      <div class="bar"><span>角色</span><span id="bossChars"></span></div>
-      <div class="bar"><span>要打的王</span><label><input type="checkbox" class="sw" id="bossAllMobs"> 全部</label><span class="chips" id="bossMobs"></span></div>
-      <div class="dim">每分鐘檢查一次：勾選的角色<b>在掛機、而且有自己的遊戲分頁</b>時，挑一隻已經重生的王（預估最快打死的先去），換到那張地圖、看王的血條打到死，再換回原本的地圖。
-        時間到、角色倒下、或 3 分鐘血量都沒降，也會先回原地圖；王的血量遊戲會保留，30 分鐘後再去接著打。預估用的是角色的實戰 DPS（總覽那欄），還沒有 DPS 的不會因為預估被略過。不會使用付費重生。同一個隊伍的角色共用同一份王，所以<b>以隊伍為單位一起出發</b>：勾了其中一隻，同隊的會一起去打同一隻王（預估用隊員 DPS 加總），各自打完回自己原本的地圖。</div>
-      <div id="bossTable" style="margin-top:8px"></div>
+      <div id="bossLive"></div>
+      <div id="bossGrid"></div>
+      <details id="bossSetBox"><summary id="bossSetSum">設定</summary>
+        <div class="bar" style="margin-top:8px"><span>預估超過</span><input type="number" id="bossEst" min="1" max="240" style="width:60px"><span>分鐘打不死的不去</span>
+          <span style="margin-left:12px">每次最多打</span><input type="number" id="bossVisit" min="1" max="240" style="width:60px"><span>分鐘</span></div>
+        <div class="bar"><span>角色</span><span id="bossChars"></span></div>
+        <div class="bar"><span>王</span><label><input type="checkbox" class="sw" id="bossAllMobs"> 全部</label><span class="chips" id="bossMobs"></span></div>
+        <div class="dim sm">每分鐘檢查一次：勾選的角色<b>在掛機、有自己的遊戲分頁</b>時，挑一隻已經重生的王（預估最快打死的先去），換過去開始掛機打王，看血條打死後換回原本的地圖並重新開始掛機。
+          時間到、倒下、或 3 分鐘血量都沒降也會先回去；王的血量遊戲會保留，30 分鐘後再去。同隊伍的角色共用一份王，<b>勾一隻同隊的就會一起去</b>（預估用隊員 DPS 加總）。不會使用付費重生。</div>
+      </details>
       <details><summary>紀錄</summary><div id="bossLog"></div></details>
     </div>
     <div class="card">
@@ -2888,52 +2902,80 @@ function bossList() {
   if (!m.size && WORLD) for (const mp of WORLD.maps) for (const id of mp.boss || []) { const x = WORLD.mobs.find(o => o.id === id); if (x && !m.has(id)) m.set(id, { mob: id, name: x.name, lv: x.lv, mapName: mp.name }); }
   return [...m.values()].sort((a, b) => (a.lv || 0) - (b.lv || 0));
 }
+const BOSS_RES = { killed: '打死了', timeout: '時間到', dead: '倒下', absent: '王不在', stuck: '打不動', moved: '被換圖', cooling: '冷卻中', error: '出錯' };
+const mmss = sec => { sec = Math.max(0, Math.round(sec)); const m = Math.floor(sec / 60); return m >= 60 ? hm(sec * 1000) : `${m}:${String(sec % 60).padStart(2, '0')}`; };
+// 名字共同的前綴（例如「佐藤」）在表頭省略，滑鼠移上去看全名
+function namePrefix(names) { if (names.length < 2) return ''; let p = names[0]; for (const n of names) while (p && !n.startsWith(p)) p = p.slice(0, -1); return names.every(n => n.length > p.length) ? p : ''; }
 function renderBoss(force) {
   const card = $('#bossCard'); if (!card) return;
   const c = bossCfg();
   const editing = card.contains(document.activeElement) && document.activeElement.tagName === 'INPUT' && document.activeElement.type === 'number';
   if (force || !editing) {
     $('#bossMode').value = c.mode; $('#bossEst').value = c.estMax; $('#bossVisit').value = c.visitMax;
-    $('#bossChars').innerHTML = charPickHTML('boss', { noFuture: true });
-    cpMapSync(c.charSpec, c.chars, chars => saveBoss({ chars }));
-    const all = !Array.isArray(c.mobs), sel = new Set(c.mobs || []);
-    $('#bossAllMobs').checked = all;
-    $('#bossMobs').innerHTML = all ? '<span class="dim sm">所有野王都會輪流打；取消「全部」可以只勾幾隻</span>' : bossList().map(b => `<label title="${esc(b.mapName)}"><input type="checkbox" data-bossmob="${esc(b.mob)}" ${sel.has(b.mob) ? 'checked' : ''}>${esc(b.name)} <span class="dim sm">Lv${b.lv || '?'}</span></label>`).join('') || '<span class="dim">還沒有野王資料</span>';
+    if (force || !$('#bossSetBox').contains(document.activeElement)) {
+      $('#bossChars').innerHTML = charPickHTML('boss', { noFuture: true });
+      cpMapSync(c.charSpec, c.chars, chars => saveBoss({ chars }));
+      const all = !Array.isArray(c.mobs), sel = new Set(c.mobs || []);
+      $('#bossAllMobs').checked = all;
+      $('#bossMobs').innerHTML = all ? '<span class="dim sm">所有野王都會輪流打；關掉「全部」可以只勾幾隻</span>' : bossList().map(b => `<label title="${esc(b.mapName)}"><input type="checkbox" data-bossmob="${esc(b.mob)}" ${sel.has(b.mob) ? 'checked' : ''}>${esc(b.name)} <span class="dim sm">Lv${b.lv || '?'}</span></label>`).join('') || '<span class="dim">還沒有野王資料</span>';
+    }
     enhanceSegs(card);
   }
   const chars = ((BOSS && BOSS.chars) || []).filter(x => x.on);
-  const pctBar = r => { const p = r.maxHp ? Math.max(0, Math.min(100, r.hp / r.maxHp * 100)) : 100; return `<span class="hpbar" title="${fmt(r.hp)} / ${fmt(r.maxHp)}"><i style="width:${p.toFixed(1)}%"></i></span> <span class="sm ${r.hpKnown ? '' : 'dim'}">${r.hpKnown ? p.toFixed(1) + '%' : '滿血'}</span>`; };
-  const RES = { killed: '打死了', timeout: '時間到', dead: '倒下', absent: '王不在', stuck: '打不動', moved: '被換圖', cooling: '冷卻中', error: '出錯' };
-  // 同隊伍的角色放在一起（共用同一份王，一起出發）
-  const groups = [], byCode = {};
-  for (const x of chars) { if (x.party) { if (!byCode[x.party.code]) groups.push(byCode[x.party.code] = []); byCode[x.party.code].push(x); } else groups.push([x]); }
-  let h = '';
-  if (!chars.length) h = '<div class="dim">還沒有勾選角色。</div>';
-  for (const g of groups) {
-    const x0 = g.slice().sort((a, b) => (b.at || 0) - (a.at || 0))[0];
-    const isParty = !!x0.party;
-    let busyBoss = null;
-    const line = x => {
-      const job = x.job && ['approved', 'running'].includes(x.job.status) ? x.job : null, jb = job && job.batches[0].boss;
-      if (jb) busyBoss = jb.mob;
-      const why = !x.tab ? '<span class="warn">沒有自己的遊戲分頁，不會出發</span>' : !x.auto ? '<span class="warn">沒在掛機，不會出發</span>' : '';
-      return `<div style="margin:2px 0"><b>${esc(x.name)}</b> <span class="dim">Lv${x.lv}・${esc(x.mapName || x.map || '')}・實戰 DPS ${x.dps ? short(x.dps) : '—'}</span>${isParty && !x.picked ? ' <span class="dim sm">（沒勾，跟著隊友一起）</span>' : ''} ${why}
-        ${job ? `<span class="good">打王中：${esc(jb.name)}（${esc(job.lastMsg || '前往中')}）</span>` : ''}</div>`;
-    };
-    h += `<div class="boss-grp">${isParty ? `<div class="dim sm">隊伍（${g.length} 人一起出發，DPS 合計 ${x0.partyDps ? short(x0.partyDps) : '—'}）${x0.at ? '・王的狀態 ' + ago(Date.now() - x0.at) : ''}</div>` : `<div class="dim sm">${x0.at ? '王的狀態 ' + ago(Date.now() - x0.at) : '等遊戲分頁回報王的狀態（約 1 分鐘）'}</div>`}${g.map(line).join('')}`;
-    const rows = x0.rows.filter(r => r.selected);
-    if (!rows.length) { h += '<div class="dim">（沒有野王資料）</div></div>'; continue; }
-    rows.sort((a, b) => (b.ready - a.ready) || (a.remainMs - b.remainMs) || (a.lv - b.lv));
-    h += `<table class="boss-t"><thead><tr><th class="nosort">王</th><th class="nosort">地圖</th><th class="nosort">狀態</th><th class="nosort">血量</th><th class="nosort num">預估</th><th class="nosort">備註</th></tr></thead><tbody>${rows.map(r => {
-      const st = busyBoss === r.mob ? '<b class="good">打王中</b>' : r.cooling ? `<span class="dim">${hm(r.remainMs)} 後重生</span>` : '<span class="good">已重生</span>';
-      const note = r.skip && !r.cooling ? `<span class="warn">${esc(r.skip)}</span>` : r.last ? `<span class="dim">上次 ${clock(r.last.at)} ${esc(RES[r.last.result] || r.last.result)}</span>` : '';
-      return `<tr><td>${esc(r.name)} <span class="dim sm">Lv${r.lv || '?'}</span></td><td class="dim">${esc(r.mapName)}</td><td>${st}</td><td>${pctBar(r)}</td><td class="num">${r.estSec != null ? Math.max(1, Math.ceil(r.estSec / 60)) + ' 分' : '<span class="dim">—</span>'}</td><td>${note}</td></tr>`;
-    }).join('')}</tbody></table></div>`;
-  }
-  $('#bossTable').innerHTML = h;
+  // 出發單位：同隊伍一組，其他一隻一組
+  const units = [], byCode = {};
+  for (const x of chars) { if (x.party) { if (!byCode[x.party.code]) units.push(byCode[x.party.code] = []); byCode[x.party.code].push(x); } else units.push([x]); }
+  const live = (BOSS && BOSS.live) || [];
+  const nChars = Object.values(c.chars).filter(Boolean).length;
+  $('#bossSetSum').textContent = `設定：${nChars} 隻角色${units.length ? `（${units.length} 組出發）` : ''}・${Array.isArray(c.mobs) ? c.mobs.length + ' 隻王' : '全部的王'}・預估超過 ${c.estMax} 分不去・每次最多 ${c.visitMax} 分`;
+  // ── 正在打 ──
+  $('#bossLive').innerHTML = live.map(g => {
+    const p = g.hp != null && g.maxHp ? Math.max(0, Math.min(100, g.hp / g.maxHp * 100)) : null;
+    const el = (Date.now() - g.startedAt) / 1000;
+    return `<div class="boss-live"><span class="bl-name"><b>${esc(g.name)}</b> <span class="dim sm">${esc(g.mapName)}</span></span>
+      <span class="hpbar big"><i style="width:${p == null ? 100 : p.toFixed(1)}%"></i></span><b class="bl-pct">${p == null ? '—' : p.toFixed(1) + '%'}</b>
+      <span class="sm">${g.names.map(esc).join('＋')}</span>
+      <span class="dim sm">已打 ${mmss(el)}${g.etaSec != null ? `・預估還要 ${mmss(g.etaSec)}` : p == null ? '・' + esc(g.msg || '前往中') : ''}${g.hpAt ? `・${Math.max(0, Math.round((Date.now() - g.hpAt) / 1000))} 秒前` : ''}</span></div>`;
+  }).join('');
+  // ── 總表：王 × 出發單位 ──
+  const allNames = units.flat().map(x => x.name), pre = namePrefix(allNames);
+  const shortName = n => pre && n.startsWith(pre) ? n.slice(pre.length) : n;
+  const mobs = new Map();
+  for (const u of units) for (const x of u) for (const r of x.rows) if (r.selected && !mobs.has(r.mob)) mobs.set(r.mob, r);
+  const mobList = [...mobs.values()].sort((a, b) => (a.lv || 0) - (b.lv || 0));
+  let nReady = 0;
+  const cell = (u, mob) => {
+    const x0 = u.slice().sort((a, b) => (b.at || 0) - (a.at || 0))[0];
+    const r = x0.rows.find(o => o.mob === mob); if (!r) return '<td class="bcell"><span class="dim">—</span></td>';
+    const g = live.find(l => l.mob === mob && u.some(x => l.names.includes(x.name)));
+    const left = r.hpKnown && r.maxHp && r.hp < r.maxHp * 0.995 ? `<span class="dim sm">剩${Math.round(r.hp / r.maxHp * 100)}%</span>` : '';
+    const tip = [r.skip, r.estSec != null ? `預估 ${Math.max(1, Math.ceil(r.estSec / 60))} 分鐘打死` : '', r.last ? `上次 ${clock(r.last.at)} ${BOSS_RES[r.last.result] || r.last.result}` : ''].filter(Boolean).join('\n');
+    let h;
+    if (g) h = `<span class="bc busy">打王中 ${g.hp != null && g.maxHp ? Math.round(g.hp / g.maxHp * 100) + '%' : ''}</span>`;
+    else if (r.cooling) h = `<span class="bc cd">${hm(r.remainMs)}</span>`;
+    else if (r.skip) h = `<span class="bc skip">${/預估/.test(r.skip) ? '太久' : '稍後'}</span>`;
+    else { h = '<span class="bc ok">可打</span>'; nReady++; }
+    return `<td class="bcell" title="${esc(tip)}">${h}${left}</td>`;
+  };
+  const head = u => {
+    const warn = u.filter(x => !x.tab || !x.auto).map(x => `${x.name}：${!x.tab ? '沒有自己的遊戲分頁' : '沒在掛機'}，不會出發`);
+    const nm = u.map(x => `${esc(shortName(x.name))}${u.length > 1 && !x.picked ? '<span class="dim">*</span>' : ''}`).join('＋');
+    return `<th class="nosort bhd" title="${esc(u.map(x => `${x.name} Lv${x.lv}・${x.mapName || ''}・DPS ${x.dps ? Math.round(x.dps) : '—'}`).concat(warn).join('\n'))}">${nm}${warn.length ? ' <span class="warn">!</span>' : ''}${u.length > 1 ? '<div class="dim sm">隊伍</div>' : ''}</th>`;
+  };
+  if (!units.length) $('#bossGrid').innerHTML = '<div class="dim" style="margin:8px 0">還沒有勾選角色：打開下面的「設定」選角色和要打的王。</div>';
+  else if (!mobList.length) $('#bossGrid').innerHTML = '<div class="dim" style="margin:8px 0">等遊戲分頁回報王的狀態（約 1 分鐘）…</div>';
+  else $('#bossGrid').innerHTML = `<div class="boss-grid-wrap"><table class="boss-grid"><thead><tr><th class="nosort">王</th>${units.map(head).join('')}</tr></thead><tbody>${mobList.map(r =>
+    `<tr><td class="bname"><b>${esc(r.name)}</b> <span class="dim sm">Lv${r.lv || '?'}・${esc(r.mapName)}</span></td>${units.map(u => cell(u, r.mob)).join('')}</tr>`).join('')}</tbody></table></div>
+    <div class="dim sm" style="margin-top:4px">可打＝已重生、等下一輪檢查出發；時間＝還要多久重生；太久＝預估打太久不去；稍後＝上次沒打成功，30 分鐘後再試。滑鼠移到格子上看詳細。${units.some(u => u.length > 1) ? '　* 沒勾，跟著隊友一起去' : ''}</div>`;
+  $('#bossSum').textContent = units.length ? `${units.length} 組・${mobList.length} 隻王・${live.length ? `打王中 ${live.length} 場・` : ''}可打 ${nReady}` : '';
   const logs = ((BOSS && BOSS.log) || []).slice().reverse().slice(0, 80);
   $('#bossLog').innerHTML = logs.length ? logs.map(l => `<div><span class="dim">${clock(l.at)}</span> ${esc(l.name)}：${esc(l.msg)}</div>`).join('') : '<span class="dim">還沒有紀錄</span>';
 }
+// 打王中：每 3 秒更新血量
+setInterval(async () => {
+  const on = document.querySelector('nav button.on'); if (!on || on.dataset.tab !== 'maps' || !BOSS || !(BOSS.live || []).length) return;
+  await loadBoss(true); renderBoss();
+}, 3000);
 document.addEventListener('change', async e => {
   const t = e.target; if (!t.closest || !t.closest('#bossCard')) return;
   if (t.id === 'bossMode') {
