@@ -19,7 +19,8 @@ const DASHBOARD = path.join(__dirname, 'dashboard.html');
 const USERSCRIPT = path.join(__dirname, 'szg-hub.user.js');
 const AGENT_FILE = path.join(__dirname, 'agent.js');
 const WORLD_FILE = path.join(__dirname, 'data', 'world.json');
-const AVATAR_DIR = path.join(__dirname, 'data', 'avatars'); // 角色全身照（站姿 GIF） // 遊戲的地圖／怪物／掉落表（由遊戲頁面上傳）
+const AVATAR_DIR = path.join(__dirname, 'data', 'avatars');
+const avatarDiag = {}; // 全身照上傳失敗的原因（只放記憶體） // 角色全身照（站姿 GIF） // 遊戲的地圖／怪物／掉落表（由遊戲頁面上傳）
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -1074,6 +1075,12 @@ const server = http.createServer(async (req, res) => {
       db.avatars = db.avatars || {}; db.avatars[id] = { at: Date.now(), key: String(e.key || '').slice(0, 300) }; save();
       return send(res, 200, { ok: true });
     }
+    if (req.method === 'POST' && url.pathname === '/api/avatar/diag') {
+      const e = JSON.parse(await readBody(req));
+      if (e && e.charId) avatarDiag[String(e.charId)] = { at: Date.now(), step: String(e.step || ''), msg: String(e.msg || '').slice(0, 200) };
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/avatar-diag') return send(res, 200, avatarDiag);
     if (req.method === 'GET' && url.pathname.startsWith('/api/avatar/')) {
       const id = url.pathname.slice('/api/avatar/'.length).replace(/[^\w-]/g, '');
       const f = path.join(AVATAR_DIR, id + '.gif');

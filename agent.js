@@ -1359,16 +1359,22 @@ function agentMain(ctx) {
     // 遊戲頁面的 MapleAppearance（appearance.js）：key(角色, 動作)＝外觀簽章；load(角色, 'attack') 會一起產生站姿 GIF（stand：blob 網址，78×78）。
     // 外觀變了（換裝、換髮型）才重新上傳給中控（存成 data/avatars/<角色>.gif），面板的組隊卡片、流水線用
     const avatarAt = {};
+    // 失敗原因回報給中控（GET /api/avatar-diag 看得到），方便查為什麼沒有全身照
+    const avatarDiag = (id, step, msg) => hub('POST', '/api/avatar/diag', { charId: id, step, msg: String(msg || '').slice(0, 200) }).catch(() => {});
     async function uploadAvatar(ch) {
-      const MA = W.MapleAppearance; if (!MA || !ch || !ch.id) return;
-      let key = ''; try { key = MA.key(ch, 'attack'); } catch (_) { return; }
+      const MA = W.MapleAppearance;
+      if (!ch || !ch.id) return;
+      if (!MA) return avatarDiag(ch.id, 'noMA', typeof W.MapleAppearance);
+      let key = ''; try { key = MA.key(ch, 'attack'); } catch (e) { return avatarDiag(ch.id, 'key', e && e.message); }
       if (GM_getValue('avatarKey:' + ch.id, '') === key) return;
-      const v = await MA.load(ch, 'attack');
-      if (!v || !v.stand) return;
-      const blob = await (await fetch(v.stand)).blob();
+      let v; try { v = await MA.load(ch, 'attack'); } catch (e) { return avatarDiag(ch.id, 'load', e && e.message); }
+      if (!v || !v.stand) return avatarDiag(ch.id, 'nostand', v ? Object.keys(v).join(',') : 'null');
+      // stand 是頁面建立的 blob 網址；Tampermonkey 沙箱的 fetch 不一定讀得到，用頁面自己的 fetch
+      let blob;
+      try { blob = await (await (W.fetch || fetch).call(W, v.stand)).blob(); } catch (e) { return avatarDiag(ch.id, 'blob', e && e.message); }
       const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(blob); });
-      if (!b64) return;
-      await hub('POST', '/api/avatar', { charId: ch.id, key, gif: b64 });
+      if (!b64) return avatarDiag(ch.id, 'b64', blob && blob.size);
+      try { await hub('POST', '/api/avatar', { charId: ch.id, key, gif: b64 }); } catch (e) { return avatarDiag(ch.id, 'post', e && e.message); }
       GM_setValue('avatarKey:' + ch.id, key);
     }
     async function avatarTick() {
