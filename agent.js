@@ -1873,6 +1873,8 @@ function agentMain(ctx) {
       setInterval(() => dpsReport().catch(() => {}), 30000);
       setTimeout(quizTick, 25000);
       setInterval(quizTick, 45000);
+      // 做很久的工作時（agentRunning，不會來問工作）每 20 秒報到一次
+      setInterval(() => { if (agentRunning && !passive() && account && account.playerCode) hub('GET', '/api/agent/beat?' + pollQs(myChar())).catch(() => {}); }, 20000);
       setTimeout(() => bossStateTick(true), 15000);
       setInterval(() => bossStateTick(false), 60000);
     }

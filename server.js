@@ -1126,6 +1126,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 腳本查詢：這個帳號現在要做什麼
+    // 分頁心跳：分頁在做很久的工作（打王、批次衝卷）時不會來問工作，用這個告訴中控它還在，免得工作被改派給同帳號的別的分頁
+    if (req.method === 'GET' && url.pathname === '/api/agent/beat') {
+      seenTab(url.searchParams.get('code') || '', url.searchParams.get('charId') || '', Object.fromEntries(url.searchParams));
+      return send(res, 200, { ok: true });
+    }
     if (req.method === 'GET' && url.pathname === '/api/agent') {
       const code = url.searchParams.get('code') || '';
       const pollChar = url.searchParams.get('charId') || '';
