@@ -619,11 +619,11 @@ function loadWorldIndex() {
 const bossMapSet = () => new Set(Object.values(bossDb().state).flatMap(st => (st.list || []).map(r => r.map)));
 const charDps = charId => { const d = (db.dps || {})[charId]; return d && Date.now() - (d.receivedAt || 0) < 6 * 3600e3 ? ((d.w60 && d.w60.dps) || (d.w5 && d.w5.dps) || 0) : 0; };
 // 某隻角色每隻王的狀態（面板顯示與排程共用）
-function bossRows(charId) {
+function bossRows(charId, dpsOverride) {
   loadWorldIndex();
   const c = bossCfg(), b = bossDb(), st = b.state[charId];
   if (!st) return [];
-  const now = Date.now(), srvNow = now + (st.offset || 0), dps = charDps(charId);
+  const now = Date.now(), srvNow = now + (st.offset || 0), dps = dpsOverride != null ? dpsOverride : charDps(charId);
   return (st.list || []).map(r => {
     const mob = worldMobs[r.mob] || {};
     const cooling = !!(r.available && r.deadline > srvNow);
@@ -645,48 +645,86 @@ function bossRows(charId) {
 }
 const BOSS_RESULT = { killed: '打死了', timeout: '時間到還沒打死', dead: '角色倒下', absent: '王不在場上', stuck: '打不動（血量沒有下降）', moved: '中途被換到別的地圖', cooling: '還在冷卻', error: '出錯' };
 function bossBusy(charId) { return db.jobs.some(j => ACTIVE.has(j.status) && (j.fromCharId === charId || j.toCharId === charId)); }
+// 隊伍：每隻角色回報時帶著遊戲的 party（{code, members:[{id, name, …}]}）。同隊伍共用同一份野王，
+// 所以排程以「隊伍」為單位：勾了其中一隻，同隊的一起挑同一隻王出發（預估用隊員 DPS 加總），各自打完回自己原本的地圖
+function partyMap() {
+  const of = {}, at = {}, members = {};
+  for (const snap of Object.values(db.chars)) {
+    const p = snap.party && snap.party.party; if (!p || !p.code || !Array.isArray(p.members) || p.members.length < 2) continue;
+    if (Date.now() - (snap.receivedAt || 0) > 30 * 60 * 1000) continue;
+    for (const m of p.members) {
+      if (!m || !m.id) continue;
+      if (!at[m.id] || snap.receivedAt > at[m.id]) { at[m.id] = snap.receivedAt; of[m.id] = p.code; }
+    }
+  }
+  for (const [id, code] of Object.entries(of)) (members[code] || (members[code] = [])).push(id);
+  return { of, members };
+}
+function bossUnitOf(charId, pm) {
+  const code = pm.of[charId];
+  const ids = code ? pm.members[code].filter(id => db.chars[id]) : [];
+  return ids.length > 1 ? { code, ids } : { code: null, ids: [charId] };
+}
+const bossAvail = id => { const s = db.chars[id]; return !!(s && s.char && s.playerCode && tabOf(s.playerCode, id) && s.char.auto && !bossBusy(id)); };
 function bossTick(force) {
   const c = bossCfg(); if (c.mode === 'off') return;
-  const b = bossDb(), maps = bossMapSet();
+  const b = bossDb(), maps = bossMapSet(), pm = partyMap(), handled = new Set(), now = Date.now();
   const busyInst = new Set(db.jobs.filter(j => j.kind === 'boss' && ACTIVE.has(j.status)).map(j => j.batches[0].boss.instanceId));
+  b.homeName = b.homeName || {};
   for (const charId of Object.keys(c.chars).filter(id => c.chars[id])) {
-    const snap = db.chars[charId]; if (!snap || !snap.char) continue;
-    const code = snap.playerCode; if (!code || !tabOf(code, charId)) continue; // 要有自己的遊戲分頁
-    if (!snap.char.auto) continue;                                          // 沒在掛機的不動它
-    if (bossBusy(charId)) continue;
-    const st = b.state[charId]; if (!st || Date.now() - st.at > BOSS_STATE_STALE) continue;
-    if (snap.char.map && !maps.has(snap.char.map)) { b.home[charId] = snap.char.map; b.homeName = b.homeName || {}; b.homeName[charId] = snap.char.mapName || ''; }
-    const homeName = worldMapNames[b.home[charId]] || (b.homeName || {})[charId] || '原地圖';
-    const cand = bossRows(charId).filter(r => r.ready && !r.skip && !busyInst.has(r.instanceId))
+    if (handled.has(charId) || !db.chars[charId]) continue;
+    const unit = bossUnitOf(charId, pm);
+    unit.ids.forEach(id => handled.add(id));
+    for (const id of unit.ids) { const sc = db.chars[id].char; if (sc.map && !maps.has(sc.map)) { b.home[id] = sc.map; b.homeName[id] = sc.mapName || ''; } }
+    // 隊伍裡還有人在打王：等大家都回來再一起挑下一隻
+    if (unit.ids.some(id => db.jobs.some(j => j.kind === 'boss' && ACTIVE.has(j.status) && j.fromCharId === id))) continue;
+    const go = unit.ids.filter(bossAvail);                       // 有自己的分頁、在掛機、沒有其他工作
+    if (!go.length) continue;
+    const stId = unit.ids.filter(id => b.state[id] && now - b.state[id].at < BOSS_STATE_STALE).sort((x, y) => b.state[y].at - b.state[x].at)[0];
+    if (!stId) continue;
+    const dps = go.reduce((t, id) => t + charDps(id), 0);
+    const cand = bossRows(stId, dps).filter(r => r.ready && !r.skip && !busyInst.has(r.instanceId))
+      .filter(r => !unit.ids.some(id => { const l = b.last[id + '|' + r.mob]; return l && l.result !== 'killed' && l.result !== 'cooling' && now - l.at < BOSS_RETRY_MS; }))
       .sort((x, y) => (x.estSec == null) - (y.estSec == null) || (x.estSec || 0) - (y.estSec || 0));
     const r = cand[0]; if (!r) continue;
     const est = r.estSec != null ? `預估 ${Math.max(1, Math.round(r.estSec / 60))} 分鐘` : '還沒有實戰 DPS，無法預估';
+    const names = go.map(id => db.chars[id].char.name);
+    const left = unit.ids.filter(id => !go.includes(id)).map(id => db.chars[id].char.name);
+    const who = unit.code ? `隊伍 ${names.join('、')} 一起` : '';
+    const leftTxt = left.length ? `；${left.join('、')} 沒有分頁／沒在掛機／有其他工作，這次不去` : '';
     if (c.mode === 'preview') {
-      const key = charId + '|' + r.mob + '|' + Math.floor(Date.now() / BOSS_RETRY_MS);
-      if (!b.seen[key]) { b.seen[key] = 1; bossLog(charId, `試跑：會去 ${r.mapName} 打 ${r.name}（${est}，打完回 ${homeName}）`); }
+      const key = unit.ids.slice().sort().join(',') + '|' + r.mob + '|' + Math.floor(now / BOSS_RETRY_MS);
+      if (!b.seen[key]) { b.seen[key] = 1; bossLog(charId, `試跑：${unit.code ? `隊伍 ${names.join('、')} 會一起去` : '會去'} ${r.mapName} 打 ${r.name}（${est}，打完各自回原地圖${leftTxt}）`); }
       continue;
     }
-    const job = {
-      id: crypto.randomBytes(6).toString('hex'), kind: 'boss', status: 'approved', auto: true, createdAt: Date.now(), approvedAt: Date.now(),
-      fromCharId: charId, fromName: snap.char.name, fromCode: code, toCharId: charId, toName: snap.char.name, toCode: code,
-      batches: [{ items: [], gear: [], money: 0, boss: { mob: r.mob, name: r.name, map: r.map, mapName: r.mapName, instanceId: r.instanceId, back: b.home[charId] || '', backName: homeName, visitMax: c.visitMax } }],
-      batchIndex: 0, log: [], lastMsg: '',
-    };
-    jobLog(job, `自動：去 ${r.mapName} 打 ${r.name}（${est}）`);
-    db.jobs.push(job); busyInst.add(r.instanceId);
-    bossLog(charId, `出發：去 ${r.mapName} 打 ${r.name}（${est}）`);
+    for (const id of go) {
+      const snap = db.chars[id], homeName = worldMapNames[b.home[id]] || b.homeName[id] || '原地圖';
+      const job = {
+        id: crypto.randomBytes(6).toString('hex'), kind: 'boss', status: 'approved', auto: true, createdAt: now, approvedAt: now,
+        fromCharId: id, fromName: snap.char.name, fromCode: snap.playerCode, toCharId: id, toName: snap.char.name, toCode: snap.playerCode,
+        batches: [{ items: [], gear: [], money: 0, boss: { mob: r.mob, name: r.name, map: r.map, mapName: r.mapName, instanceId: r.instanceId, back: b.home[id] || '', backName: homeName, visitMax: c.visitMax, party: unit.code ? names : null } }],
+        batchIndex: 0, log: [], lastMsg: '',
+      };
+      jobLog(job, `自動：${who}去 ${r.mapName} 打 ${r.name}（${est}）`);
+      db.jobs.push(job);
+    }
+    busyInst.add(r.instanceId);
+    bossLog(charId, `出發：${who}去 ${r.mapName} 打 ${r.name}（${est}${leftTxt}）`);
   }
-  for (const k of Object.keys(b.seen)) if (Number(k.split('|')[2]) < Math.floor(Date.now() / BOSS_RETRY_MS) - 1) delete b.seen[k];
+  for (const k of Object.keys(b.seen)) if (Number(k.split('|').pop()) < Math.floor(now / BOSS_RETRY_MS) - 1) delete b.seen[k];
   save();
 }
 setInterval(() => { try { bossTick(false); } catch (e) { console.warn('[野王]', e); } }, 60 * 1000);
 function bossSummary() {
   const c = bossCfg(), b = bossDb();
+  const pm = partyMap();
   const ids = new Set([...Object.keys(b.state), ...Object.keys(c.chars).filter(k => c.chars[k])]);
+  for (const id of Object.keys(c.chars).filter(k => c.chars[k])) bossUnitOf(id, pm).ids.forEach(x => ids.add(x));
   const chars = [...ids].filter(id => db.chars[id]).map(id => {
-    const s = db.chars[id];
-    return { charId: id, name: s.char.name, lv: s.char.lv, map: s.char.map, mapName: s.char.mapName, auto: !!s.char.auto, tab: !!tabOf(s.playerCode, id), on: !!c.chars[id],
-      at: (b.state[id] || {}).at || 0, dps: charDps(id), rows: bossRows(id),
+    const s = db.chars[id], unit = bossUnitOf(id, pm);
+    const pdps = unit.code ? unit.ids.reduce((t, x) => t + charDps(x), 0) : null;
+    return { charId: id, party: unit.code ? { code: unit.code, ids: unit.ids, names: unit.ids.map(x => db.chars[x].char.name) } : null, partyDps: pdps, name: s.char.name, lv: s.char.lv, map: s.char.map, mapName: s.char.mapName, auto: !!s.char.auto, tab: !!tabOf(s.playerCode, id), on: unit.ids.some(x => c.chars[x]), picked: !!c.chars[id],
+      at: (b.state[id] || {}).at || 0, dps: charDps(id), rows: bossRows(id, pdps),
       job: (db.jobs.filter(j => j.kind === 'boss' && j.fromCharId === id).slice(-1)[0]) || null };
   });
   return { cfg: c, chars, log: b.log.slice(-100) };

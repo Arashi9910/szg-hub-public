@@ -398,6 +398,7 @@
   .hpbar { display: inline-block; width: 90px; height: 7px; background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; vertical-align: middle; overflow: hidden; }
   .hpbar i { display: block; height: 100%; background: var(--bad); }
   table.boss-t td { padding-top: 3px; padding-bottom: 3px; }
+  .boss-grp { margin: 10px 0 14px; padding-top: 8px; border-top: 1px solid var(--line); }
   .ov-auto-hd { display: flex; gap: 10px; align-items: baseline; margin-bottom: 6px; }
   .ov-auto-list { display: flex; flex-wrap: wrap; gap: 6px; }
   .auto-chip { display: inline-flex; gap: 6px; align-items: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 4px 9px; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
@@ -626,7 +627,7 @@
       <div class="bar"><span>角色</span><span id="bossChars"></span></div>
       <div class="bar"><span>要打的王</span><label><input type="checkbox" class="sw" id="bossAllMobs"> 全部</label><span class="chips" id="bossMobs"></span></div>
       <div class="dim">每分鐘檢查一次：勾選的角色<b>在掛機、而且有自己的遊戲分頁</b>時，挑一隻已經重生的王（預估最快打死的先去），換到那張地圖、看王的血條打到死，再換回原本的地圖。
-        時間到、角色倒下、或 3 分鐘血量都沒降，也會先回原地圖；王的血量遊戲會保留，30 分鐘後再去接著打。預估用的是角色的實戰 DPS（總覽那欄），還沒有 DPS 的不會因為預估被略過。不會使用付費重生。同一個隊伍的角色共用同一份王。</div>
+        時間到、角色倒下、或 3 分鐘血量都沒降，也會先回原地圖；王的血量遊戲會保留，30 分鐘後再去接著打。預估用的是角色的實戰 DPS（總覽那欄），還沒有 DPS 的不會因為預估被略過。不會使用付費重生。同一個隊伍的角色共用同一份王，所以<b>以隊伍為單位一起出發</b>：勾了其中一隻，同隊的會一起去打同一隻王（預估用隊員 DPS 加總），各自打完回自己原本的地圖。</div>
       <div id="bossTable" style="margin-top:8px"></div>
       <details><summary>紀錄</summary><div id="bossLog"></div></details>
     </div>
@@ -2903,22 +2904,31 @@ function renderBoss(force) {
   const chars = ((BOSS && BOSS.chars) || []).filter(x => x.on);
   const pctBar = r => { const p = r.maxHp ? Math.max(0, Math.min(100, r.hp / r.maxHp * 100)) : 100; return `<span class="hpbar" title="${fmt(r.hp)} / ${fmt(r.maxHp)}"><i style="width:${p.toFixed(1)}%"></i></span> <span class="sm ${r.hpKnown ? '' : 'dim'}">${r.hpKnown ? p.toFixed(1) + '%' : '滿血'}</span>`; };
   const RES = { killed: '打死了', timeout: '時間到', dead: '倒下', absent: '王不在', stuck: '打不動', moved: '被換圖', cooling: '冷卻中', error: '出錯' };
+  // 同隊伍的角色放在一起（共用同一份王，一起出發）
+  const groups = [], byCode = {};
+  for (const x of chars) { if (x.party) { if (!byCode[x.party.code]) groups.push(byCode[x.party.code] = []); byCode[x.party.code].push(x); } else groups.push([x]); }
   let h = '';
   if (!chars.length) h = '<div class="dim">還沒有勾選角色。</div>';
-  for (const x of chars) {
-    const job = x.job && ['approved', 'running'].includes(x.job.status) ? x.job : null, jb = job && job.batches[0].boss;
-    const why = !x.tab ? '<span class="warn">沒有自己的遊戲分頁，不會出發</span>' : !x.auto ? '<span class="warn">沒在掛機，不會出發</span>' : !x.at ? '<span class="dim">等遊戲分頁回報王的狀態（約 1 分鐘）</span>' : '';
-    h += `<div style="margin:10px 0 4px"><b>${esc(x.name)}</b> <span class="dim">Lv${x.lv}・${esc(x.mapName || x.map || '')}・實戰 DPS ${x.dps ? short(x.dps) : '—'}${x.at ? '・王的狀態 ' + ago(Date.now() - x.at) : ''}</span> ${why}
-      ${job ? `<span class="good">打王中：${esc(jb.name)}（${esc(job.lastMsg || '前往中')}）</span>` : ''}</div>`;
-    const rows = x.rows.filter(r => r.selected);
-    if (!rows.length) { h += '<div class="dim">（沒有野王資料）</div>'; continue; }
+  for (const g of groups) {
+    const x0 = g.slice().sort((a, b) => (b.at || 0) - (a.at || 0))[0];
+    const isParty = !!x0.party;
+    let busyBoss = null;
+    const line = x => {
+      const job = x.job && ['approved', 'running'].includes(x.job.status) ? x.job : null, jb = job && job.batches[0].boss;
+      if (jb) busyBoss = jb.mob;
+      const why = !x.tab ? '<span class="warn">沒有自己的遊戲分頁，不會出發</span>' : !x.auto ? '<span class="warn">沒在掛機，不會出發</span>' : '';
+      return `<div style="margin:2px 0"><b>${esc(x.name)}</b> <span class="dim">Lv${x.lv}・${esc(x.mapName || x.map || '')}・實戰 DPS ${x.dps ? short(x.dps) : '—'}</span>${isParty && !x.picked ? ' <span class="dim sm">（沒勾，跟著隊友一起）</span>' : ''} ${why}
+        ${job ? `<span class="good">打王中：${esc(jb.name)}（${esc(job.lastMsg || '前往中')}）</span>` : ''}</div>`;
+    };
+    h += `<div class="boss-grp">${isParty ? `<div class="dim sm">隊伍（${g.length} 人一起出發，DPS 合計 ${x0.partyDps ? short(x0.partyDps) : '—'}）${x0.at ? '・王的狀態 ' + ago(Date.now() - x0.at) : ''}</div>` : `<div class="dim sm">${x0.at ? '王的狀態 ' + ago(Date.now() - x0.at) : '等遊戲分頁回報王的狀態（約 1 分鐘）'}</div>`}${g.map(line).join('')}`;
+    const rows = x0.rows.filter(r => r.selected);
+    if (!rows.length) { h += '<div class="dim">（沒有野王資料）</div></div>'; continue; }
     rows.sort((a, b) => (b.ready - a.ready) || (a.remainMs - b.remainMs) || (a.lv - b.lv));
     h += `<table class="boss-t"><thead><tr><th class="nosort">王</th><th class="nosort">地圖</th><th class="nosort">狀態</th><th class="nosort">血量</th><th class="nosort num">預估</th><th class="nosort">備註</th></tr></thead><tbody>${rows.map(r => {
-      const busy = jb && jb.mob === r.mob;
-      const st = busy ? '<b class="good">打王中</b>' : r.cooling ? `<span class="dim">${hm(r.remainMs)} 後重生</span>` : '<span class="good">已重生</span>';
+      const st = busyBoss === r.mob ? '<b class="good">打王中</b>' : r.cooling ? `<span class="dim">${hm(r.remainMs)} 後重生</span>` : '<span class="good">已重生</span>';
       const note = r.skip && !r.cooling ? `<span class="warn">${esc(r.skip)}</span>` : r.last ? `<span class="dim">上次 ${clock(r.last.at)} ${esc(RES[r.last.result] || r.last.result)}</span>` : '';
-      return `<tr><td>${esc(r.name)} <span class="dim sm">Lv${r.lv || '?'}</span>${r.party ? ' <span class="dim sm" title="同隊伍共用同一份王">隊伍</span>' : ''}</td><td class="dim">${esc(r.mapName)}</td><td>${st}</td><td>${pctBar(r)}</td><td class="num">${r.estSec != null ? Math.max(1, Math.ceil(r.estSec / 60)) + ' 分' : '<span class="dim">—</span>'}</td><td>${note}</td></tr>`;
-    }).join('')}</tbody></table>`;
+      return `<tr><td>${esc(r.name)} <span class="dim sm">Lv${r.lv || '?'}</span></td><td class="dim">${esc(r.mapName)}</td><td>${st}</td><td>${pctBar(r)}</td><td class="num">${r.estSec != null ? Math.max(1, Math.ceil(r.estSec / 60)) + ' 分' : '<span class="dim">—</span>'}</td><td>${note}</td></tr>`;
+    }).join('')}</tbody></table></div>`;
   }
   $('#bossTable').innerHTML = h;
   const logs = ((BOSS && BOSS.log) || []).slice().reverse().slice(0, 80);
