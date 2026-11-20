@@ -78,8 +78,8 @@ export function mount(el, opts = {}) {
   }
   const zs = (n, gap) => Array.from({ length: n }, (_, i) => (i - (n - 1) / 2) * gap);
 
-  function buildPod(p, z) {
-    const g = new THREE.Group(); g.position.set(X.pod, 0, z);
+  function buildPod(p, z, x0 = X.pod) {
+    const g = new THREE.Group(); g.position.set(x0, 0, z);
     const col = STATE_HEX[p.state] || STATE_HEX.ok;
     const w = Math.max(2.2, p.members.length * 1.5 + 0.6);
     const base = new THREE.Mesh(new THREE.BoxGeometry(w, 0.35, 2.4), new THREE.MeshStandardMaterial({ color: 0x15213a, metalness: 0.6, roughness: 0.35 }));
@@ -99,7 +99,7 @@ export function mount(el, opts = {}) {
     const lb = label('', 'pod', -1.25); g.add(lb); g.userData.lbl = lb.element;
     const hit = new THREE.Mesh(new THREE.BoxGeometry(w, 3, 2.6), new THREE.MeshBasicMaterial({ visible: false })); hit.position.y = 1; hit.userData.pick = { type: 'pod', key: p.key }; g.add(hit); clickables.push(hit);
     world.add(g);
-    return { g, out: new THREE.Vector3(X.pod + w / 2 + 0.2, 0.2, z), w };
+    return { g, out: new THREE.Vector3(x0 + w / 2 + 0.2, 0.2, z), w };
   }
   function buildStation(s, z) {
     const g = new THREE.Group(); g.position.set(X.st, 0, z);
@@ -153,21 +153,27 @@ export function mount(el, opts = {}) {
 
   function build(m) {
     clearWorld();
-    const podZ = zs(m.pods.length, 4.2), stZ = zs(m.stations.length, 5.2), sinkKeys = ['exp', 'shop', 'bag'], sinkZ = zs(3, 7);
-    m.pods.forEach((p, i) => nodes['p:' + p.key] = buildPod(p, podZ[i]));
+    // 隊伍多的時候排成好幾欄（每欄最多 6 座、錯開半格），不要拉成一長條
+    const cols = Math.max(1, Math.ceil(m.pods.length / 6)), rows = Math.ceil(m.pods.length / cols), podZ = zs(rows, 4.6);
+    const stZ = zs(m.stations.length, 5.8), sinkKeys = ['exp', 'shop', 'bag'], sinkZ = zs(3, 7);
+    m.pods.forEach((p, i) => { const c = i % cols, r = Math.floor(i / cols); nodes['p:' + p.key] = buildPod(p, podZ[r] + (c % 2 ? 2.3 : 0), X.pod - (cols - 1 - c) * 7.5); });
+    fitW = 36 + (cols - 1) * 7.5;
     m.stations.forEach((s, i) => nodes['s:' + s.id] = buildStation(s, stZ[i]));
     sinkKeys.forEach((k, i) => nodes['k:' + k] = buildSink(k, sinkZ[i]));
     for (const f of m.flows) {
       const a = nodes[f.from], b = nodes[f.to]; if (!a || !b) continue;
       buildFlow(f, a.out, b.in);
     }
-    const span = Math.max(m.pods.length * 4.2, m.stations.length * 5.2, 16);
+    const span = Math.max(rows * 4.6, m.stations.length * 5.8, 16);
     grid.scale.setScalar(Math.max(1, span / 60));
     fitSpan = span; if (!userCam) fit();
   }
-  let fitSpan = 16;
+  let fitSpan = 16, fitW = 36;
   // 依內容大小擺鏡頭：整條流水線（左右約 36 格）和最高的一欄都要看得到
-  function fit() { const w = Math.max(fitSpan, 30); camera.position.set(0, w * 0.45 + 3, w * 0.5 + 6); controls.target.set(0, 0, 0); camera.lookAt(0, 0, 0); }
+  function fit() {
+    const cx = -(fitW - 36) / 2, w = Math.max(fitSpan * 1.25, fitW * 0.62, 26);
+    controls.target.set(cx, 0, 0); camera.position.set(cx, w * 0.72 + 3, w * 0.5 + 5); camera.lookAt(cx, 0, 0);
+  }
   function refreshLabels(m) {
     for (const p of m.pods) { const n = nodes['p:' + p.key]; if (!n) continue;
       n.g.userData.lbl.innerHTML = `<b>${escH(p.label)}</b>${p.badge ? ` <span class="bd ${p.state}">${escH(p.badge)}</span>` : ''}<br><span class="rt">${p.rate != null ? short(p.rate) + '/時' : '—'}</span>`;
