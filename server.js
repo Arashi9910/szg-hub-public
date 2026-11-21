@@ -4,6 +4,7 @@
 
 const http = require('http');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const updater = require('./update');
@@ -67,6 +68,21 @@ function stampVersion(src) {
             .replace(/(\/\/ @version\s+)\S+/, `$1${v}`);
 }
 function userscriptSource() { return stampVersion(fs.readFileSync(USERSCRIPT, 'utf8')); }
+function isLocal(req) {
+  // 經過 Tailscale serve（HTTPS 轉送到本機）的請求看起來也是 127.0.0.1，用轉送標頭分辨：一律當遠端、要通行碼
+  if (req.headers['x-forwarded-for'] || req.headers['tailscale-user-login'] || req.headers['x-forwarded-proto']) return false;
+  const a = req.socket.remoteAddress || '';
+  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+}
+function tokenOk(req, url) {
+  const t = req.headers['x-hub-token'] || url.searchParams.get('token') || '';
+  const a = Buffer.from(String(t));
+  // 手機（配對過的裝置）各自一組通行碼，可以個別撤銷
+  const d = (db.mDevices || []).find(x => { const k = Buffer.from(x.token); return k.length === a.length && crypto.timingSafeEqual(k, a); });
+  if (d && Date.now() - (d.seenAt || 0) > 60000) d.seenAt = Date.now();
+  return !!d;
+}
+
 let db = { chars: {}, jobs: [], settings: { accountLabels: {}, mainCharId: null, presets: [], slotStats: {} } };
 try {
   const loaded = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
@@ -859,7 +875,7 @@ function send(res, code, body, type = 'application/json; charset=utf-8') {
   res.writeHead(code, {
     'Content-Type': type,
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Hub-Token',
     'Cache-Control': 'no-store',
   });
   res.end(typeof body === 'string' ? body : JSON.stringify(body));
@@ -879,10 +895,88 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
+// ===== 手機版（/m）=====
+// 手機經 Tailscale（建議用 tailscale serve 的 HTTPS 網址）連回這台電腦。配對：電腦面板「手機」產生 QR code（網址 /m#t=裝置通行碼），
+// 手機掃了就記住；裝置清單在 db.mDevices，可以個別撤銷。手機用精簡的 /api/m/summary（每 10 秒），操作沿用原本的 API。
+const M_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><rect width="96" height="96" rx="20" fill="#16181d"/><path d="M48 14l8 18 18-6-8 18 16 8-18 6 4 20-20-12-20 12 4-20-18-6 16-8-8-18 18 6z" fill="#e8453c"/></svg>';
+function charGroupOf(id) {
+  const g = (db.settings.charGroup || {})[id]; if (g) return g;
+  for (const s of Object.values(db.chars)) { const i = (s.accountChars || []).findIndex(c => c.id === id); if (i >= 0) return i === 0 ? 'A' : 'B'; }
+  return 'A';
+}
+function mobileSummary() {
+  const now = Date.now(), live = expLive(), pm = partyMap();
+  const jobsActive = db.jobs.filter(j => ACTIVE.has(j.status));
+  const chars = [], seen = new Set();
+  for (const s of Object.values(db.chars)) {
+    const c = s.char; if (!c || !c.id) continue; seen.add(c.id);
+    const tab = !!tabOf(s.playerCode, c.id), j = jobsActive.find(x => x.fromCharId === c.id);
+    chars.push({ id: c.id, name: c.name, lv: c.lv, expPct: c.expPct, job: c.jobName || c.job, map: c.map, mapName: c.mapName, auto: !!c.auto, until: c.until || null,
+      hourly: c.hourlyExp || null, live: (live[c.id] || {}).rate ?? null, hp: c.hp, maxhp: c.maxhp, dead: typeof c.hp === 'number' && c.hp <= 0, money: c.money || 0,
+      tab, at: s.receivedAt || 0, offline: !!s.idleOffline, group: charGroupOf(c.id), party: pm.of[c.id] || null, acc: s.accountId || '',
+      job2: j ? { kind: j.kind, status: j.status, msg: String(j.lastMsg || '').slice(0, 80) } : null, ava: (db.avatars || {})[c.id] ? db.avatars[c.id].at : 0 });
+  }
+  // 同帳號、還沒同步過的角色（背景掛機）
+  for (const s of Object.values(db.chars)) for (const x of s.accountChars || []) if (!seen.has(x.id)) { seen.add(x.id);
+    chars.push({ id: x.id, name: x.name, lv: x.lv, job: x.jobName || x.job || '', auto: !!x.auto, unsynced: true, tab: false, group: charGroupOf(x.id), acc: s.accountId || '', ava: (db.avatars || {})[x.id] ? db.avatars[x.id].at : 0 }); }
+  const pj = j => ({ id: j.id, kind: j.kind, status: j.status, from: j.fromName, to: j.toName, msg: String(j.lastMsg || '').slice(0, 120), at: j.updatedAt || j.createdAt, auto: !!j.auto,
+    what: j.kind === 'boss' ? `打 ${j.batches[0].boss.name}` : j.kind === 'party' ? '組隊' : j.kind === 'idle' ? ((j.batches[0].targets || []).map(t => t.action === 'map' ? `換圖 ${t.mapName || ''}` : ({ start: '開始掛機', stop: '暫停', restart: '重新開始', wake: '領取離線', switch: '切換角色' }[t.action] || t.action)).join('、')) : '' });
+  const bc = bossCfg();
+  return { now, version: scriptVersion(), chars,
+    jobs: db.jobs.filter(j => ACTIVE.has(j.status) || j.status === 'failed' || now - (j.updatedAt || j.createdAt || 0) < 3 * 3600e3).slice(-60).map(pj),
+    boss: { mode: bc.mode, n: Object.keys(bc.charMobs).length, live: bossLive() },
+    parties: (db.settings.parties || []).map(p => ({ ...p, sell: p.map ? boardSellOf(p.map) : undefined })), idleLog: (db.idleLog || []).slice(-15), update: updateInfo };
+}
+// 派工看板上那張圖的自動販售範本（組隊套用時一起送；和電腦面板 ptApply 同規則）
+function boardSellOf(map) { const bs = { A: db.settings.board || {}, ...(db.settings.boards || {}) }; for (const g of ['A', 'B']) { const x = ((bs[g] || {}).sell || {})[map]; if (x) return x; } return undefined; }
+function mobileDevices() { return (db.mDevices || []).map(d => ({ id: d.id, name: d.name, at: d.at, seenAt: d.seenAt || 0 })); }
+async function mobileApi(req, url) {
+  if (req.method === 'GET' && url.pathname === '/api/m/summary') return [200, mobileSummary()];
+  if (req.method === 'GET' && url.pathname === '/api/m/maps') {
+    let w = {}; try { w = JSON.parse(fs.readFileSync(WORLD_FILE, 'utf8')); } catch (_) {}
+    const mobs = Object.fromEntries((w.mobs || []).map(m => [m.id, m]));
+    return [200, { maps: (w.maps || []).filter(m => (m.mobIds || []).length).map(m => [m.id, m.name, m.minLevel || 0, m.region || '']),
+      bosses: (w.maps || []).flatMap(m => (m.boss || []).map(id => mobs[id] ? { mob: id, name: mobs[id].name, lv: mobs[id].lv || 0, mapName: m.name } : null)).filter(Boolean) }];
+  }
+  // 以下只能在家裡電腦上操作（手機不能幫別的裝置配對、也不能撤銷）
+  if (!isLocal(req)) return [403, { error: '只能在家裡電腦上操作' }];
+  if (req.method === 'GET' && url.pathname === '/api/m/devices') return [200, { devices: mobileDevices() }];
+  if (req.method === 'GET' && url.pathname === '/api/m/info') {
+    // Tailscale 的機器名稱（tailscale serve 的 HTTPS 網址用）
+    const info = { remote: false, port: PORT, dns: '', ips: Object.values(os.networkInterfaces()).flat().filter(i => i && i.family === 'IPv4' && !i.internal).map(i => i.address) };
+    for (const exe of ['tailscale', 'C:\\Program Files\\Tailscale\\tailscale.exe', '/Applications/Tailscale.app/Contents/MacOS/Tailscale']) {
+      try {
+        const out = require('child_process').execFileSync(exe, ['status', '--json'], { timeout: 4000, windowsHide: true }).toString(); const j = JSON.parse(out); info.dns = String((j.Self && j.Self.DNSName) || '').replace(/\.$/, '');
+        // 有沒有用 tailscale serve 把 HTTPS 轉到這個埠
+        try { const sv = require('child_process').execFileSync(exe, ['serve', 'status', '--json'], { timeout: 4000, windowsHide: true }).toString(); info.serve = sv.includes(':' + PORT); } catch (_) { info.serve = false; }
+        if (info.dns) break;
+      } catch (_) {}
+    }
+    return [200, info];
+  }
+  if (req.method === 'POST' && url.pathname === '/api/m/pair') {
+    const e = JSON.parse((await readBody(req)) || '{}');
+    const d = { id: crypto.randomBytes(4).toString('hex'), name: String(e.name || '手機').slice(0, 20), token: crypto.randomBytes(16).toString('hex'), at: Date.now(), seenAt: 0 };
+    db.mDevices = [...(db.mDevices || []), d]; save();
+    return [200, { id: d.id, token: d.token }];
+  }
+  if (req.method === 'POST' && url.pathname === '/api/m/revoke') {
+    const e = JSON.parse((await readBody(req)) || '{}');
+    db.mDevices = (db.mDevices || []).filter(d => d.id !== e.id); save();
+    return [200, { ok: true, devices: mobileDevices() }];
+  }
+  return null;
+}
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${HOST}`);
     if (req.method === 'OPTIONS') return send(res, 204, '');
+    // 手機版頁面本身沒有資料，不用通行碼（資料 API 才要）；通行碼放在網址 # 後面，只有手機自己讀得到
+    if (req.method === 'GET' && (url.pathname === '/m' || url.pathname === '/m/')) return send(res, 200, fs.readFileSync(path.join(__dirname, 'm.html'), 'utf8'), 'text/html; charset=utf-8');
+    // 加到主畫面後是另一個獨立的 App（iPhone 的儲存空間和 Safari 分開），所以啟動網址要帶著這支手機的通行碼（# 後面不會送到伺服器）
+    if (req.method === 'GET' && url.pathname === '/m/manifest.webmanifest') return send(res, 200, { name: '上漲谷中控', short_name: '上漲谷', start_url: /^[0-9a-f]{16,64}$/.test(url.searchParams.get('t') || '') ? `/m#t=${url.searchParams.get('t')}` : '/m', scope: '/m', display: 'standalone', background_color: '#16181d', theme_color: '#16181d', icons: [{ src: '/m/icon.svg', sizes: 'any', type: 'image/svg+xml' }] }, 'application/manifest+json; charset=utf-8');
+    if (req.method === 'GET' && url.pathname === '/m/icon.svg') return send(res, 200, M_ICON, 'image/svg+xml');
+    if (!isLocal(req) && !tokenOk(req, url)) return send(res, 401, { error: '需要通行碼' });
 
     if (req.method === 'GET' && url.pathname === '/agent.js') {
       return send(res, 200, agentSource(), 'text/javascript; charset=utf-8');
@@ -916,6 +1010,7 @@ const server = http.createServer(async (req, res) => {
       db.dps[e.charId] = { ...e, receivedAt: Date.now() };
       return send(res, 200, { ok: true }); // 不特別存檔：下次其他資料存檔時一起寫入
     }
+    if (url.pathname.startsWith('/api/m/')) { const r = await mobileApi(req, url); if (r) return send(res, r[0], r[1]); }
     if (req.method === 'GET' && url.pathname === '/api/data') {
       const tabsOut = {}; for (const [code, m] of Object.entries(tabs)) for (const [id, t] of Object.entries(m)) if (Date.now() - t.at < TAB_LIVE_MS) tabsOut[id] = { code, at: t.at, hidden: t.hidden, off: t.off };
       return send(res, 200, { now: Date.now(), tabs: tabsOut, chars: db.chars, dps: db.dps || {}, expLive: expLive(), avatars: Object.fromEntries(Object.entries(db.avatars || {}).map(([k, v]) => [k, v.at])), settings: db.settings, jobs: db.jobs.slice(-100), expTable: db.expTable || {}, idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo, alerts: alertSummary(), auto: automationInfo() });

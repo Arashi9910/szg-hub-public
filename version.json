@@ -1,6 +1,6 @@
 {
-  "version": "0.52.2",
-  "notes": "這一版的新功能只在私人版（手機版）；公開版沒有變化。",
+  "version": "0.53.0",
+  "notes": "手機版：用手機經 Tailscale 連回家裡的中控（網址 /m，可以加到主畫面），看每隻角色的狀態、開始／暫停掛機、換圖、確認工作、切換打王與勾王、一鍵套用組隊。設定：電腦和手機裝 Tailscale、電腦執行一次 tailscale serve --bg 8787，再從面板右上角「📱 手機」產生 QR code 給手機掃。每支手機各自一組配對碼，可以個別移除。詳細步驟見 README 的「手機版」。",
   "files": [
     "server.js",
     "market.js",
@@ -8,6 +8,7 @@
     "update.js",
     "agent.js",
     "dashboard.html",
+    "m.html",
     "szg-hub.user.js",
     "README.md",
     "version.json",

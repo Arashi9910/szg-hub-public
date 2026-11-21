@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16181d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="上漲谷">
+<link rel="icon" href="/m/icon.svg">
+<link rel="apple-touch-icon" href="/m/icon.svg">
+<title>上漲谷中控</title>
+<style>
+  :root { --bg: #16181d; --panel: #1f2229; --panel2: #262a33; --line: #323743; --text: #e6e8ee; --dim: #8d93a3; --accent: #3b82f6; --good: #4ade80; --warn: #f59e0b; --bad: #ef4444; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+  body { padding: calc(env(safe-area-inset-top) + 52px) 0 calc(env(safe-area-inset-bottom) + 64px); }
+  button { font: inherit; color: inherit; }
+  .dim { color: var(--dim); } .sm { font-size: 12px; } .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  header { position: fixed; top: 0; left: 0; right: 0; z-index: 20; background: rgba(22,24,29,.96); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); padding: env(safe-area-inset-top) 12px 0; height: calc(env(safe-area-inset-top) + 48px); display: flex; align-items: center; gap: 8px; }
+  header h1 { font-size: 17px; margin: 0; flex: 1; } header .st { font-size: 12px; color: var(--dim); }
+  .ibtn { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; display: flex; background: rgba(22,24,29,.97); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+  nav button { flex: 1; background: none; border: 0; padding: 7px 0 6px; color: var(--dim); font-size: 11px; display: flex; flex-direction: column; align-items: center; gap: 1px; position: relative; }
+  nav button i { font-style: normal; font-size: 20px; line-height: 1.1; } nav button.on { color: var(--accent); }
+  nav .bdg { position: absolute; top: 3px; left: 55%; background: var(--bad); color: #fff; border-radius: 9px; font-size: 10px; padding: 0 5px; }
+  main > section { display: none; padding: 10px 10px 16px; } main > section.on { display: block; }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; } .pill { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 3px 10px; font-size: 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; } .seg button { background: var(--panel); border: 0; padding: 6px 12px; font-size: 13px; color: var(--dim); } .seg button.on { background: var(--accent); color: #fff; }
+  .bar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  input[type=search], input[type=text] { background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 7px 10px; font: inherit; min-width: 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin-bottom: 8px; }
+  .alerts .card { border-color: var(--warn); }
+  .ch { display: grid; grid-template-columns: 52px 1fr auto; gap: 2px 10px; align-items: center; padding: 8px 10px; }
+  .ch.sel { border-color: var(--accent); background: #1d2a44; }
+  .ch .av { grid-row: span 3; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; background: var(--panel2); border-radius: 10px; overflow: hidden; position: relative; }
+  .ch .av img { width: 52px; height: 52px; object-fit: contain; image-rendering: pixelated; }
+  .ch .av .ck { position: absolute; top: 2px; right: 2px; background: var(--accent); color: #fff; border-radius: 50%; width: 18px; height: 18px; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+  .ch .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ch .nm small { font-weight: 400; color: var(--dim); }
+  .ch .rt { text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; } .ch .rt b { color: var(--good); }
+  .ch .ln { font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; grid-column: 2 / 4; }
+  .tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 8px; background: var(--panel2); color: var(--dim); margin-right: 3px; }
+  .tag.bad { background: #4a1d1d; color: #fca5a5; } .tag.warn { background: #4a3510; color: #fcd34d; } .tag.good { background: #14391f; color: #86efac; } .tag.acc { background: #1e3a6b; color: #93c5fd; }
+  .expbar { height: 4px; background: var(--panel2); border-radius: 2px; overflow: hidden; grid-column: 2 / 4; } .expbar i { display: block; height: 100%; background: var(--accent); }
+  .btn { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: 14px; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; } .btn.danger { color: #fca5a5; border-color: #7f1d1d; } .btn.sm { padding: 5px 9px; font-size: 12px; border-radius: 8px; }
+  .btn:disabled { opacity: .45; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .actbar { position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 56px); z-index: 19; background: var(--panel); border-top: 1px solid var(--line); padding: 8px 10px; display: none; gap: 6px; overflow-x: auto; }
+  .actbar.on { display: flex; } .actbar .btn { white-space: nowrap; }
+  .sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 40; display: none; } .sheet-bg.on { display: block; }
+  .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 41; background: var(--panel); border-radius: 16px 16px 0 0; padding: 8px 14px calc(env(safe-area-inset-bottom) + 14px); max-height: 82vh; overflow: auto; transform: translateY(105%); transition: transform .2s; }
+  .sheet.on { transform: none; } .sheet .grab { width: 40px; height: 4px; background: var(--line); border-radius: 2px; margin: 0 auto 10px; }
+  .sheet h3 { margin: 0 0 6px; font-size: 17px; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 13px; margin: 8px 0 12px; } .kv b { font-weight: 500; color: var(--dim); }
+  .row { padding: 9px 0; border-bottom: 1px solid var(--line); } .row:last-child { border-bottom: 0; }
+  .row .t { display: flex; gap: 6px; align-items: center; } .row .t b { flex: 1; } .row .m { font-size: 12px; color: var(--dim); margin-top: 2px; word-break: break-all; }
+  .row .acts { display: flex; gap: 6px; margin-top: 6px; }
+  h4 { margin: 14px 2px 6px; font-size: 13px; color: var(--dim); font-weight: 500; }
+  .hp { height: 10px; background: #3b1d1d; border-radius: 5px; overflow: hidden; margin: 4px 0; } .hp i { display: block; height: 100%; background: linear-gradient(90deg, #ef4444, #f97316); }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .chip { font-size: 12px; padding: 4px 9px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--dim); }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; } .chip.mate { border-style: dashed; color: var(--text); }
+  .mems { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; } .mem { text-align: center; width: 64px; font-size: 11px; } .mem img, .mem .ph { width: 48px; height: 48px; object-fit: contain; image-rendering: pixelated; display: block; margin: 0 auto; background: var(--panel2); border-radius: 8px; }
+  .maplist .row { cursor: pointer; } .empty { text-align: center; color: var(--dim); padding: 30px 10px; }
+  .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 120px); transform: translateX(-50%); background: #000c; color: #fff; padding: 8px 14px; border-radius: 18px; font-size: 13px; z-index: 60; display: none; max-width: 86vw; text-align: center; }
+  .pair { padding: 40px 20px; text-align: center; } .pair h2 { font-size: 18px; }
+</style>
+</head>
+<body>
+<header><h1>🍁 上漲谷中控</h1><span class="st" id="st">連線中…</span><button class="ibtn" id="refresh" aria-label="重新整理">↻</button></header>
+<main>
+  <section id="v-chars" class="on">
+    <div class="pills" id="pills"></div>
+    <div class="alerts" id="alerts"></div>
+    <div class="bar"><div class="seg" id="grpSeg"><button data-grp="all">全部</button><button data-grp="A">A 組</button><button data-grp="B">B 組</button><button data-grp="issue">有狀況</button></div>
+      <button class="btn sm" id="selMode">多選</button></div>
+    <div class="bar"><input type="search" id="q" placeholder="搜尋角色或地圖" style="flex:1"></div>
+    <div id="chars"></div>
+  </section>
+  <section id="v-jobs">
+    <div class="bar"><button class="btn sm primary" id="approveAll">全部確認</button><button class="btn sm" id="clearDone">清除已完成</button><button class="btn sm" id="clearFailed">清除失敗</button></div>
+    <div id="jobs"></div>
+  </section>
+  <section id="v-boss">
+    <div class="bar"><div class="seg" id="bossMode"><button data-bm="off">關閉</button><button data-bm="preview">試跑</button><button data-bm="auto">自動出發</button></div><button class="btn sm" id="bossRun">立即檢查</button></div>
+    <div id="bossLive"></div>
+    <h4>誰打哪些王 <span class="sm">（點王的名字切換，亮的＝會打）</span></h4>
+    <div class="bar"><input type="search" id="bq" placeholder="搜尋角色" style="flex:1"><label class="sm"><input type="checkbox" id="bOnly"> 只看有勾的</label></div>
+    <div id="bossCards"></div>
+  </section>
+  <section id="v-party">
+    <div class="bar"><button class="btn sm primary" id="ptAll">全部套用</button><span class="dim sm">隊伍在電腦面板「組隊」排好；這裡可以一鍵套用</span></div>
+    <div id="parties"></div>
+  </section>
+  <section id="v-more">
+    <div class="card"><div class="kv" id="info"></div>
+      <div class="grid2"><a class="btn" id="fullPanel" style="text-align:center;text-decoration:none;color:inherit">開電腦版面板</a><button class="btn danger" id="logout">登出這台手機</button></div></div>
+    <h4>最近的掛機紀錄</h4>
+    <div class="card" id="idleLog"></div>
+    <div class="dim sm" style="padding:0 4px">加到主畫面：iPhone 用 Safari 的「分享 → 加入主畫面」；Android 用 Chrome 選單的「加到主畫面」。</div>
+  </section>
+</main>
+<div class="actbar" id="actbar"></div>
+<nav id="nav">
+  <button data-v="chars" class="on"><i>👥</i>角色</button>
+  <button data-v="jobs"><i>📋</i>工作<span class="bdg" id="jobBdg" style="display:none"></span></button>
+  <button data-v="boss"><i>👹</i>打王</button>
+  <button data-v="party"><i>🤝</i>組隊</button>
+  <button data-v="more"><i>⚙️</i>更多</button>
+</nav>
+<div class="sheet-bg" id="sheetBg"></div>
+<div class="sheet" id="sheet"><div class="grab"></div><div id="sheetBody"></div></div>
+<div class="toast" id="toast"></div>
+<script>
+'use strict';
+// ---------- 通行碼：第一次從 QR code 網址的 #t= 拿到，存在這台手機 ----------
+(() => { const m = /[#&]t=([0-9a-f]+)/.exec(location.hash); if (m) { try { localStorage.setItem('szgM_t', m[1]); } catch (_) {} } })();
+window.addEventListener('hashchange', () => { const m = /[#&]t=([0-9a-f]+)/.exec(location.hash); if (m && m[1] !== TOKEN) location.reload(); }); // 已經開著時又掃了新的 QR
+const TOKEN = (() => { try { return localStorage.getItem('szgM_t') || ''; } catch (_) { return ''; } })() || ((/[#&]t=([0-9a-f]+)/.exec(location.hash) || [])[1] || '');
+// 「加到主畫面」會用目前網址（或 manifest 的啟動網址）開新的 App，那邊讀不到這裡存的通行碼：網址和 manifest 都保留通行碼
+(() => {
+  if (TOKEN && !location.hash.includes('t=' + TOKEN)) history.replaceState(null, '', location.pathname + '#t=' + TOKEN);
+  const l = document.createElement('link'); l.rel = 'manifest'; l.href = '/m/manifest.webmanifest' + (TOKEN ? '?t=' + TOKEN : ''); document.head.appendChild(l);
+})();
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const short = n => { n = Number(n) || 0; const a = Math.abs(n); return a >= 1e8 ? (n / 1e8).toFixed(a >= 1e9 ? 0 : 2) + '億' : a >= 1e4 ? (n / 1e4).toFixed(a >= 1e5 ? 0 : 1) + '萬' : String(Math.round(n)); };
+const hm = ms => { ms = Math.max(0, ms); const h = Math.floor(ms / 3600e3), m = Math.floor(ms % 3600e3 / 60e3); return h ? `${h}時${m}分` : `${m}分`; };
+const ago = ms => ms < 60e3 ? `${Math.max(0, Math.round(ms / 1000))}秒前` : ms < 3600e3 ? `${Math.round(ms / 60e3)}分前` : `${Math.round(ms / 3600e3)}時前`;
+const clock = t => { const d = new Date(t); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 2600); }
+class AuthErr extends Error {}
+async function api(path, body) {
+  const r = await fetch(path, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', ...(TOKEN ? { 'X-Hub-Token': TOKEN } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+  if (r.status === 401) throw new AuthErr('需要配對');
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+  return j;
+}
+const avatar = (c, cls = '') => c.ava ? `<img class="${cls}" src="/api/avatar/${encodeURIComponent(c.id)}?t=${c.ava}${TOKEN ? '&token=' + TOKEN : ''}" alt="" loading="lazy">` : `<span class="ph ${cls}" style="font-size:24px;opacity:.35">👤</span>`;
+
+// ---------- 狀態 ----------
+let D = null, MAPS = null, BOSSES = null, BOSS = null, view = 'chars';
+async function loadMaps() { if (MAPS) return; const r = await api('/api/m/maps'); MAPS = r.maps; BOSSES = r.bosses || []; }
+const ui = { grp: localStorage.getItem('szgM_grp') || 'all', q: '', sel: null, bq: '', bOnly: false };
+const byId = id => (D && D.chars.find(c => c.id === id)) || null;
+const issues = c => { const out = []; if (c.dead) out.push(['bad', '倒下']); if (c.offline) out.push(['warn', '離線掛機']); if (!c.unsynced && c.tab && !c.auto && !c.job2) out.push(['warn', '沒在掛機']); return out; };
+async function load(quiet) {
+  try {
+    D = await api('/api/m/summary');
+    $('#st').textContent = '已更新 ' + clock(D.now);
+    render();
+  } catch (e) {
+    if (e instanceof AuthErr) return showPair();
+    $('#st').innerHTML = '<span class="bad">連不到中控</span>';
+    if (!quiet) toast('連不到中控：' + e.message);
+  }
+}
+function showPair() {
+  document.querySelector('main').innerHTML = `<div class="pair"><h2>📱 還沒有配對</h2><p class="dim">在家裡電腦打開中控面板，按右上角的「📱 手機」→「新增這支手機」，用手機相機掃畫面上的 QR code。</p>${TOKEN ? '<p class="bad">這支手機的配對已經被撤銷或失效，請重新掃一次。</p>' : ''}
+    <p class="dim sm" style="margin-top:24px">已經加到主畫面卻看到這頁？把電腦上 QR code 下面那串網址貼到這裡：</p>
+    <div style="display:flex;gap:6px"><input type="text" id="pairIn" placeholder="https://…/m#t=…" style="flex:1"><button class="btn primary" id="pairGo">配對</button></div></div>`;
+  $('#pairGo').onclick = () => { const m = /t=([0-9a-f]{16,64})/.exec($('#pairIn').value) || /^([0-9a-f]{16,64})$/.exec($('#pairIn').value.trim()); if (!m) return toast('找不到配對碼，請貼完整的網址'); try { localStorage.setItem('szgM_t', m[1]); } catch (_) {} location.replace(location.pathname + '#t=' + m[1]); location.reload(); };
+  $('#nav').style.display = 'none'; $('#st').textContent = '';
+}
+function render() {
+  if (!D) return;
+  const pend = D.jobs.filter(j => j.status === 'pending').length, fail = D.jobs.filter(j => j.status === 'failed').length;
+  $('#jobBdg').style.display = pend + fail ? '' : 'none'; $('#jobBdg').textContent = pend + fail;
+  if (view === 'chars') renderChars();
+  if (view === 'jobs') renderJobs();
+  if (view === 'boss') renderBoss();
+  if (view === 'party') renderParty();
+  if (view === 'more') renderMore();
+}
+
+// ---------- 角色 ----------
+function renderChars() {
+  const cs = D.chars, synced = cs.filter(c => !c.unsynced);
+  const tabs = synced.filter(c => c.tab).length, idle = synced.filter(c => c.auto).length, dead = synced.filter(c => c.dead).length;
+  const total = synced.reduce((a, c) => a + (c.live != null ? c.live : c.hourly || 0), 0);
+  $('#pills').innerHTML = `<span class="pill">分頁 <b>${tabs}</b>/${synced.length}</span><span class="pill">掛機中 <b>${idle}</b></span>${dead ? `<span class="pill bad">倒下 ${dead}</span>` : ''}<span class="pill good">經驗 <b>${short(total)}</b>/時</span>`;
+  const fail = D.jobs.filter(j => j.status === 'failed'), pend = D.jobs.filter(j => j.status === 'pending');
+  const al = [];
+  for (const c of synced) for (const [cls, t] of issues(c)) al.push(`<div class="row"><div class="t"><span class="tag ${cls}">${t}</span><b>${esc(c.name)}</b><button class="btn sm" data-open="${c.id}">處理</button></div></div>`);
+  if (pend.length) al.push(`<div class="row"><div class="t"><span class="tag acc">待確認</span><b>${pend.length} 個工作等你確認</b><button class="btn sm" data-goto="jobs">查看</button></div></div>`);
+  if (fail.length) al.push(`<div class="row"><div class="t"><span class="tag bad">失敗</span><b>${fail.length} 個工作失敗</b><button class="btn sm" data-goto="jobs">查看</button></div></div>`);
+  $('#alerts').innerHTML = al.length ? `<div class="card"><b class="sm warn">需要處理</b>${al.slice(0, 8).join('')}${al.length > 8 ? `<div class="dim sm">…還有 ${al.length - 8} 項（選「有狀況」看全部）</div>` : ''}</div>` : '';
+  document.querySelectorAll('#grpSeg button').forEach(b => b.classList.toggle('on', b.dataset.grp === ui.grp));
+  $('#selMode').textContent = ui.sel ? `完成（已選 ${ui.sel.size}）` : '多選';
+  const q = ui.q.trim();
+  let list = cs.filter(c => (ui.grp === 'all' || (ui.grp === 'issue' ? issues(c).length : c.group === ui.grp)) && (!q || c.name.includes(q) || String(c.mapName || '').includes(q)));
+  list.sort((a, b) => (b.tab - a.tab) || (!!a.unsynced - !!b.unsynced) || (b.lv || 0) - (a.lv || 0));
+  $('#chars').innerHTML = list.map(c => {
+    const rate = c.live != null ? `<b>${short(c.live)}</b><span class="dim sm">/時</span>` : c.hourly ? `${short(c.hourly)}<span class="dim sm">/時</span>` : '<span class="dim">—</span>';
+    const tags = [...issues(c).map(([k, t]) => `<span class="tag ${k}">${t}</span>`)];
+    if (c.unsynced) tags.push('<span class="tag">背景掛機</span>'); else if (!c.tab) tags.push('<span class="tag">沒分頁</span>');
+    if (c.job2) tags.push(`<span class="tag acc">${c.job2.kind === 'boss' ? '打王中' : c.job2.kind === 'party' ? '組隊中' : '工作中'}</span>`);
+    if (c.party) tags.push('<span class="tag">隊伍</span>');
+    const remain = c.auto && c.until ? `剩 ${hm(c.until - D.now)}` : c.auto ? '掛機中' : c.unsynced ? '' : '未掛機';
+    const sel = ui.sel && ui.sel.has(c.id);
+    return `<div class="card ch ${sel ? 'sel' : ''}" data-ch="${c.id}"><div class="av">${avatar(c)}${sel ? '<span class="ck">✓</span>' : ''}</div>
+      <div class="nm">${esc(c.name)} <small>Lv${c.lv || '?'}${c.expPct != null ? ` ${c.expPct.toFixed(1)}%` : ''}</small></div><div class="rt">${rate}</div>
+      ${c.expPct != null ? `<div class="expbar"><i style="width:${Math.min(100, c.expPct)}%"></i></div>` : ''}
+      <div class="ln">${tags.join('')}${esc(c.mapName || '')}${remain ? '・' + remain : ''}</div></div>`;
+  }).join('') || '<div class="empty">沒有符合的角色</div>';
+  renderActbar();
+}
+function renderActbar() {
+  const bar = $('#actbar');
+  if (!ui.sel || view !== 'chars') { bar.classList.remove('on'); return; }
+  bar.classList.add('on');
+  bar.innerHTML = `<button class="btn primary" data-act="start">▶ 開始</button><button class="btn" data-act="stop">Ⅱ 暫停</button><button class="btn" data-act="restart">↻ 重新開始</button><button class="btn" data-act="wake">⏏ 領取</button><button class="btn" data-act="map">🗺 換圖</button><button class="btn" data-selall>全選</button>`;
+}
+const ACT_NAME = { start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', wake: '領取離線收益', switch: '切換為目前角色' };
+async function idle(ids, action, extra = {}) {
+  if (!ids.length) return toast('沒有選角色');
+  const names = ids.map(id => (byId(id) || {}).name || id);
+  if (['stop', 'restart', 'switch', 'map'].includes(action) && !confirm(`${names.join('、')}\n${action === 'map' ? `換到「${extra.mapName}」？` : ACT_NAME[action] + '？'}`)) return;
+  try {
+    const r = await api('/api/idle', { targets: ids.map(charId => ({ charId, action, ...extra })) });
+    toast(`已送出${action === 'map' ? '換圖' : ACT_NAME[action]}（${names.length} 隻）${r.skipped && r.skipped.length ? '；' + r.skipped.join('、') : ''}`);
+    closeSheet(); setTimeout(() => load(true), 2500);
+  } catch (e) { toast('失敗：' + e.message); }
+}
+function openChar(id) {
+  const c = byId(id); if (!c) return;
+  const ok = !c.unsynced;
+  openSheet(`<div style="display:flex;gap:12px;align-items:center"><div class="mem" style="width:auto">${avatar(c)}</div><div><h3>${esc(c.name)}</h3><div class="dim sm">Lv${c.lv}・${esc(c.job || '')}</div></div></div>
+    <div class="kv"><b>地圖</b><span>${esc(c.mapName || '—')}</span><b>狀態</b><span>${c.unsynced ? '背景掛機（還沒同步）' : c.auto ? '掛機中' + (c.until ? `，剩 ${hm(c.until - D.now)}` : '') : '<span class="warn">沒在掛機</span>'}${c.dead ? '・<span class="bad">倒下</span>' : ''}</span>
+      <b>經驗</b><span>${c.live != null ? `近 3 分 ${short(c.live)}/時` : '—'}${c.hourly ? `・整輪 ${short(c.hourly)}/時` : ''}</span>
+      ${c.hp != null ? `<b>HP</b><span>${short(c.hp)} / ${short(c.maxhp)}</span>` : ''}<b>楓幣</b><span>${short(c.money)}</span>
+      <b>分頁</b><span>${c.tab ? '有' : '沒有自己的遊戲分頁'}${c.at ? `・${ago(D.now - c.at)}更新` : ''}</span>
+      ${c.job2 ? `<b>工作</b><span>${esc(c.job2.msg || c.job2.status)}</span>` : ''}</div>
+    <div class="grid2"><button class="btn primary" data-one="start|${id}" ${ok ? '' : 'disabled'}>▶ 開始掛機</button><button class="btn" data-one="stop|${id}" ${ok ? '' : 'disabled'}>Ⅱ 暫停</button>
+      <button class="btn" data-one="restart|${id}" ${ok ? '' : 'disabled'}>↻ 重新開始</button><button class="btn" data-one="wake|${id}" ${ok ? '' : 'disabled'}>⏏ 領取離線</button>
+      <button class="btn" data-one="map|${id}" ${ok ? '' : 'disabled'}>🗺 換圖</button>${!c.tab ? `<button class="btn" data-one="switch|${id}">⇄ 切換為目前角色</button>` : ''}</div>
+    ${!c.tab && !c.unsynced ? '<p class="dim sm">這隻沒有自己的遊戲分頁：開始／暫停會交給同帳號的分頁，換圖可能被遊戲拒絕；可以先「切換為目前角色」。</p>' : ''}`);
+}
+async function openMaps(ids) {
+  const cs = ids.map(byId).filter(Boolean);
+  try { await loadMaps(); } catch (e) { return toast('讀不到地圖：' + e.message); }
+  const lv = Math.min(...cs.map(c => c.lv || 0));
+  const draw = q => MAPS.filter(m => m[2] <= lv && (!q || m[1].includes(q) || m[3].includes(q))).sort((a, b) => b[2] - a[2]).slice(0, 80)
+    .map(m => `<div class="row" data-pickmap="${esc(m[0])}"><div class="t"><b>${esc(m[1])}</b><span class="dim sm">Lv${m[2]}＋</span></div><div class="m">${esc(m[3])}</div></div>`).join('') || '<div class="empty">沒有符合的地圖</div>';
+  openSheet(`<h3>換圖（${cs.length} 隻，最低 Lv${lv}）</h3><input type="search" id="mapQ" placeholder="搜尋地圖或區域" style="width:100%;margin-bottom:6px"><div class="maplist" id="mapList">${draw('')}</div>`);
+  ui.mapIds = ids;
+  $('#mapQ').oninput = e => { $('#mapList').innerHTML = draw(e.target.value.trim()); };
+}
+
+// ---------- 工作 ----------
+const ST = { pending: ['待確認', 'acc'], approved: ['排隊中', ''], running: ['執行中', 'good'], done: ['完成', ''], failed: ['失敗', 'bad'], cancelled: ['已取消', ''] };
+const KIND = { trade: '交易', give: '給道具', bag: '背包', sell: '賣出', idle: '掛機', boss: '打王', party: '組隊', forge: '強化', guildDeposit: '存公倉', guildWithdraw: '領公倉', guildView: '看公倉', guildSell: '公倉賣出' };
+function renderJobs() {
+  const js = D.jobs.slice().reverse();
+  const grp = [['pending', '待確認'], ['active', '進行中'], ['failed', '失敗'], ['done', '最近完成']];
+  const of = k => k === 'active' ? js.filter(j => ['approved', 'running'].includes(j.status)) : k === 'done' ? js.filter(j => ['done', 'cancelled'].includes(j.status)).slice(0, 25) : js.filter(j => j.status === k);
+  $('#approveAll').disabled = !of('pending').length;
+  $('#jobs').innerHTML = grp.map(([k, t]) => { const l = of(k); return l.length ? `<h4>${t}（${l.length}）</h4><div class="card">${l.map(j => {
+    const st = ST[j.status] || [j.status, ''];
+    return `<div class="row"><div class="t"><span class="tag ${st[1]}">${st[0]}</span><b>${esc(KIND[j.kind] || j.kind)}・${esc(j.from || '')}${j.to && j.to !== j.from ? ' → ' + esc(j.to) : ''}</b><span class="dim sm">${clock(j.at)}</span></div>
+      <div class="m">${esc(j.what || '')}${j.what && j.msg ? '・' : ''}${esc(j.msg || '')}</div>
+      ${j.status === 'pending' ? `<div class="acts"><button class="btn sm primary" data-job="approve|${j.id}">確認執行</button><button class="btn sm" data-job="cancel|${j.id}">取消</button></div>`
+        : ['approved', 'running'].includes(j.status) ? `<div class="acts"><button class="btn sm" data-job="cancel|${j.id}">取消</button></div>`
+        : j.status === 'failed' ? `<div class="acts"><button class="btn sm" data-job="retry|${j.id}">重試</button><button class="btn sm" data-job="delete|${j.id}">刪除</button></div>` : ''}</div>`; }).join('')}</div>` : ''; }).join('') || '<div class="empty">沒有工作</div>';
+}
+
+// ---------- 打王 ----------
+async function loadBoss() { try { await loadMaps(); BOSS = await api('/api/boss'); } catch (e) { if (e instanceof AuthErr) return showPair(); } }
+function bossList() {
+  const m = new Map();
+  for (const c of (BOSS && BOSS.chars) || []) for (const r of c.rows) if (!m.has(r.mob)) m.set(r.mob, { mob: r.mob, name: r.name, lv: r.lv, mapName: r.mapName });
+  if (!m.size) for (const b of BOSSES || []) if (!m.has(b.mob)) m.set(b.mob, b); // 還沒有角色回報王的狀態：用地圖資料
+  return [...m.values()].sort((a, b) => (a.lv || 0) - (b.lv || 0));
+}
+function renderBoss() {
+  const mode = (BOSS && BOSS.cfg.mode) || D.boss.mode;
+  document.querySelectorAll('#bossMode button').forEach(b => b.classList.toggle('on', b.dataset.bm === mode));
+  const live = D.boss.live || [];
+  $('#bossLive').innerHTML = live.length ? `<h4>正在打</h4>` + live.map(g => { const p = g.hp != null && g.maxHp ? g.hp / g.maxHp * 100 : null;
+    return `<div class="card"><div class="t" style="display:flex;gap:6px"><b style="flex:1">${esc(g.name)}</b><span class="dim sm">${esc(g.mapName)}</span></div><div class="hp"><i style="width:${p == null ? 100 : p.toFixed(1)}%"></i></div>
+      <div class="sm">${p == null ? esc(g.msg || '前往中') : p.toFixed(1) + '%'}${g.etaSec != null ? `・預估還要 ${hm(g.etaSec * 1000)}` : ''}・${esc(g.names.join('＋'))}</div></div>`; }).join('') : '';
+  if (!BOSS) { $('#bossCards').innerHTML = '<div class="empty">讀取中…</div>'; loadBoss().then(() => view === 'boss' && renderBoss()); return; }
+  const cm = BOSS.cfg.charMobs || {}, mobs = bossList(), info = Object.fromEntries(BOSS.chars.map(x => [x.charId, x]));
+  const q = ui.bq.trim();
+  const cs = D.chars.filter(c => (!q || c.name.includes(q)) && (!ui.bOnly || (cm[c.id] || []).length))
+    .sort((a, b) => ((cm[b.id] || []).length > 0) - ((cm[a.id] || []).length > 0) || (b.tab - a.tab) || (b.lv || 0) - (a.lv || 0));
+  if (!mobs.length) { $('#bossCards').innerHTML = '<div class="empty">還沒有野王資料（遊戲分頁開著約 1 分鐘後會有）</div>'; return; }
+  $('#bossCards').innerHTML = cs.map(c => {
+    const mine = cm[c.id] || [], all = mine.includes('*'), set = new Set(mine), i = info[c.id], party = i && i.party;
+    const mate = new Set((party ? party.ids.filter(x => x !== c.id) : []).flatMap(x => cm[x] || []));
+    return `<div class="card"><div style="display:flex;align-items:center;gap:8px"><b style="flex:1">${esc(c.name)} <span class="dim sm">Lv${c.lv || '?'}</span></b>
+        <button class="btn sm" data-bk="all|${c.id}">全部</button><button class="btn sm" data-bk="fit|${c.id}">等級內</button><button class="btn sm" data-bk="none|${c.id}">清除</button></div>
+      ${party ? `<div class="dim sm">隊伍：${esc(party.names.join('、'))}</div>` : ''}
+      <div class="chips">${all ? `<span class="chip on" data-bkm="${c.id}|*">全部的王</span>` : mobs.map(b => `<span class="chip ${set.has(b.mob) ? 'on' : ''} ${!set.has(b.mob) && (mate.has(b.mob) || mate.has('*')) ? 'mate' : ''}" data-bkm="${c.id}|${esc(b.mob)}">${esc(b.name)}</span>`).join('')}</div></div>`;
+  }).join('') || '<div class="empty">沒有符合的角色</div>';
+}
+async function saveBoss(patch) {
+  const cfg = { ...BOSS.cfg, ...patch };
+  cfg.chars = Object.fromEntries(Object.keys(cfg.charMobs || {}).filter(k => (cfg.charMobs[k] || []).length).map(k => [k, true])); cfg.mobs = null;
+  await api('/api/settings', { boss: cfg });
+  await loadBoss(); render();
+}
+async function setCharMobs(id, list) { const cm = { ...(BOSS.cfg.charMobs || {}) }; if (list && list.length) cm[id] = list; else delete cm[id]; await saveBoss({ charMobs: cm }); }
+
+// ---------- 組隊 ----------
+function renderParty() {
+  const ps = D.parties || [];
+  $('#ptAll').disabled = !ps.some(p => (p.members || []).length);
+  $('#parties').innerHTML = ps.map(p => {
+    const mem = (p.members || []).map(byId).filter(Boolean);
+    const lv = mem.filter(c => c.live != null), sum = lv.reduce((a, c) => a + c.live, 0);
+    const mapName = p.map ? ((mem.find(c => c.map === p.map) || {}).mapName || (MAPS && (MAPS.find(m => m[0] === p.map) || [])[1]) || '指定地圖') : '不換圖';
+    const away = p.map ? mem.filter(c => c.map !== p.map) : [], codes = [...new Set(mem.map(c => c.party))];
+    const ready = !away.length && (mem.length < 2 ? true : codes.length === 1 && codes[0]);
+    const busy = mem.some(c => c.job2 && c.job2.kind === 'party');
+    return `<div class="card"><div style="display:flex;align-items:center;gap:6px"><b style="flex:1">${esc(p.name || '隊伍')}</b>${busy ? '<span class="tag acc">套用中</span>' : ready ? '<span class="tag good">✓ 已就位</span>' : '<span class="tag warn">要套用</span>'}</div>
+      <div class="dim sm">🗺 ${esc(mapName)}${p.sell ? '・套用時一起設定自動販售' : ''}</div>
+      <div class="mems">${mem.map((c, i) => `<div class="mem">${avatar(c)}${i === 0 && mem.length > 1 ? '👑' : ''}${esc(c.name)}<div class="dim">Lv${c.lv}</div></div>`).join('')}</div>
+      <div class="sm">全隊近 3 分 <b class="good">${lv.length ? short(sum) + '/時' : '—'}</b>${away.length ? `・<span class="warn">${esc(away.map(c => c.name).join('、'))} 不在這張圖</span>` : ''}</div>
+      <div class="acts" style="margin-top:8px"><button class="btn sm primary" data-pt="${esc(p.id)}" ${mem.length && !busy ? '' : 'disabled'}>套用</button></div></div>`;
+  }).join('') || '<div class="empty">還沒有隊伍：在電腦面板的「組隊」分頁排好後，這裡就能一鍵套用。</div>';
+}
+async function applyParties(ids) {
+  const ps = (D.parties || []).filter(p => (p.members || []).length && (!ids || ids.includes(p.id)));
+  if (!ps.length) return;
+  if (!confirm(`套用 ${ps.map(p => p.name || '隊伍').join('、')}？\n隊伍不是這幾個人的會先離隊、重新組隊；換圖後開始掛機。`)) return;
+  try { const r = await api('/api/party/apply', { parties: ps.map(p => ({ id: p.id, name: p.name, members: p.members, map: p.map, mapName: '', sell: p.sell })) }); toast(`已送出 ${r.jobs} 個組隊工作`); setTimeout(() => load(true), 2500); }
+  catch (e) { toast('套用失敗：' + e.message); }
+}
+
+// ---------- 更多 ----------
+function renderMore() {
+  const u = D.update || {};
+  $('#info').innerHTML = `<b>中控版本</b><span>${esc(D.version)}${u.hasUpdate ? ` <span class="warn">（有新版 ${esc(u.latest)}，在電腦上更新）</span>` : ''}</span><b>角色</b><span>${D.chars.length} 隻</span><b>更新頻率</b><span>每 10 秒（畫面在前景時）</span>`;
+  $('#fullPanel').href = '/?token=' + TOKEN;
+  $('#idleLog').innerHTML = (D.idleLog || []).slice().reverse().map(l => `<div class="row"><div class="m"><span class="dim">${clock(l.at)}</span> ${esc(l.name || '')}：${esc(l.msg)}</div></div>`).join('') || '<span class="dim">還沒有紀錄</span>';
+}
+
+// ---------- 底部面板 ----------
+function openSheet(html) { $('#sheetBody').innerHTML = html; $('#sheet').classList.add('on'); $('#sheetBg').classList.add('on'); }
+function closeSheet() { $('#sheet').classList.remove('on'); $('#sheetBg').classList.remove('on'); }
+$('#sheetBg').onclick = closeSheet;
+
+// ---------- 事件 ----------
+function go(v) {
+  view = v; document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  document.querySelectorAll('main > section').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
+  if (v !== 'chars') $('#actbar').classList.remove('on');
+  if (v === 'boss') loadBoss().then(render);
+  window.scrollTo(0, 0); render();
+}
+document.addEventListener('click', async e => {
+  const t = e.target.closest('button, [data-ch], [data-pickmap], [data-bkm]'); if (!t) return;
+  const d = t.dataset;
+  try {
+    if (d.v) return go(d.v);
+    if (d.goto) return go(d.goto);
+    if (t.id === 'refresh') { if (view === 'boss') await loadBoss(); return load(); }
+    if (d.grp) { ui.grp = d.grp; try { localStorage.setItem('szgM_grp', d.grp); } catch (_) {} return renderChars(); }
+    if (t.id === 'selMode') { ui.sel = ui.sel ? null : new Set(); return renderChars(); }
+    if (d.selall != null) { document.querySelectorAll('#chars [data-ch]').forEach(x => { const c = byId(x.dataset.ch); if (c && !c.unsynced) ui.sel.add(c.id); }); return renderChars(); }
+    if (d.ch) { if (ui.sel) { ui.sel.has(d.ch) ? ui.sel.delete(d.ch) : ui.sel.add(d.ch); return renderChars(); } return openChar(d.ch); }
+    if (d.open) return openChar(d.open);
+    if (d.act) { const ids = [...ui.sel]; if (d.act === 'map') return openMaps(ids); return idle(ids, d.act); }
+    if (d.one) { const [a, id] = d.one.split('|'); if (a === 'map') return openMaps([id]); return idle([id], a); }
+    if (d.pickmap) { const m = MAPS.find(x => x[0] === d.pickmap); return idle(ui.mapIds, 'map', { map: m[0], mapName: m[1] }); }
+    if (d.job) {
+      const [a, id] = d.job.split('|'), j = D.jobs.find(x => x.id === id);
+      if (a === 'approve' && !confirm(`確認執行？\n${KIND[j.kind] || j.kind}：${j.from}${j.to && j.to !== j.from ? ' → ' + j.to : ''}\n${j.what || j.msg || ''}`)) return;
+      if (a === 'delete' && !confirm('刪除這個失敗的工作？')) return;
+      await api(`/api/jobs/${id}/${a}`, {}); toast('已送出'); return load(true);
+    }
+    if (t.id === 'approveAll') { const n = D.jobs.filter(j => j.status === 'pending').length; if (!n || !confirm(`確認執行全部 ${n} 個待確認的工作？`)) return; await api('/api/jobs/approve-all', {}); return load(true); }
+    if (t.id === 'clearDone') { await api('/api/jobs/clear', {}); return load(true); }
+    if (t.id === 'clearFailed') { if (!confirm('清除所有失敗的工作？')) return; await api('/api/jobs/clear', { failed: true }); return load(true); }
+    if (d.bm) {
+      if (!BOSS) await loadBoss();
+      if (d.bm === 'auto' && !confirm('開啟自動出發：有勾王的角色會自動換到野王地圖打王，打完再換回原本的地圖。確定？')) return;
+      await saveBoss({ mode: d.bm }); return toast('打王：' + t.textContent);
+    }
+    if (t.id === 'bossRun') { BOSS = await api('/api/boss/run-now', {}); toast('已檢查'); return render(); }
+    if (d.bkm) { const [id, mob] = d.bkm.split('|'), cm = BOSS.cfg.charMobs || {}; let l = [...(cm[id] || [])]; if (mob === '*') l = bossList().map(b => b.mob); else l = l.includes(mob) ? l.filter(x => x !== mob) : [...l, mob]; return setCharMobs(id, l); }
+    if (d.bk) { const [a, id] = d.bk.split('|'), c = byId(id); return setCharMobs(id, a === 'all' ? ['*'] : a === 'none' ? [] : bossList().filter(b => (b.lv || 0) <= ((c && c.lv) || 0)).map(b => b.mob)); }
+    if (d.pt) return applyParties([d.pt]);
+    if (t.id === 'ptAll') return applyParties(null);
+    if (t.id === 'logout') { if (!confirm('登出這台手機？之後要重新掃 QR code 配對。（要完全撤銷請在電腦面板的「📱 手機」移除這台）')) return; try { localStorage.removeItem('szgM_t'); } catch (_) {} location.replace(location.pathname); return; }
+  } catch (err) { if (err instanceof AuthErr) return showPair(); toast('失敗：' + err.message); }
+});
+$('#q').oninput = e => { ui.q = e.target.value; renderChars(); };
+$('#bq').oninput = e => { ui.bq = e.target.value; renderBoss(); };
+$('#bOnly').onchange = e => { ui.bOnly = e.target.checked; renderBoss(); };
+document.addEventListener('visibilitychange', () => { if (!document.hidden) load(true); });
+setInterval(() => { if (!document.hidden) { load(true); if (view === 'boss' && D && (D.boss.live || []).length) loadBoss().then(render); } }, 10000);
+load();
+</script>
+</body>
+</html>
