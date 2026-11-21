@@ -1,6 +1,6 @@
 {
-  "version": "0.53.0",
-  "notes": "手機版：用手機經 Tailscale 連回家裡的中控（網址 /m，可以加到主畫面），看每隻角色的狀態、開始／暫停掛機、換圖、確認工作、切換打王與勾王、一鍵套用組隊。設定：電腦和手機裝 Tailscale、電腦執行一次 tailscale serve --bg 8787，再從面板右上角「📱 手機」產生 QR code 給手機掃。每支手機各自一組配對碼，可以個別移除。詳細步驟見 README 的「手機版」。",
+  "version": "0.53.1",
+  "notes": "手機版教學改成詳細的圖文步驟（GitHub 上的 docs/mobile.md：Windows／macOS 指令、iPhone／Android 加到主畫面、疑難排解、給 AI 助手看的說明），面板「📱 手機」裡也有連結。\n\n手機版：用手機經 Tailscale 連回家裡的中控（網址 /m，可以加到主畫面），看每隻角色的狀態、開始／暫停掛機、換圖、確認工作、切換打王與勾王、一鍵套用組隊。設定：電腦和手機裝 Tailscale、電腦執行一次 tailscale serve --bg 8787，再從面板右上角「📱 手機」產生 QR code 給手機掃。每支手機各自一組配對碼，可以個別移除。詳細步驟見 README 的「手機版」。",
   "files": [
     "server.js",
     "market.js",

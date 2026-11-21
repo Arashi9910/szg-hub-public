@@ -5821,6 +5821,7 @@ async function renderMPop(newDev) {
     <ol class="dim"><li>手機裝 Tailscale，登入和這台電腦同一個帳號。</li>
       <li>這台電腦用「命令提示字元（系統管理員）」執行一次 <code>tailscale serve --bg ${info.port}</code>（第一次會請你到 Tailscale 後台開啟 HTTPS）。之後網址就是 <code>https://電腦名稱.xxx.ts.net</code>。</li>
       <li>按下面「新增這支手機」，用手機相機掃 QR code，打開後「加到主畫面」。</li></ol>
+    <div class="sm"><a href="https://github.com/Arashi9910/szg-hub-public/blob/main/docs/mobile.md" target="_blank" rel="noopener">📖 詳細圖文教學與疑難排解（GitHub）</a> <span class="dim">— 也可以把這個網址貼給 AI 助手請它帶你裝</span></div>
     <label>手機要連的網址 <input id="mBase" value="${esc(base)}" placeholder="https://電腦名稱.xxx.ts.net" style="width:100%"></label>
     ${!guess ? '<div class="warn sm">找不到 Tailscale 的機器名稱：請確認這台電腦的 Tailscale 已登入，或自己填網址。</div>' : base !== guess ? `<div class="dim sm">偵測到的網址：${esc(guess)}</div>` : ''}
     ${info.serve ? '<div class="good sm">✓ 已設定 HTTPS（tailscale serve）</div>' : !info.remote && info.dns ? '<div class="warn sm">還沒偵測到 tailscale serve：請先做第 2 步，手機才連得到。</div>' : info.remote && ts ? '<div class="dim sm">目前用遠端模式的 http 位址，手機裝好 Tailscale 就能連；想要像 App 一樣全螢幕、之後收推播，再做第 2 步改用 HTTPS 網址。</div>' : ''}
