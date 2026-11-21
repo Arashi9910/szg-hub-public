@@ -911,7 +911,7 @@ function mobileSummary() {
   for (const s of Object.values(db.chars)) {
     const c = s.char; if (!c || !c.id) continue; seen.add(c.id);
     const tab = !!tabOf(s.playerCode, c.id), j = jobsActive.find(x => x.fromCharId === c.id);
-    chars.push({ id: c.id, name: c.name, lv: c.lv, expPct: c.expPct, job: c.jobName || c.job, map: c.map, mapName: c.mapName, auto: !!c.auto, until: c.until || null,
+    chars.push({ id: c.id, name: c.name, lv: c.lv, expPct: c.expPct, xp: c.xp || 0, nextXp: c.nextXp || null, nextXpExact: !!c.nextXpExact, job: c.jobName || c.job, map: c.map, mapName: c.mapName, auto: !!c.auto, until: c.until || null,
       hourly: c.hourlyExp || null, live: (live[c.id] || {}).rate ?? null, hp: c.hp, maxhp: c.maxhp, dead: typeof c.hp === 'number' && c.hp <= 0, money: c.money || 0,
       tab, at: s.receivedAt || 0, offline: !!s.idleOffline, group: charGroupOf(c.id), party: pm.of[c.id] || null, acc: s.accountId || '',
       job2: j ? { kind: j.kind, status: j.status, msg: String(j.lastMsg || '').slice(0, 80) } : null, ava: (db.avatars || {})[c.id] ? db.avatars[c.id].at : 0 });
@@ -922,7 +922,7 @@ function mobileSummary() {
   const pj = j => ({ id: j.id, kind: j.kind, status: j.status, from: j.fromName, to: j.toName, msg: String(j.lastMsg || '').slice(0, 120), at: j.updatedAt || j.createdAt, auto: !!j.auto,
     what: j.kind === 'boss' ? `打 ${j.batches[0].boss.name}` : j.kind === 'party' ? '組隊' : j.kind === 'idle' ? ((j.batches[0].targets || []).map(t => t.action === 'map' ? `換圖 ${t.mapName || ''}` : ({ start: '開始掛機', stop: '暫停', restart: '重新開始', wake: '領取離線', switch: '切換角色' }[t.action] || t.action)).join('、')) : '' });
   const bc = bossCfg();
-  return { now, version: scriptVersion(), chars,
+  return { now, version: scriptVersion(), chars, expTable: db.expTable || {},
     jobs: db.jobs.filter(j => ACTIVE.has(j.status) || j.status === 'failed' || now - (j.updatedAt || j.createdAt || 0) < 3 * 3600e3).slice(-60).map(pj),
     boss: { mode: bc.mode, n: Object.keys(bc.charMobs).length, live: bossLive() },
     parties: (db.settings.parties || []).map(p => ({ ...p, sell: p.map ? boardSellOf(p.map) : undefined })), idleLog: (db.idleLog || []).slice(-15), update: updateInfo };
@@ -1139,6 +1139,13 @@ const server = http.createServer(async (req, res) => {
       db.jobs = db.jobs.filter(j => !st.has(j.status));
       save();
       return send(res, 200, { ok: true, removed: before - db.jobs.length });
+    }
+    // 一鍵重試：所有失敗的工作從失敗的那一批重新開始（手機版「全部重試」）
+    if (req.method === 'POST' && url.pathname === '/api/jobs/retry-all') {
+      let n = 0;
+      for (const j of db.jobs) if (j.status === 'failed') { j.status = 'approved'; j.approvedAt = Date.now(); jobLog(j, `重試全部：從第 ${j.batchIndex + 1} 批重新開始`); n++; }
+      save();
+      return send(res, 200, { ok: true, retried: n });
     }
     if (req.method === 'POST' && url.pathname === '/api/jobs/approve-all') {
       for (const j of db.jobs) if (j.status === 'pending') { j.status = 'approved'; j.approvedAt = Date.now(); jobLog(j, '已確認，排隊等待執行'); }

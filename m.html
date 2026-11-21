@@ -34,11 +34,12 @@
   .alerts .card { border-color: var(--warn); }
   .ch { display: grid; grid-template-columns: 52px 1fr auto; gap: 2px 10px; align-items: center; padding: 8px 10px; }
   .ch.sel { border-color: var(--accent); background: #1d2a44; }
-  .ch .av { grid-row: span 3; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; background: var(--panel2); border-radius: 10px; overflow: hidden; position: relative; }
+  .ch .av { grid-row: span 4; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; background: var(--panel2); border-radius: 10px; overflow: hidden; position: relative; }
   .ch .av img { width: 52px; height: 52px; object-fit: contain; image-rendering: pixelated; }
   .ch .av .ck { position: absolute; top: 2px; right: 2px; background: var(--accent); color: #fff; border-radius: 50%; width: 18px; height: 18px; font-size: 12px; display: flex; align-items: center; justify-content: center; }
   .ch .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ch .nm small { font-weight: 400; color: var(--dim); }
   .ch .rt { text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; } .ch .rt b { color: var(--good); }
+  .ch .lt b { color: var(--text); font-weight: 500; }
   .ch .ln { font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; grid-column: 2 / 4; }
   .tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 8px; background: var(--panel2); color: var(--dim); margin-right: 3px; }
   .tag.bad { background: #4a1d1d; color: #fca5a5; } .tag.warn { background: #4a3510; color: #fcd34d; } .tag.good { background: #14391f; color: #86efac; } .tag.acc { background: #1e3a6b; color: #93c5fd; }
@@ -76,11 +77,12 @@
     <div class="alerts" id="alerts"></div>
     <div class="bar"><div class="seg" id="grpSeg"><button data-grp="all">全部</button><button data-grp="A">A 組</button><button data-grp="B">B 組</button><button data-grp="issue">有狀況</button></div>
       <button class="btn sm" id="selMode">多選</button></div>
-    <div class="bar"><input type="search" id="q" placeholder="搜尋角色或地圖" style="flex:1"></div>
+    <div class="bar"><input type="search" id="q" placeholder="搜尋角色或地圖" style="flex:1"><label class="sm dim" style="display:flex;align-items:center;gap:4px">目標 Lv<input type="number" id="tgt" inputmode="numeric" min="2" max="250" placeholder="例 120" style="width:68px;background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:6px"></label>
+      <select id="sortBy" style="background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:6px"><option value="tab">排序：分頁</option><option value="lv">等級</option><option value="next">升級最快</option><option value="tgt">到目標最快</option><option value="rate">經驗最多</option></select></div>
     <div id="chars"></div>
   </section>
   <section id="v-jobs">
-    <div class="bar"><button class="btn sm primary" id="approveAll">全部確認</button><button class="btn sm" id="clearDone">清除已完成</button><button class="btn sm" id="clearFailed">清除失敗</button></div>
+    <div class="bar"><button class="btn sm primary" id="approveAll">全部確認</button><button class="btn sm" id="retryAll">全部重試</button><button class="btn sm" id="clearDone">清除已完成</button><button class="btn sm" id="clearFailed">清除失敗</button></div>
     <div id="jobs"></div>
   </section>
   <section id="v-boss">
@@ -128,6 +130,27 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const short = n => { n = Number(n) || 0; const a = Math.abs(n); return a >= 1e8 ? (n / 1e8).toFixed(a >= 1e9 ? 0 : 2) + '億' : a >= 1e4 ? (n / 1e4).toFixed(a >= 1e5 ? 0 : 1) + '萬' : String(Math.round(n)); };
 const hm = ms => { ms = Math.max(0, ms); const h = Math.floor(ms / 3600e3), m = Math.floor(ms % 3600e3 / 60e3); return h ? `${h}時${m}分` : `${m}分`; };
+// 升級時間（和電腦面板同一套）：精確的經驗表（中控收集到的）＋原版經驗 × 最接近等級的倍率估計
+const ORIG_EXP = (() => { const t = [0]; for (let lv = 1; lv <= 250; lv++) { let v; if (lv <= 5) v = (Math.floor(lv * lv / 2) + 15) * lv; else if (lv <= 50) { const q = Math.floor(lv * lv / 3); v = (q + 19) * q; } else v = Math.trunc(t[lv - 1] * 1.0548); t.push(v); } return t; })();
+const EXP_MULT_HINT = [[50, 1.25], [65, 1.5], [83, 3], [100, 4], [250, 6]];
+function expTableNow() { const t = { ...((D && D.expTable) || {}) }; for (const c of (D && D.chars) || []) if (c.nextXpExact && c.lv && c.nextXp && !t[c.lv]) t[c.lv] = c.nextXp; return t; }
+function expNeed(lv, tbl) {
+  if (tbl[lv]) return { v: tbl[lv], exact: true };
+  const ks = Object.keys(tbl).map(Number).filter(k => ORIG_EXP[k]);
+  const mult = ks.length ? (k => tbl[k] / ORIG_EXP[k])(ks.reduce((a, b) => Math.abs(b - lv) < Math.abs(a - lv) ? b : a)) : (EXP_MULT_HINT.find(([l]) => lv <= l) || [0, 6])[1];
+  return { v: Math.round((ORIG_EXP[lv] || ORIG_EXP[250]) * mult), exact: false };
+}
+// 速度：遊戲的整輪平均（和電腦面板一致）；沒有的話用中控量的近 3 分鐘
+const expRateOf = c => c.hourly || c.live || 0;
+function lvTime(c, target, tbl) {
+  if (!c || !c.lv || c.unsynced || !target || target <= c.lv) return null;
+  let exact = true, total = 0;
+  for (let l = c.lv; l < target; l++) { const need = l === c.lv && c.nextXp ? { v: c.nextXp, exact: true } : expNeed(l, tbl); if (!need.exact) exact = false; total += l === c.lv ? Math.max(0, need.v - (c.xp || 0)) : need.v; }
+  const r = expRateOf(c);
+  return { exp: total, exact, h: r ? total / r : null };
+}
+const dur = h => { if (h == null || !isFinite(h)) return '—'; const m = Math.round(h * 60); if (m < 60) return `${m}分`; if (m < 48 * 60) return `${Math.floor(m / 60)}時${m % 60}分`; const d = Math.floor(m / 1440); return `${d}天${Math.round((m % 1440) / 60)}時`; };
+const eta = h => { const d = new Date(Date.now() + h * 3600e3); return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const ago = ms => ms < 60e3 ? `${Math.max(0, Math.round(ms / 1000))}秒前` : ms < 3600e3 ? `${Math.round(ms / 60e3)}分前` : `${Math.round(ms / 3600e3)}時前`;
 const clock = t => { const d = new Date(t); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', 2600); }
@@ -144,7 +167,8 @@ const avatar = (c, cls = '') => c.ava ? `<img class="${cls}" src="/api/avatar/${
 // ---------- 狀態 ----------
 let D = null, MAPS = null, BOSSES = null, BOSS = null, view = 'chars';
 async function loadMaps() { if (MAPS) return; const r = await api('/api/m/maps'); MAPS = r.maps; BOSSES = r.bosses || []; }
-const ui = { grp: localStorage.getItem('szgM_grp') || 'all', q: '', sel: null, bq: '', bOnly: false };
+const ui = { grp: localStorage.getItem('szgM_grp') || 'all', q: '', sel: null, bq: '', bOnly: false,
+  tgt: (v => v >= 2 && v <= 250 ? v : 0)(Number(localStorage.getItem('szgM_tgt'))), sort: localStorage.getItem('szgM_sort') || 'tab' };
 const byId = id => (D && D.chars.find(c => c.id === id)) || null;
 const issues = c => { const out = []; if (c.dead) out.push(['bad', '倒下']); if (c.offline) out.push(['warn', '離線掛機']); if (!c.unsynced && c.tab && !c.auto && !c.job2) out.push(['warn', '沒在掛機']); return out; };
 async function load(quiet) {
@@ -192,7 +216,15 @@ function renderChars() {
   $('#selMode').textContent = ui.sel ? `完成（已選 ${ui.sel.size}）` : '多選';
   const q = ui.q.trim();
   let list = cs.filter(c => (ui.grp === 'all' || (ui.grp === 'issue' ? issues(c).length : c.group === ui.grp)) && (!q || c.name.includes(q) || String(c.mapName || '').includes(q)));
-  list.sort((a, b) => (b.tab - a.tab) || (!!a.unsynced - !!b.unsynced) || (b.lv || 0) - (a.lv || 0));
+  const tbl = expTableNow(), T = {};
+  for (const c of list) T[c.id] = { n: lvTime(c, (c.lv || 0) + 1, tbl), t: ui.tgt ? lvTime(c, ui.tgt, tbl) : null };
+  const hOf = x => x && x.h != null ? x.h : Infinity;
+  const base = (a, b) => (b.tab - a.tab) || (!!a.unsynced - !!b.unsynced) || (b.lv || 0) - (a.lv || 0);
+  const cmpBy = { tab: base, lv: (a, b) => (b.lv || 0) - (a.lv || 0) || base(a, b), next: (a, b) => hOf(T[a.id].n) - hOf(T[b.id].n) || base(a, b),
+    tgt: (a, b) => (ui.tgt && (a.lv >= ui.tgt) - (b.lv >= ui.tgt)) || hOf(T[a.id].t) - hOf(T[b.id].t) || base(a, b), rate: (a, b) => expRateOf(b) - expRateOf(a) || base(a, b) }[ui.sort] || base;
+  list.sort(cmpBy);
+  if (document.activeElement !== $('#tgt')) $('#tgt').value = ui.tgt || '';
+  $('#sortBy').value = ui.sort;
   $('#chars').innerHTML = list.map(c => {
     const rate = c.live != null ? `<b>${short(c.live)}</b><span class="dim sm">/時</span>` : c.hourly ? `${short(c.hourly)}<span class="dim sm">/時</span>` : '<span class="dim">—</span>';
     const tags = [...issues(c).map(([k, t]) => `<span class="tag ${k}">${t}</span>`)];
@@ -200,11 +232,12 @@ function renderChars() {
     if (c.job2) tags.push(`<span class="tag acc">${c.job2.kind === 'boss' ? '打王中' : c.job2.kind === 'party' ? '組隊中' : '工作中'}</span>`);
     if (c.party) tags.push('<span class="tag">隊伍</span>');
     const remain = c.auto && c.until ? `剩 ${hm(c.until - D.now)}` : c.auto ? '掛機中' : c.unsynced ? '' : '未掛機';
-    const sel = ui.sel && ui.sel.has(c.id);
+    const sel = ui.sel && ui.sel.has(c.id), tn = T[c.id].n, tt = T[c.id].t;
+    const lvLine = c.unsynced ? '' : `<div class="ln lt">⏱ 升級 ${tn && tn.h != null ? `<b>${dur(tn.h)}</b>${tn.exact ? '' : '<span class="dim">（估）</span>'}` : '—'}${ui.tgt ? `・到 Lv${ui.tgt} ${c.lv >= ui.tgt ? '<span class="good">已達成</span>' : tt && tt.h != null ? `<b>${dur(tt.h)}</b>${tt.exact ? '' : '<span class="dim">（估）</span>'}` : '—'}` : ''}</div>`;
     return `<div class="card ch ${sel ? 'sel' : ''}" data-ch="${c.id}"><div class="av">${avatar(c)}${sel ? '<span class="ck">✓</span>' : ''}</div>
       <div class="nm">${esc(c.name)} <small>Lv${c.lv || '?'}${c.expPct != null ? ` ${c.expPct.toFixed(1)}%` : ''}</small></div><div class="rt">${rate}</div>
       ${c.expPct != null ? `<div class="expbar"><i style="width:${Math.min(100, c.expPct)}%"></i></div>` : ''}
-      <div class="ln">${tags.join('')}${esc(c.mapName || '')}${remain ? '・' + remain : ''}</div></div>`;
+      <div class="ln">${tags.join('')}${esc(c.mapName || '')}${remain ? '・' + remain : ''}</div>${lvLine}</div>`;
   }).join('') || '<div class="empty">沒有符合的角色</div>';
   renderActbar();
 }
@@ -231,6 +264,9 @@ function openChar(id) {
   openSheet(`<div style="display:flex;gap:12px;align-items:center"><div class="mem" style="width:auto">${avatar(c)}</div><div><h3>${esc(c.name)}</h3><div class="dim sm">Lv${c.lv}・${esc(c.job || '')}</div></div></div>
     <div class="kv"><b>地圖</b><span>${esc(c.mapName || '—')}</span><b>狀態</b><span>${c.unsynced ? '背景掛機（還沒同步）' : c.auto ? '掛機中' + (c.until ? `，剩 ${hm(c.until - D.now)}` : '') : '<span class="warn">沒在掛機</span>'}${c.dead ? '・<span class="bad">倒下</span>' : ''}</span>
       <b>經驗</b><span>${c.live != null ? `近 3 分 ${short(c.live)}/時` : '—'}${c.hourly ? `・整輪 ${short(c.hourly)}/時` : ''}</span>
+      ${(() => { const tbl = expTableNow(), n = lvTime(c, (c.lv || 0) + 1, tbl), t = ui.tgt ? lvTime(c, ui.tgt, tbl) : null;
+        const row = (k, x, done) => `<b>${k}</b><span>${done ? '<span class="good">已達成</span>' : !x ? '—' : x.h == null ? `還要 ${short(x.exp)} 經驗（沒有速度資料）` : `${dur(x.h)}・約 ${eta(x.h)}${x.exact ? '' : '（部分等級估計）'}<br><span class="dim">還要 ${short(x.exp)} 經驗</span>`}</span>`;
+        return c.unsynced ? '' : row(`升到 Lv${(c.lv || 0) + 1}`, n) + (ui.tgt ? row(`到 Lv${ui.tgt}`, t, c.lv >= ui.tgt) : ''); })()}
       ${c.hp != null ? `<b>HP</b><span>${short(c.hp)} / ${short(c.maxhp)}</span>` : ''}<b>楓幣</b><span>${short(c.money)}</span>
       <b>分頁</b><span>${c.tab ? '有' : '沒有自己的遊戲分頁'}${c.at ? `・${ago(D.now - c.at)}更新` : ''}</span>
       ${c.job2 ? `<b>工作</b><span>${esc(c.job2.msg || c.job2.status)}</span>` : ''}</div>
@@ -257,7 +293,8 @@ function renderJobs() {
   const js = D.jobs.slice().reverse();
   const grp = [['pending', '待確認'], ['active', '進行中'], ['failed', '失敗'], ['done', '最近完成']];
   const of = k => k === 'active' ? js.filter(j => ['approved', 'running'].includes(j.status)) : k === 'done' ? js.filter(j => ['done', 'cancelled'].includes(j.status)).slice(0, 25) : js.filter(j => j.status === k);
-  $('#approveAll').disabled = !of('pending').length;
+  $('#approveAll').disabled = !of('pending').length; $('#retryAll').disabled = !of('failed').length;
+  $('#retryAll').textContent = of('failed').length ? `全部重試（${of('failed').length}）` : '全部重試';
   $('#jobs').innerHTML = grp.map(([k, t]) => { const l = of(k); return l.length ? `<h4>${t}（${l.length}）</h4><div class="card">${l.map(j => {
     const st = ST[j.status] || [j.status, ''];
     return `<div class="row"><div class="t"><span class="tag ${st[1]}">${st[0]}</span><b>${esc(KIND[j.kind] || j.kind)}・${esc(j.from || '')}${j.to && j.to !== j.from ? ' → ' + esc(j.to) : ''}</b><span class="dim sm">${clock(j.at)}</span></div>
@@ -374,6 +411,7 @@ document.addEventListener('click', async e => {
       await api(`/api/jobs/${id}/${a}`, {}); toast('已送出'); return load(true);
     }
     if (t.id === 'approveAll') { const n = D.jobs.filter(j => j.status === 'pending').length; if (!n || !confirm(`確認執行全部 ${n} 個待確認的工作？`)) return; await api('/api/jobs/approve-all', {}); return load(true); }
+    if (t.id === 'retryAll') { const n = D.jobs.filter(j => j.status === 'failed').length; if (!n || !confirm(`重試全部 ${n} 個失敗的工作？（從各自失敗的那一批重新開始）`)) return; const r = await api('/api/jobs/retry-all', {}); toast(`已重試 ${r.retried} 個`); return load(true); }
     if (t.id === 'clearDone') { await api('/api/jobs/clear', {}); return load(true); }
     if (t.id === 'clearFailed') { if (!confirm('清除所有失敗的工作？')) return; await api('/api/jobs/clear', { failed: true }); return load(true); }
     if (d.bm) {
@@ -390,6 +428,8 @@ document.addEventListener('click', async e => {
   } catch (err) { if (err instanceof AuthErr) return showPair(); toast('失敗：' + err.message); }
 });
 $('#q').oninput = e => { ui.q = e.target.value; renderChars(); };
+$('#tgt').oninput = e => { const v = Math.floor(Number(e.target.value)); ui.tgt = v >= 2 && v <= 250 ? v : 0; try { localStorage.setItem('szgM_tgt', String(ui.tgt || '')); } catch (_) {} renderChars(); };
+$('#sortBy').onchange = e => { ui.sort = e.target.value; try { localStorage.setItem('szgM_sort', ui.sort); } catch (_) {} renderChars(); };
 $('#bq').oninput = e => { ui.bq = e.target.value; renderBoss(); };
 $('#bOnly').onchange = e => { ui.bOnly = e.target.checked; renderBoss(); };
 document.addEventListener('visibilitychange', () => { if (!document.hidden) load(true); });
