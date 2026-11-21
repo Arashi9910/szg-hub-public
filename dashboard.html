@@ -286,6 +286,10 @@
   .sysbox > summary.warn { color: var(--warn); border-color: var(--warn); }
   .sysbox > summary.bad { color: var(--bad); border-color: var(--bad); }
   .sysbox > summary.upd { color: var(--text); border-color: var(--accent); background: #1f3346; }
+  .mbox { position: relative; } .mbox > summary { list-style: none; cursor: pointer; padding: 4px 10px; border: 1px solid var(--line); border-radius: 14px; color: var(--dim); font-size: 12px; white-space: nowrap; } .mbox > summary::-webkit-details-marker { display: none; }
+  .m-pop { width: 420px !important; max-width: 92vw; font-size: 13px; } .m-pop ol { margin: 0; padding-left: 18px; } .m-pop code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; user-select: all; }
+  .m-pop .qr { background: #fff; padding: 8px; border-radius: 8px; align-self: center; line-height: 0; } .m-pop .qr svg { width: 220px; height: 220px; }
+  .m-pop .dev { display: flex; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--line); }
   .sys-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 50; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; width: max-content; max-width: 70vw; box-shadow: 0 10px 30px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 8px; }
   .sys-pop #updBox { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   /* 沒選東西時，浮動操作列縮成右下角的小列，不擋內容 */
