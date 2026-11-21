@@ -451,6 +451,16 @@
   .boss-live .bl-name { min-width: 180px; } .boss-live .bl-pct { font-variant-numeric: tabular-nums; min-width: 52px; }
   .hpbar.big { width: 240px; height: 10px; } .hpbar i { transition: width .6s; }
   .boss-grid-wrap { overflow-x: auto; }
+  .boss-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; margin-top: 6px; }
+  .bk { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--panel2); }
+  .bk.off { opacity: .72; } .bk.on { border-color: var(--accent); }
+  .bk-hd { display: flex; align-items: center; gap: 6px; } .bk-hd .nm { font-weight: 600; } .bk-hd .acts { margin-left: auto; display: flex; gap: 4px; }
+  .bk-hd .acts a { cursor: pointer; font-size: 11px; color: var(--accent); }
+  .bk-pt { font-size: 11px; color: var(--dim); margin: 2px 0; }
+  .bk-mobs { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+  .bk-mob { font-size: 11px; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--line); cursor: pointer; color: var(--dim); background: var(--bg); user-select: none; }
+  .bk-mob.on { background: var(--accent); border-color: var(--accent); color: #fff; } .bk-mob.mate { border-style: dashed; color: var(--text); }
+  .bk-mob.low { opacity: .55; }
   table.boss-grid { width: auto; } table.boss-grid td, table.boss-grid th { padding: 3px 10px; white-space: nowrap; }
   table.boss-grid th.bhd { text-align: center; } table.boss-grid td.bcell { text-align: center; }
   .bc { display: inline-block; min-width: 44px; padding: 0 6px; border-radius: 9px; font-size: 12px; }
@@ -712,16 +722,19 @@
       </div>
       <div id="bossLive"></div>
       <div id="bossGrid"></div>
+      <details id="bossWhoBox" open><summary id="bossWhoSum">誰打哪些王</summary>
+        <div class="bar" style="margin-top:6px"><input id="bossCardQ" placeholder="搜尋角色" style="width:120px" autocomplete="off"><label class="sm"><input type="checkbox" id="bossCardOnly"> 只看有勾的</label>
+          <span class="dim sm">每隻角色各自點選要打的王（亮的＝會打）。同隊伍的會一起出發，打的王＝隊友勾的合起來。</span></div>
+        <div id="bossCards" class="boss-cards"></div>
+      </details>
       <details id="bossSetBox"><summary id="bossSetSum">設定</summary>
         <div class="bar" style="margin-top:8px"><span>預估超過</span><input type="number" id="bossEst" min="1" max="240" style="width:60px"><span>分鐘打不死的不去</span>
           <span style="margin-left:12px">每次最多打</span><input type="number" id="bossVisit" min="1" max="240" style="width:60px"><span>分鐘</span></div>
         <div class="bar"><span>掛機設定</span><span>打王用</span><select id="bossPresetBoss"><option value="0">不切換</option><option value="1">設定 1</option><option value="2">設定 2</option><option value="3">設定 3</option></select>
           <span style="margin-left:8px">回練功圖用</span><select id="bossPresetTrain"><option value="0">出發前用的那套</option><option value="1">設定 1</option><option value="2">設定 2</option><option value="3">設定 3</option></select>
           <span class="dim sm">遊戲的掛機設定 1／2／3 各自獨立，第一次切到沒用過的那套是空白的，請先在遊戲裡設好</span></div>
-        <div class="bar"><span>角色</span><span id="bossChars"></span></div>
-        <div class="bar"><span>王</span><label><input type="checkbox" class="sw" id="bossAllMobs"> 全部</label><span class="chips" id="bossMobs"></span></div>
-        <div class="dim sm">每分鐘檢查一次：勾選的角色<b>在掛機、有自己的遊戲分頁</b>時，挑一隻已經重生的王（預估最快打死的先去），換過去開始掛機打王，看血條打死後換回原本的地圖並重新開始掛機。
-          時間到、倒下、或 3 分鐘血量都沒降也會先回去；王的血量遊戲會保留，30 分鐘後再去。同隊伍的角色共用一份王，<b>勾一隻同隊的就會一起去</b>（預估用隊員 DPS 加總）。不會使用付費重生。</div>
+        <div class="dim sm">每分鐘檢查一次：有勾王的角色<b>在掛機、有自己的遊戲分頁</b>時，從它勾的王裡挑一隻已經重生的（預估最快打死的先去），換過去開始掛機打王，看血條打死後換回原本的地圖並重新開始掛機。
+          時間到、倒下、或 3 分鐘血量都沒降也會先回去；王的血量遊戲會保留，30 分鐘後再去。同隊伍的角色共用一份王，<b>隊伍裡有人勾就整隊一起去</b>，可以打的王是隊員勾的合起來（預估用隊員 DPS 加總）。不會使用付費重生。</div>
       </details>
       <details><summary>紀錄</summary><div id="bossLog"></div></details>
     </div>
@@ -1243,7 +1256,7 @@ function autoItems() {
     { k: 'mkscan', name: '市場行情掃描', st: 'on', desc: `每 ${mk.scanHours} 小時`, last: A.market && A.market.lastScan ? { at: A.market.lastScan, msg: '完整掃描' } : null, go: 'market' },
     { k: 'mklist', name: '自動上架', st: mk.mode === 'auto' ? 'on' : mk.mode === 'preview' ? 'pre' : 'off', desc: mk.mode !== 'off' ? `${nChars(mk.chars)} 隻角色・${(mk.rules || []).length} 條規則` : '關閉', last: A.market && A.market.list, go: 'market' },
     { k: 'delist', name: '攤位逾時下架', st: mk.delistMode === 'auto' ? 'on' : mk.delistMode === 'preview' ? 'pre' : 'off', desc: mk.delistMode && mk.delistMode !== 'off' ? `超過 ${mk.delistHours || 24} 小時沒賣出` : '關閉', go: 'market' },
-    { k: 'boss', name: '輪流打野王', st: (S.boss || {}).mode === 'auto' ? 'on' : (S.boss || {}).mode === 'preview' ? 'pre' : 'off', desc: (S.boss || {}).mode && S.boss.mode !== 'off' ? `${nChars((S.boss || {}).chars)} 隻角色・${Array.isArray((S.boss || {}).mobs) ? S.boss.mobs.length + ' 隻王' : '全部的王'}` : '關閉', last: A.boss, go: 'maps' },
+    { k: 'boss', name: '輪流打野王', st: (S.boss || {}).mode === 'auto' ? 'on' : (S.boss || {}).mode === 'preview' ? 'pre' : 'off', desc: (S.boss || {}).mode && S.boss.mode !== 'off' ? `${Object.keys(bossCfg().charMobs).length} 隻角色` : '關閉', last: A.boss, go: 'maps' },
     { k: 'claim', name: '自動領攤位收益', st: mk.autoClaim ? 'on' : 'off', desc: mk.autoClaim ? '開' : '關閉', go: 'market' },
     { k: 'quiz', name: '知識王自動作答', st: S.quizAuto ? 'on' : 'off', desc: S.quizAuto ? '每 45 秒檢查' : '關閉', last: A.quiz, go: 'quiz' },
     { k: 'board', name: '遊戲自動販售', st: boardSell ? 'on' : 'off', desc: boardSell ? `${boardSell} 隻角色在目前地圖開著` : '沒有角色開著', go: 'board' },
@@ -3135,8 +3148,16 @@ document.addEventListener('change', e => {
 
 // ================= 輪流打野王 =================
 let BOSS = null, bossLoadAt = 0;
-const bossCfg = () => ({ mode: 'off', chars: {}, mobs: null, estMax: 15, visitMax: 20, presetBoss: 0, presetTrain: 0, ...(S.boss || {}) });
-function saveBoss(patch) { return saveSettings({ boss: { ...bossCfg(), ...patch } }); }
+const bossCfg = () => { const c = { mode: 'off', chars: {}, mobs: null, estMax: 15, visitMax: 20, presetBoss: 0, presetTrain: 0, ...(S.boss || {}) }; c.charMobs = bossCharMobs(c); return c; };
+// 每隻角色各自要打的王（{角色: ['*'] 或 [王…]}）；舊設定（chars＋共用 mobs）自動換算，和伺服器同一套規則
+function bossCharMobs(b) {
+  const cm = {};
+  if (b.charMobs && typeof b.charMobs === 'object') { for (const [k, v] of Object.entries(b.charMobs)) if (Array.isArray(v) && v.length) cm[k] = v.map(String); }
+  else for (const [k, on] of Object.entries(b.chars || {})) if (on) cm[k] = Array.isArray(b.mobs) ? b.mobs.map(String) : ['*'];
+  return cm;
+}
+function saveBoss(patch) { const { charMobs: _cm, ...cur } = bossCfg(); const next = { ...cur, charMobs: bossCfg().charMobs, ...patch }; next.chars = Object.fromEntries(Object.keys(next.charMobs).filter(k => (next.charMobs[k] || []).length).map(k => [k, true])); next.mobs = null; delete next.charSpec; return saveSettings({ boss: next }); }
+function saveCharMobs(id, list) { const cm = { ...bossCfg().charMobs }; if (list && list.length) cm[id] = list; else delete cm[id]; return saveBoss({ charMobs: cm }); }
 async function loadBoss(force) {
   if (!force && BOSS && Date.now() - bossLoadAt < 8000) return;
   bossLoadAt = Date.now();
@@ -3161,12 +3182,8 @@ function renderBoss(force) {
     $('#bossMode').value = c.mode; $('#bossEst').value = c.estMax; $('#bossVisit').value = c.visitMax;
     if (!$('#bossSetBox').contains(document.activeElement) || document.activeElement.tagName !== 'SELECT') { $('#bossPresetBoss').value = String(c.presetBoss || 0); $('#bossPresetTrain').value = String(c.presetTrain || 0); }
     if (force || !$('#bossSetBox').contains(document.activeElement)) {
-      $('#bossChars').innerHTML = charPickHTML('boss', { noFuture: true });
-      cpMapSync(c.charSpec, c.chars, chars => saveBoss({ chars }));
-      const all = !Array.isArray(c.mobs), sel = new Set(c.mobs || []);
-      $('#bossAllMobs').checked = all;
-      $('#bossMobs').innerHTML = all ? '<span class="dim sm">所有野王都會輪流打；關掉「全部」可以只勾幾隻</span>' : bossList().map(b => `<label title="${esc(b.mapName)}"><input type="checkbox" data-bossmob="${esc(b.mob)}" ${sel.has(b.mob) ? 'checked' : ''}>${esc(b.name)} <span class="dim sm">Lv${b.lv || '?'}</span></label>`).join('') || '<span class="dim">還沒有野王資料</span>';
     }
+    if (force || !$('#bossWhoBox').contains(document.activeElement) || document.activeElement.id !== 'bossCardQ') renderBossCards();
     enhanceSegs(card);
   }
   const chars = ((BOSS && BOSS.chars) || []).filter(x => x.on);
@@ -3175,7 +3192,7 @@ function renderBoss(force) {
   for (const x of chars) { if (x.party) { if (!byCode[x.party.code]) units.push(byCode[x.party.code] = []); byCode[x.party.code].push(x); } else units.push([x]); }
   const live = (BOSS && BOSS.live) || [];
   const nChars = Object.values(c.chars).filter(Boolean).length;
-  $('#bossSetSum').textContent = `設定：${nChars} 隻角色${units.length ? `（${units.length} 組出發）` : ''}・${Array.isArray(c.mobs) ? c.mobs.length + ' 隻王' : '全部的王'}・預估超過 ${c.estMax} 分不去・每次最多 ${c.visitMax} 分${Number(c.presetBoss) ? `・打王用掛機設定 ${c.presetBoss}、練功用${Number(c.presetTrain) ? '設定 ' + c.presetTrain : '出發前那套'}` : ''}`;
+  $('#bossSetSum').textContent = `設定：預估超過 ${c.estMax} 分不去・每次最多 ${c.visitMax} 分${Number(c.presetBoss) ? `・打王用掛機設定 ${c.presetBoss}、練功用${Number(c.presetTrain) ? '設定 ' + c.presetTrain : '出發前那套'}` : ''}`;
   // ── 正在打 ──
   $('#bossLive').innerHTML = live.map(g => {
     const p = g.hp != null && g.maxHp ? Math.max(0, Math.min(100, g.hp / g.maxHp * 100)) : null;
@@ -3219,6 +3236,58 @@ function renderBoss(force) {
   const logs = ((BOSS && BOSS.log) || []).slice().reverse().slice(0, 80);
   $('#bossLog').innerHTML = logs.length ? logs.map(l => `<div><span class="dim">${clock(l.at)}</span> ${esc(l.name)}：${esc(l.msg)}</div>`).join('') : '<span class="dim">還沒有紀錄</span>';
 }
+// ── 角色卡片：每隻角色各自點選要打的王 ──
+ui.bossCard = { q: '', only: false };
+function renderBossCards() {
+  const box = $('#bossCards'); if (!box) return;
+  const c = bossCfg(), cm = c.charMobs, mobs = bossList();
+  const info = Object.fromEntries(((BOSS && BOSS.chars) || []).map(x => [x.charId, x]));
+  const q = ui.bossCard.q.trim();
+  let cs = mapCandidates().filter(x => (!q || x.name.includes(q)) && (!ui.bossCard.only || (cm[x.id] || []).length));
+  cs.sort((a, b) => ((cm[b.id] || []).length > 0) - ((cm[a.id] || []).length > 0) || hasTab(b.id) - hasTab(a.id) || (b.lv || 0) - (a.lv || 0));
+  const nOn = Object.keys(cm).length;
+  $('#bossWhoSum').innerHTML = `誰打哪些王 <span class="dim sm">${nOn ? `${nOn} 隻角色有勾` : '還沒有角色勾王'}</span>`;
+  if (!mobs.length) { box.innerHTML = '<div class="dim">還沒有野王資料：打開遊戲分頁約 1 分鐘後會有。</div>'; return; }
+  box.innerHTML = cs.map(x => {
+    const mine = cm[x.id] || [], all = mine.includes('*'), set = new Set(mine), i = info[x.id], party = i && i.party;
+    const mates = party ? party.ids.filter(id => id !== x.id) : [];
+    const mateSet = new Set(mates.flatMap(id => cm[id] || []));
+    const on = mine.length > 0;
+    const warn = !hasTab(x.id) ? '沒有自己的遊戲分頁，不會出發' : i && !i.auto ? '沒在掛機，不會出發' : '';
+    return `<div class="bk ${on ? 'on' : 'off'}" data-bkchar="${x.id}">
+      <div class="bk-hd">${avatarImg(x.id, 'sm')}<span class="nm">${esc(x.name)}</span><span class="dim sm">Lv${x.lv}</span>${warn ? `<span class="warn sm" title="${esc(warn)}">!</span>` : ''}
+        <span class="acts"><a data-bkall="${x.id}" title="所有的王都打（之後新出現的王也會打）">全部</a><a data-bkfit="${x.id}" title="只勾等級不高於這隻角色的王">等級內</a><a data-bkcopy="${x.id}" title="把這隻的勾選套用到其他有勾的角色">複製給…</a><a data-bknone="${x.id}" title="這隻不打王">清除</a></span></div>
+      ${party ? `<div class="bk-pt">隊伍：${esc(party.names.join('、'))}${mateSet.size ? '（虛線＝隊友勾的，會一起去打）' : ''}</div>` : ''}
+      <div class="bk-mobs">${all ? `<span class="bk-mob on" data-bkmob="${x.id}|*" title="點一下改成逐一挑選">全部的王</span>` : mobs.map(b => `<span class="bk-mob ${set.has(b.mob) ? 'on' : ''} ${!set.has(b.mob) && (mateSet.has(b.mob) || mateSet.has('*')) ? 'mate' : ''} ${(b.lv || 0) > (x.lv || 0) + 10 ? 'low' : ''}" data-bkmob="${x.id}|${esc(b.mob)}" title="${esc(`${b.name} Lv${b.lv || '?'}・${b.mapName}`)}">${esc(b.name)}</span>`).join('')}</div></div>`;
+  }).join('') || '<div class="dim">沒有符合的角色</div>';
+}
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('[data-bkmob],[data-bkall],[data-bknone],[data-bkfit],[data-bkcopy]'); if (!t) return;
+  const d = t.dataset, cm = bossCfg().charMobs, mobs = bossList().map(b => b.mob);
+  if (d.bkmob) {
+    const [id, mob] = d.bkmob.split('|');
+    let list = [...(cm[id] || [])];
+    if (mob === '*') list = mobs.slice();                       // 從「全部」改成逐一挑選：先全勾，再點掉不要的
+    else if (list.includes(mob)) list = list.filter(x => x !== mob); else list.push(mob);
+    await saveCharMobs(id, list);
+  }
+  if (d.bkall) await saveCharMobs(d.bkall, ['*']);
+  if (d.bknone) await saveCharMobs(d.bknone, []);
+  if (d.bkfit) { const x = mapCandidates().find(o => o.id === d.bkfit); await saveCharMobs(d.bkfit, bossList().filter(b => (b.lv || 0) <= ((x && x.lv) || 0)).map(b => b.mob)); }
+  if (d.bkcopy) {
+    const src = cm[d.bkcopy] || [], others = Object.keys(cm).filter(k => k !== d.bkcopy);
+    if (!src.length) { alert('這隻還沒有勾王'); return; }
+    if (!others.length) { alert('沒有其他有勾王的角色。先在別的角色點一隻王，再用「複製給…」'); return; }
+    if (!confirm(`把「${charNameOf(d.bkcopy)}」的勾選（${src.includes('*') ? '全部的王' : src.length + ' 隻王'}）套用到其他 ${others.length} 隻有勾的角色？`)) return;
+    const next = { ...cm }; for (const k of others) next[k] = src.slice(); await saveBoss({ charMobs: next });
+  }
+  await loadBoss(true); renderBoss(true);
+});
+document.addEventListener('input', e => {
+  if (e.target.id === 'bossCardQ') { ui.bossCard.q = e.target.value; renderBossCards(); }
+  if (e.target.id === 'bossCardOnly') { ui.bossCard.only = e.target.checked; renderBossCards(); }
+});
+
 // 打王中：每 3 秒更新血量
 setInterval(async () => {
   const on = document.querySelector('nav button.on'); if (!on || on.dataset.tab !== 'maps' || !BOSS || !(BOSS.live || []).length) return;
@@ -3233,8 +3302,6 @@ document.addEventListener('change', async e => {
   if (t.id === 'bossPresetBoss' || t.id === 'bossPresetTrain') { await saveBoss({ [t.id === 'bossPresetBoss' ? 'presetBoss' : 'presetTrain']: Number(t.value) || 0 }); renderBoss(true); return; }
   if (t.id === 'bossEst') { await saveBoss({ estMax: Math.min(240, Math.max(1, Number(t.value) || 15)) }); return; }
   if (t.id === 'bossVisit') { await saveBoss({ visitMax: Math.min(240, Math.max(1, Number(t.value) || 20)) }); return; }
-  if (t.id === 'bossAllMobs') { await saveBoss({ mobs: t.checked ? null : bossList().map(b => b.mob) }); renderBoss(true); return; }
-  if (t.dataset.bossmob) { const set = new Set(bossCfg().mobs || []); if (t.checked) set.add(t.dataset.bossmob); else set.delete(t.dataset.bossmob); await saveBoss({ mobs: [...set] }); await loadBoss(true); renderBoss(); return; }
 });
 document.addEventListener('click', async e => {
   if (e.target.id !== 'bossRun') return;
@@ -4631,7 +4698,6 @@ function cpMapSync(spec, map, save) {
   if (want.length !== have.length || want.some(id => !map[id])) save(Object.fromEntries(want.map(i => [i, true])));
 }
 CP.as = { get: () => asCfg().charSpec || cpFromMap(asCfg().chars), set: async spec => { await saveAS({ charSpec: spec, chars: Object.fromEntries(cpIds(spec).map(i => [i, true])) }); renderAS(true); } };
-CP.boss = { get: () => bossCfg().charSpec || cpFromMap(bossCfg().chars), set: async spec => { await saveBoss({ charSpec: spec, chars: Object.fromEntries(cpIds(spec).map(i => [i, true])) }); renderBoss(true); } };
 CP.mk = { get: () => mkCfg().charSpec || cpFromMap(mkCfg().chars), set: async spec => { await saveMk({ charSpec: spec, chars: Object.fromEntries(cpIds(spec).map(i => [i, true])) }); renderMkAuto(true); } };
 CP.gd = { get: () => { const d = gdState(); return d.charMode && d.charMode !== 'custom' ? { mode: d.charMode } : d.chars ? { mode: 'custom', ids: [...d.chars] } : { mode: 'all' }; },
   set: spec => { const d = gdState(); d.charMode = spec.mode; d.chars = spec.mode === 'all' ? null : new Set(cpIds(spec)); gdSave(); renderGuildDeposit(); } };

@@ -595,9 +595,17 @@ function automationInfo() {
 BAG_KINDS.add('boss'); KIND_MIN_AGENT.boss = '0.43.0';
 const BOSS_RETRY_MS = 30 * 60 * 1000;   // 沒打成功（逾時、倒下、王不在）的同一隻王，30 分鐘內不再去
 const BOSS_STATE_STALE = 20 * 60 * 1000; // 王的狀態超過這麼久沒更新就先不派
+// 每隻角色各自要打的王：settings.boss.charMobs = {角色: ['*']（全部）| [王 id…]}，空的／沒有＝不打。
+// 舊設定（chars＋共用的 mobs）沒有 charMobs 時自動換算；chars 由 charMobs 推出來（agent 的 /api/boss/need 用）
+function bossCharMobs(b) {
+  const cm = {};
+  if (b.charMobs && typeof b.charMobs === 'object') { for (const [k, v] of Object.entries(b.charMobs)) if (Array.isArray(v) && v.length) cm[k] = v.map(String); }
+  else for (const [k, on] of Object.entries(b.chars || {})) if (on) cm[k] = Array.isArray(b.mobs) ? b.mobs.map(String) : ['*'];
+  return cm;
+}
 function bossCfg() {
-  const b = db.settings.boss || {};
-  return { mode: b.mode || 'off', chars: b.chars || {}, charSpec: b.charSpec || null, mobs: Array.isArray(b.mobs) ? b.mobs : null,
+  const b = db.settings.boss || {}, charMobs = bossCharMobs(b);
+  return { mode: b.mode || 'off', charMobs, chars: Object.fromEntries(Object.keys(charMobs).map(k => [k, true])), mobs: null,
     estMax: Number(b.estMax) > 0 ? Number(b.estMax) : 15, visitMax: Number(b.visitMax) > 0 ? Number(b.visitMax) : 20,
     presetBoss: [1, 2, 3].includes(Number(b.presetBoss)) ? Number(b.presetBoss) : 0,   // 0＝不切換
     presetTrain: [1, 2, 3].includes(Number(b.presetTrain)) ? Number(b.presetTrain) : 0 }; // 0＝換回出發前用的那套
@@ -627,9 +635,11 @@ function loadWorldIndex() {
 const bossMapSet = () => new Set(Object.values(bossDb().state).flatMap(st => (st.list || []).map(r => r.map)));
 const charDps = charId => { const d = (db.dps || {})[charId]; return d && Date.now() - (d.receivedAt || 0) < 6 * 3600e3 ? ((d.w60 && d.w60.dps) || (d.w5 && d.w5.dps) || 0) : 0; };
 // 某隻角色每隻王的狀態（面板顯示與排程共用）
-function bossRows(charId, dpsOverride) {
+// allow：這一組（隊伍）可以打的王（隊員各自勾的合起來，'*'＝全部）；沒給就用這隻自己的
+function bossRows(charId, dpsOverride, allow) {
   loadWorldIndex();
   const c = bossCfg(), b = bossDb(), st = b.state[charId];
+  if (!allow) allow = new Set(c.charMobs[charId] || []);
   if (!st) return [];
   const now = Date.now(), srvNow = now + (st.offset || 0), dps = dpsOverride != null ? dpsOverride : charDps(charId);
   return (st.list || []).map(r => {
@@ -641,7 +651,7 @@ function bossRows(charId, dpsOverride) {
     const hp = h && now - h.at < 7 * 24 * 3600e3 ? h.hp : maxHp;
     const estSec = dps > 0 && hp > 0 ? Math.round(hp / dps) : null;
     const last = b.last[charId + '|' + r.mob] || null;
-    const selected = c.mobs ? c.mobs.includes(r.mob) : true;
+    const selected = allow.has('*') || allow.has(r.mob);
     let skip = '';
     if (!selected) skip = '沒有勾選';
     else if (cooling) skip = '冷卻中';
@@ -673,6 +683,7 @@ function bossUnitOf(charId, pm) {
   const ids = code ? pm.members[code].filter(id => db.chars[id]) : [];
   return ids.length > 1 ? { code, ids } : { code: null, ids: [charId] };
 }
+const bossAllow = (unit, c) => new Set(unit.ids.flatMap(id => c.charMobs[id] || []));
 const bossAvail = id => { const s = db.chars[id]; return !!(s && s.char && s.playerCode && tabOf(s.playerCode, id) && s.char.auto && !bossBusy(id)); };
 function bossTick(force) {
   const c = bossCfg(); if (c.mode === 'off') return;
@@ -691,7 +702,7 @@ function bossTick(force) {
     const stId = unit.ids.filter(id => b.state[id] && now - b.state[id].at < BOSS_STATE_STALE).sort((x, y) => b.state[y].at - b.state[x].at)[0];
     if (!stId) continue;
     const dps = go.reduce((t, id) => t + charDps(id), 0);
-    const cand = bossRows(stId, dps).filter(r => r.ready && !r.skip && !busyInst.has(r.instanceId))
+    const cand = bossRows(stId, dps, bossAllow(unit, c)).filter(r => r.ready && !r.skip && !busyInst.has(r.instanceId))
       .filter(r => !unit.ids.some(id => { const l = b.last[id + '|' + r.mob]; return l && l.result !== 'killed' && l.result !== 'cooling' && now - l.at < BOSS_RETRY_MS; }))
       .sort((x, y) => (x.estSec == null) - (y.estSec == null) || (x.estSec || 0) - (y.estSec || 0));
     const r = cand[0]; if (!r) continue;
@@ -790,8 +801,8 @@ function bossSummary() {
   const chars = [...ids].filter(id => db.chars[id]).map(id => {
     const s = db.chars[id], unit = bossUnitOf(id, pm);
     const pdps = unit.code ? unit.ids.reduce((t, x) => t + charDps(x), 0) : null;
-    return { charId: id, slot: s.char.settingsSlot || 1, party: unit.code ? { code: unit.code, ids: unit.ids, names: unit.ids.map(x => db.chars[x].char.name) } : null, partyDps: pdps, name: s.char.name, lv: s.char.lv, map: s.char.map, mapName: s.char.mapName, auto: !!s.char.auto, tab: !!tabOf(s.playerCode, id), on: unit.ids.some(x => c.chars[x]), picked: !!c.chars[id],
-      at: (b.state[id] || {}).at || 0, dps: charDps(id), rows: bossRows(id, pdps),
+    return { charId: id, slot: s.char.settingsSlot || 1, party: unit.code ? { code: unit.code, ids: unit.ids, names: unit.ids.map(x => db.chars[x].char.name) } : null, partyDps: pdps, name: s.char.name, lv: s.char.lv, map: s.char.map, mapName: s.char.mapName, auto: !!s.char.auto, tab: !!tabOf(s.playerCode, id), on: unit.ids.some(x => c.chars[x]), picked: !!c.chars[id], mobs: c.charMobs[id] || [],
+      at: (b.state[id] || {}).at || 0, dps: charDps(id), rows: bossRows(id, pdps, bossAllow(unit, c)),
       job: (db.jobs.filter(j => j.kind === 'boss' && j.fromCharId === id).slice(-1)[0]) || null };
   });
   return { cfg: c, chars, live: bossLive(), log: b.log.slice(-100) };
