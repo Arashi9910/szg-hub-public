@@ -236,7 +236,7 @@ function agentMain(ctx) {
       // 版本＝目錄內容的雜湊：遊戲更新地圖、怪物、掉落、裝備時（就算數量沒變）都會重新上傳
       const fnv = str => { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h.toString(16); };
       let hash = ''; try { hash = fnv(JSON.stringify([cat.maps, cat.mobs, cat.drops, cat.mapDrops, cat.equipment, cat.items, cat.scrolls, cat.autoSellDrops])); } catch (_) {}
-      const ver = 'w6:' + String(cat.version || '') + ':' + Object.keys(cat.maps || {}).length + ':' + (cat.mobs || []).length + ':' + Object.keys(cat.drops || {}).length + ':' + hash;
+      const ver = 'w7:' + String(cat.version || '') + ':' + Object.keys(cat.maps || {}).length + ':' + (cat.mobs || []).length + ':' + Object.keys(cat.drops || {}).length + ':' + hash;
       const have = await hub('GET', '/api/world/version');
       if (have && have.version === ver) return;
       const names = {};
