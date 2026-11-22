@@ -87,6 +87,8 @@
   </section>
   <section id="v-boss">
     <div class="bar"><div class="seg" id="bossMode"><button data-bm="off">關閉</button><button data-bm="preview">試跑</button><button data-bm="auto">自動出發</button></div><button class="btn sm" id="bossRun">立即檢查</button></div>
+    <div class="bar"><select id="bPartyMode" style="background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:6px;flex:1"><option value="together">隊伍：整隊一起打</option><option value="split">隊伍：各自分開打</option></select>
+      <label class="sm" style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="bChain"> 連續打完才回練功圖</label></div>
     <div id="bossLive"></div>
     <h4>誰打哪些王 <span class="sm">（點王的名字切換，亮的＝會打）</span></h4>
     <div class="bar"><input type="search" id="bq" placeholder="搜尋角色" style="flex:1"><label class="sm"><input type="checkbox" id="bOnly"> 只看有勾的</label></div>
@@ -314,6 +316,7 @@ function bossList() {
 }
 function renderBoss() {
   const mode = (BOSS && BOSS.cfg.mode) || D.boss.mode;
+  if (BOSS) { $('#bPartyMode').value = BOSS.cfg.partyMode === 'split' ? 'split' : 'together'; $('#bChain').checked = BOSS.cfg.chain !== false; }
   document.querySelectorAll('#bossMode button').forEach(b => b.classList.toggle('on', b.dataset.bm === mode));
   const live = D.boss.live || [];
   $('#bossLive').innerHTML = live.length ? `<h4>正在打</h4>` + live.map(g => { const p = g.hp != null && g.maxHp ? g.hp / g.maxHp * 100 : null;
@@ -432,6 +435,8 @@ $('#tgt').oninput = e => { const v = Math.floor(Number(e.target.value)); ui.tgt 
 $('#sortBy').onchange = e => { ui.sort = e.target.value; try { localStorage.setItem('szgM_sort', ui.sort); } catch (_) {} renderChars(); };
 $('#bq').oninput = e => { ui.bq = e.target.value; renderBoss(); };
 $('#bOnly').onchange = e => { ui.bOnly = e.target.checked; renderBoss(); };
+$('#bPartyMode').onchange = async e => { if (!BOSS) await loadBoss(); await saveBoss({ partyMode: e.target.value }).catch(err => toast('失敗：' + err.message)); toast(e.target.value === 'split' ? '隊伍改成各自分開打' : '隊伍改成整隊一起打'); };
+$('#bChain').onchange = async e => { if (!BOSS) await loadBoss(); await saveBoss({ chain: e.target.checked }).catch(err => toast('失敗：' + err.message)); toast(e.target.checked ? '連續打：全部打完才回練功圖' : '每打完一隻先回練功圖'); };
 document.addEventListener('visibilitychange', () => { if (!document.hidden) load(true); });
 setInterval(() => { if (!document.hidden) { load(true); if (view === 'boss' && D && (D.boss.live || []).length) loadBoss().then(render); } }, 10000);
 load();

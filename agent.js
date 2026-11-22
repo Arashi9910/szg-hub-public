@@ -265,6 +265,10 @@ function agentMain(ctx) {
           for (const [k, v] of Object.entries({ ...(e.base || {}), ...m })) if (/^inc[A-Z]/.test(k) && typeof v === 'number' && v) st[k] = v;
           return [e.id || e.itemId, e.name || '', e.equipmentType || '', (e.type && (e.type.subCategory || e.type.category)) || '', m.reqLevel || 0, m.reqJob || 0, st, m.tuc || 0, [m.reqSTR || 0, m.reqDEX || 0, m.reqINT || 0, m.reqLUK || 0]]; }),
         statNames: cat.statNames || {},
+        // 道具圖示：遊戲自己用的圖（技能書、商店道具的圖不在 /game/drops/<id>.png）；只放路徑，不放 data: 圖
+        icons: (() => { const o = {}; for (const it of [...Object.values(cat.items || {}), ...Object.values(cat.scrolls || {}), ...Object.values(cat.equipment || {})]) {
+          const id = it && (it.id || it.itemId); const ic = String((it && it.icon) || '').replace(/^https?:\/\/[^/]+/, '');
+          if (id && ic.startsWith('/') && ic !== `/game/drops/${id}.png` && ic.length < 200 && !o[id]) o[id] = ic; } return o; })(),
         // 卷軸：[名稱, 適用部位（對應裝備的 type）, 成功率, 詛咒（失敗時裝備消失機率 %）, 素質]，給強化工坊用
         scrolls: Object.fromEntries(Object.entries(cat.scrolls || {}).map(([k, sc]) => [k, [sc.name, sc.target, Number(sc.rate) || 0, Number(sc.cursed) || 0, sc.stats || {}]])),
         // 每張地圖可設定自動販售的掉落物：[itemId, 種類, 名稱, 商店價, 可賣, 分類, 掉落的怪物 id]
@@ -1482,91 +1486,118 @@ function agentMain(ctx) {
       catch (e) { console.warn('[szg-hub boss state]', e); }
     }
     // 打王：記住原本的地圖 → 前往首領地圖 → 每 4 秒同步看王的血條 → 打死／時間到／倒下／打不動就回原本的地圖
+    // 打野王：去王的地圖開始掛機打，看血條。設定「連續打」時，打完一隻直接問中控下一隻（/api/boss/next），
+    // 中控回沒有了才回原本的練功圖（使用者要求：全部刷完再回練功圖）。隊伍一起打時，中控讓同隊的人拿到同一個下一隻。
     async function runBossJob(job, c) {
-      const b = (job.batches[0] || {}).boss || {};
-      const id = c.id, t0 = Date.now(), maxMs = Math.max(1, Number(b.visitMax) || 20) * 60000;
+      let b = (job.batches[0] || {}).boss || {};
+      const id = c.id, tAll = Date.now();
       const pct = (h, m) => m > 0 ? Math.max(0, Math.round(h / m * 1000) / 10) : 0;
-      const done = async (result, msg, extra = {}) => {
-        await hub('POST', '/api/boss/result', { charId: id, mob: b.mob, result, msg: `${b.name}：${msg}`, ms: Date.now() - t0, ...extra }).catch(() => {});
-        await report(job, { event: 'log', msg });
-        return report(job, { event: 'batchDone' });
-      };
-      // 1. 先確認王是不是真的在（排程用的狀態可能是幾分鐘前的）
-      const s0 = await gameRetry({ type: 'sync', fullSync: true, includeBossRespawns: true, characterId: id });
-      await postBossState(id, s0);
-      const row = (s0.bossRespawns || []).find(r => r.mob === b.mob);
-      // 原本的地圖：用剛同步到的（頁面自己存的狀態可能還是舊的）；人已經在某張首領地圖上就用中控記的
-      const bossMaps = new Set((s0.bossRespawns || []).map(r => r.map).concat(b.map));
-      const now0 = (s0.character && s0.character.map) || c.map;
+      const fullSync = () => gameRetry({ type: 'sync', fullSync: true, includeBossRespawns: true, characterId: id });
+      // 1. 先同步一次：王的狀態、原本的地圖（用剛同步到的；頁面存的狀態可能是舊的）
+      let st = await fullSync();
+      await postBossState(id, st);
+      const bossMaps = new Set((st.bossRespawns || []).map(r => r.map).concat(b.map));
+      const now0 = (st.character && st.character.map) || c.map;
       const back = now0 && !bossMaps.has(now0) ? now0 : (b.back || '');
       const backName = (catalog && catalog.mapsById[String(back)]) || b.backName || back;
-      const srvNow = Number(s0.serverTime) || Date.now();
-      if (row && row.available && row.deadline > srvNow) return done('cooling', `還在冷卻，約 ${Math.ceil((row.deadline - srvNow) / 60000)} 分鐘後重生，這次不去`);
-      const inst = (row && row.instanceId) || b.instanceId;
       // 掛機設定組合（遊戲的 1／2／3，{type:'settingsPreset', slot}；沒設定過＝1）：打王用一套、練功用一套
-      const slot0 = Number(s0.character && s0.character.settingsSlot) || 1;
+      const slot0 = Number(st.character && st.character.settingsSlot) || 1;
       let slotNow = slot0;
       const usePreset = async n => {
         n = Number(n) || 0; if (!n || n === slotNow) return '';
         try { await gameRetry({ type: 'settingsPreset', slot: n, characterId: id }); slotNow = n; return `，換成掛機設定 ${n}`; }
         catch (e) { return `（換掛機設定 ${n} 失敗：${e.message}）`; }
       };
-      // 2. 前往
-      setBadge(null, `野王：前往 ${b.mapName} 打 ${b.name}…`);
-      try { await gameRetry({ type: 'map', map: b.map, characterId: id }); }
-      catch (e) { if (e.gameUpdated) throw e; return done('error', `前往 ${b.mapName} 失敗（${e.message}），這次不打`); }
       // 真實遊戲換地圖會停止掛機（2026-11-20 實測）：到了就重新開始掛機，角色才會打王
       const startIdle = async () => { try { await gameRetry({ type: 'start', characterId: id }); return true; } catch (e) { return false; } };
-      await sleepP(1200);
-      const presetMsg = await usePreset(b.presetBoss);
-      const idleOk = await startIdle();
-      await report(job, { event: 'log', msg: `已前往 ${b.mapName}${presetMsg}${idleOk ? '，已開始掛機' : '（開始掛機失敗）'}（打完回 ${backName || '原地圖'}）` });
-      let idleAt = Date.now();
-      // 3. 看血條
-      let cdChecked = false, seen = false, gone = 0, hp = null, maxHp = null, lowest = Infinity, dropAt = Date.now(), postAt = 0, result = '';
-      while (!result) {
-        await sleepP(4000);
-        let j;
-        try { j = await gameRetry({ type: 'sync', characterId: id }); }
-        catch (e) { if (e.gameUpdated) throw e; if (Date.now() - t0 > maxMs) result = 'timeout'; continue; }
-        const ch = j.character || {};
-        const e = (j.enemies || []).find(x => x && x.id === b.mob);
-        const killedEv = ((j.summary && j.summary.events) || []).some(ev => ev && ev.mob === b.mob && ev.killed);
-        if (e) {
-          seen = true; gone = 0; hp = Number(e.hp) || 0; maxHp = Number(e.maxHp) || maxHp;
-          if (hp < lowest) { lowest = hp; dropAt = Date.now(); }
-        } else if (seen) gone++;
-        if (ch.auto === false && Date.now() - idleAt > 20000) { idleAt = Date.now(); await startIdle(); }
-        if (ch.map && ch.map !== b.map) result = 'moved';
-        else if (killedEv || (seen && (gone >= 2 || (e && hp <= 0)))) result = 'killed';
-        else if (!seen && !cdChecked && Date.now() - t0 > 12000) {
-          cdChecked = true;
-          try { const s1 = await gameRetry({ type: 'sync', fullSync: true, includeBossRespawns: true, characterId: id }); const r1 = (s1.bossRespawns || []).find(r => r.mob === b.mob); if (r1 && r1.available && r1.deadline > (Number(s1.serverTime) || Date.now())) result = 'killed'; } catch (_) {}
+      let traveled = false; // 有離開原本的地圖才需要回去（第一隻就在冷卻、沒出發的話不動）
+      const result = (r, msg, extra = {}) => hub('POST', '/api/boss/result', { charId: id, mob: b.mob, result: r, msg: `${b.name}：${msg}`, ms: extra.ms || 0, ...extra }).catch(() => {});
+
+      // 打一隻：回傳 {result, text, hp, maxHp, inst}
+      const fightOne = async () => {
+        const t0 = Date.now(), maxMs = Math.max(1, Number(b.visitMax) || 20) * 60000;
+        const row = ((st && st.bossRespawns) || []).find(r => r.mob === b.mob);
+        const srvNow = Number(st && st.serverTime) || Date.now();
+        if (row && row.available && row.deadline > srvNow) return { result: 'cooling', text: `還在冷卻，約 ${Math.ceil((row.deadline - srvNow) / 60000)} 分鐘後重生，這次不去` };
+        const inst = (row && row.instanceId) || b.instanceId;
+        setBadge(null, `野王：前往 ${b.mapName} 打 ${b.name}…`);
+        try { await gameRetry({ type: 'map', map: b.map, characterId: id }); traveled = true; }
+        catch (e) { if (e.gameUpdated) throw e; return { result: 'error', text: `前往 ${b.mapName} 失敗（${e.message}），這次不打`, inst }; }
+        await sleepP(1200);
+        const presetMsg = await usePreset(b.presetBoss);
+        const idleOk = await startIdle();
+        await report(job, { event: 'log', msg: `已前往 ${b.mapName}${presetMsg}${idleOk ? '，已開始掛機' : '（開始掛機失敗）'}（打完${b.chain ? '看還有沒有下一隻，沒有就' : ''}回 ${backName || '原地圖'}）` });
+        let idleAt = Date.now();
+        let cdChecked = false, seen = false, gone = 0, hp = null, maxHp = null, lowest = Infinity, dropAt = Date.now(), postAt = 0, res = '';
+        while (!res) {
+          await sleepP(4000);
+          let j;
+          try { j = await gameRetry({ type: 'sync', characterId: id }); }
+          catch (e) { if (e.gameUpdated) throw e; if (Date.now() - t0 > maxMs) res = 'timeout'; continue; }
+          const ch = j.character || {};
+          const e = (j.enemies || []).find(x => x && x.id === b.mob);
+          const killedEv = ((j.summary && j.summary.events) || []).some(ev => ev && ev.mob === b.mob && ev.killed);
+          if (e) {
+            seen = true; gone = 0; hp = Number(e.hp) || 0; maxHp = Number(e.maxHp) || maxHp;
+            if (hp < lowest) { lowest = hp; dropAt = Date.now(); }
+          } else if (seen) gone++;
+          if (ch.auto === false && Date.now() - idleAt > 20000) { idleAt = Date.now(); await startIdle(); }
+          if (ch.map && ch.map !== b.map) res = 'moved';
+          else if (killedEv || (seen && (gone >= 2 || (e && hp <= 0)))) res = 'killed';
+          else if (!seen && !cdChecked && Date.now() - t0 > 12000) {
+            cdChecked = true;
+            try { const s1 = await fullSync(); const r1 = (s1.bossRespawns || []).find(r => r.mob === b.mob); if (r1 && r1.available && r1.deadline > (Number(s1.serverTime) || Date.now())) res = 'killed'; } catch (_) {}
+          }
+          else if (!seen && Date.now() - t0 > 45000) res = 'absent';
+          else if (ch.hp != null && Number(ch.hp) <= 0) res = 'dead';
+          else if (Date.now() - t0 > maxMs) res = 'timeout';
+          else if (seen && Date.now() - dropAt > 3 * 60000) res = 'stuck';
+          if (!res && hp != null) {
+            setBadge(null, `野王：${b.name} 剩 ${pct(hp, maxHp)}%`);
+            hub('POST', '/api/boss/hp', { charId: id, instanceId: inst, mob: b.mob, hp, maxHp }).catch(() => {});
+            if (Date.now() - postAt > 30000) { postAt = Date.now(); await report(job, { event: 'log', msg: `${b.name} 血量 ${pct(hp, maxHp)}%` }); }
+          }
         }
-        else if (!seen && Date.now() - t0 > 45000) result = 'absent';
-        else if (ch.hp != null && Number(ch.hp) <= 0) result = 'dead';
-        else if (Date.now() - t0 > maxMs) result = 'timeout';
-        else if (seen && Date.now() - dropAt > 3 * 60000) result = 'stuck';
-        if (!result && hp != null) {
-          setBadge(null, `野王：${b.name} 剩 ${pct(hp, maxHp)}%`);
-          hub('POST', '/api/boss/hp', { charId: id, instanceId: inst, mob: b.mob, hp, maxHp }).catch(() => {});
-          if (Date.now() - postAt > 30000) { postAt = Date.now(); await report(job, { event: 'log', msg: `${b.name} 血量 ${pct(hp, maxHp)}%` }); }
+        // 一直沒看到王：可能在第一次同步前就被打死了 → 王的狀態變成冷卻中就算打死
+        if (res === 'absent') {
+          try { const s1 = await fullSync(); const r1 = (s1.bossRespawns || []).find(r => r.mob === b.mob); if (r1 && r1.available && r1.deadline > (Number(s1.serverTime) || Date.now())) res = 'killed'; } catch (_) {}
         }
+        // 打死了＝下次重生是滿血；其他情況記住剩下的血量（遊戲會保留）
+        await hub('POST', '/api/boss/hp', { charId: id, instanceId: inst, mob: b.mob, hp: res === 'killed' ? null : hp, maxHp }).catch(() => {});
+        const mins = Math.max(1, Math.round((Date.now() - t0) / 60000));
+        const left = hp != null && maxHp ? `（王剩 ${pct(hp, maxHp)}%，血量會保留）` : '';
+        const text = {
+          killed: `打死了，花了約 ${mins} 分鐘`, timeout: `打了 ${mins} 分鐘還沒打死${left}`, dead: `角色倒下${left}`,
+          absent: '到了地圖但王不在場上', stuck: `3 分鐘內血量都沒有下降，先放棄${left}`, moved: '中途被換到別的地圖，停止',
+        }[res] || res;
+        return { result: res, text, hp, maxHp, inst, ms: Date.now() - t0 };
+      };
+
+      // 2. 一隻接一隻打
+      const killed = [];
+      let r, n = 0, posted = false;
+      for (;;) {
+        n++; posted = false;
+        r = await fightOne();
+        if (r.result === 'killed') killed.push(b.name);
+        if (r.result === 'dead') { try { await gameRetry({ type: 'revive', characterId: id }); } catch (_) {} }
+        // 更新王的狀態（下一隻用最新的冷卻判斷）
+        try { st = await fullSync(); await postBossState(id, st); } catch (_) { st = null; }
+        const cont = b.chain && !['moved', 'dead', 'error'].includes(r.result) && n < 30;
+        let nx = null;
+        if (cont) {
+          await result(r.result, r.text, { hp: r.hp, maxHp: r.maxHp, ms: r.ms }); posted = true;
+          try { nx = await hub('POST', '/api/boss/next', { jobId: job.id, charId: id, prev: r.inst || b.instanceId || '', mob: b.mob }); } catch (_) {}
+        }
+        if (!nx || !nx.boss) break;
+        await report(job, { event: 'log', msg: `${b.name}：${r.text}；接著去 ${nx.boss.mapName} 打 ${nx.boss.name}` });
+        b = { ...b, ...nx.boss };
       }
-      // 一直沒看到王：可能在第一次同步前就被打死了 → 王的狀態變成冷卻中就算打死
-      if (result === 'absent') {
-        try {
-          const s1 = await gameRetry({ type: 'sync', fullSync: true, includeBossRespawns: true, characterId: id });
-          const r1 = (s1.bossRespawns || []).find(r => r.mob === b.mob);
-          if (r1 && r1.available && r1.deadline > (Number(s1.serverTime) || Date.now())) result = 'killed';
-        } catch (_) {}
-      }
-      // 打死了＝下次重生是滿血；其他情況記住剩下的血量（遊戲會保留）
-      await hub('POST', '/api/boss/hp', { charId: id, instanceId: inst, mob: b.mob, hp: result === 'killed' ? null : hp, maxHp }).catch(() => {});
-      // 4. 回原本的地圖（中途被你換走的就不動）
+
+      // 3. 回原本的地圖（中途被你換走的就不動）
       let backMsg = '';
-      if (result === 'dead') { try { await gameRetry({ type: 'revive', characterId: id }); } catch (_) {} }
-      if (result !== 'moved' && back) {
+      if (!traveled) backMsg = '';
+      else if (r.result !== 'moved' && back) {
         let backOk = false;
         try { await gameRetry({ type: 'map', map: back, characterId: id }); backOk = true; }
         catch (e1) {
@@ -1574,16 +1605,15 @@ function agentMain(ctx) {
           catch (e2) { backMsg = `，回 ${backName} 失敗（${e2.message}），請手動換圖`; }
         }
         if (backOk) { await sleepP(1200); const pm = await usePreset(b.presetTrain || slot0); backMsg = `，已回到 ${backName}${pm}` + ((await startIdle()) ? '並開始掛機' : '（開始掛機失敗，請手動開始）'); }
-      } else if (result !== 'moved') { const pm = await usePreset(b.presetTrain || slot0); await startIdle(); backMsg = `，不知道原本的地圖，留在原地繼續掛機${pm}`; }
-      try { await postBossState(id, await gameRetry({ type: 'sync', fullSync: true, includeBossRespawns: true, characterId: id })); } catch (_) {}
+      } else if (r.result !== 'moved') { const pm = await usePreset(b.presetTrain || slot0); await startIdle(); backMsg = `，不知道原本的地圖，留在原地繼續掛機${pm}`; }
       lastHash = '';
-      const mins = Math.max(1, Math.round((Date.now() - t0) / 60000));
-      const left = hp != null && maxHp ? `（王剩 ${pct(hp, maxHp)}%，血量會保留）` : '';
-      const text = {
-        killed: `打死了，花了約 ${mins} 分鐘`, timeout: `打了 ${mins} 分鐘還沒打死${left}`, dead: `角色倒下${left}`,
-        absent: '到了地圖但王不在場上', stuck: `3 分鐘內血量都沒有下降，先放棄${left}`, moved: '中途被換到別的地圖，停止',
-      }[result] || result;
-      return done(result, text + backMsg, { hp, maxHp });
+      if (!traveled && r.result !== 'error') backMsg = '';
+      const sum = n > 1 ? `（這一輪連續打了 ${n} 隻，打死 ${killed.length} 隻，共 ${Math.max(1, Math.round((Date.now() - tAll) / 60000))} 分鐘）` : '';
+      const lastTold = b.chain && traveled && !['moved', 'dead', 'error'].includes(r.result);
+      if (lastTold) await hub('POST', '/api/boss/result', { charId: id, mob: b.mob, logOnly: true, msg: `沒有下一隻了，回練功圖${backMsg.replace(/^，/, '：')}${sum}` }).catch(() => {});
+      else if (!posted) await result(r.result, r.text + backMsg + sum, { hp: r.hp, maxHp: r.maxHp, ms: r.ms });
+      await report(job, { event: 'log', msg: (lastTold ? `${b.name}：${r.text}；沒有下一隻了` : `${b.name}：${r.text}`) + backMsg + sum });
+      return report(job, { event: 'batchDone' });
     }
 
     // ---------- 強化工坊：用神匠之魂（artisanScroll）批次衝卷 ----------
