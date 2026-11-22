@@ -233,7 +233,10 @@ function agentMain(ctx) {
     }
     // 把地圖、怪物、掉落表整理後交給中控（面板的「地圖」分頁用）；同一版本只傳一次
     async function uploadWorld(cat) {
-      const ver = 'w5:' + String(cat.version || '') + ':' + Object.keys(cat.maps || {}).length + ':' + (cat.mobs || []).length + ':' + Object.keys(cat.drops || {}).length;
+      // 版本＝目錄內容的雜湊：遊戲更新地圖、怪物、掉落、裝備時（就算數量沒變）都會重新上傳
+      const fnv = str => { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h.toString(16); };
+      let hash = ''; try { hash = fnv(JSON.stringify([cat.maps, cat.mobs, cat.drops, cat.mapDrops, cat.equipment, cat.items, cat.scrolls, cat.autoSellDrops])); } catch (_) {}
+      const ver = 'w6:' + String(cat.version || '') + ':' + Object.keys(cat.maps || {}).length + ':' + (cat.mobs || []).length + ':' + Object.keys(cat.drops || {}).length + ':' + hash;
       const have = await hub('GET', '/api/world/version');
       if (have && have.version === ver) return;
       const names = {};
@@ -278,7 +281,8 @@ function agentMain(ctx) {
     function itemInfo(key) {
       const it = catalog.items[key] || catalog.scrolls[key];
       if (!it) return { name: key, kind: '其他', cat: 'etc', sellPrice: 0, itemId: 0 };
-      const kind = it.type || (catalog.scrolls[key] ? '卷軸' : '其他');
+      // 技能書在遊戲背包裡屬於「消耗」分頁，中控也一律算消耗（使用者要求）
+      const kind = it.type === '技能書' ? '消耗' : it.type || (catalog.scrolls[key] ? '卷軸' : '其他');
       return { name: it.name || key, kind, cat: bagCat(it.id, kind), sellPrice: it.sellPrice || 0, itemId: it.id || 0 };
     }
     // 遊戲背包分類：依物品編號開頭（2 消耗、3 裝飾、4 其他、5 點數）

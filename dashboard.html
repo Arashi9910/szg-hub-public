@@ -3321,6 +3321,12 @@ document.addEventListener('click', async e => {
 // ================= 地圖／怪物／掉落／組隊 =================
 let WORLD = null;
 ui.mpSel = new Set(); ui.wOpen = new Set(); ui.wSort = { key: 'minLevel', dir: 1 };
+// 遊戲更新了地圖／怪物／裝備：遊戲分頁會上傳新的世界資料；面板每分鐘比對版本，不同就重新載入（不用重新整理頁面）
+let worldCheckAt = 0;
+async function worldFreshCheck() {
+  if (!WORLD || Date.now() - worldCheckAt < 60000) return; worldCheckAt = Date.now();
+  try { const v = (await (await fetch('/api/world/version')).json()).version; if (v && v !== WORLD.version) { await loadWorld(); ptMapHtml = ''; nameIdx = null; dexDropIdx = null; if ($('#mpTarget')) $('#mpTarget').innerHTML = ''; renderAll(); } } catch (_) {}
+}
 async function loadWorld() { try { const w = await (await fetch('/api/world')).json(); if (w && w.maps) { WORLD = w; indexWorld(); } } catch (_) {} }
 function indexWorld() {
   const W = WORLD; W.mapIdx = {}; W.mobIdx = {}; W.mobByMs = {};
@@ -5684,6 +5690,9 @@ async function poll(force) {
   try {
     const r = await fetch('/api/data');
     DATA = await r.json();
+    // 技能書在遊戲背包裡是「消耗」：舊腳本回報的「技能書」也併進消耗
+    for (const sn of Object.values(DATA.chars || {})) for (const it of sn.items || []) if (it.kind === '技能書') it.kind = '消耗';
+    worldFreshCheck();
     S = { accountLabels: {}, mainCharId: null, presets: [], slotStats: {}, ...DATA.settings, ...(typeof boardPending !== 'undefined' && boardPending ? boardPending : {}) };
     const anyNames = snaps().find(s => s.statNames);
     if (anyNames) statNames = { ...DEFAULT_STAT_NAMES, ...anyNames.statNames };
