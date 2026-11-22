@@ -622,7 +622,9 @@ function bossCharMobs(b) {
 function bossCfg() {
   const b = db.settings.boss || {}, charMobs = bossCharMobs(b);
   return { mode: b.mode || 'off', charMobs, chars: Object.fromEntries(Object.keys(charMobs).map(k => [k, true])), mobs: null,
-    partyMode: b.partyMode === 'split' ? 'split' : 'together', // together＝同隊一起打同一隻；split＝保留隊伍但各自打不同隻
+    // together＝同隊一起打同一隻；split＝保留隊伍但各自打不同隻；mixed＝togetherMobs 裡的王整隊一起打，其他的各自分開打（先分開、再一起）
+    partyMode: ['split', 'mixed'].includes(b.partyMode) ? b.partyMode : 'together',
+    togetherMobs: Array.isArray(b.togetherMobs) ? b.togetherMobs.map(String) : [],
     chain: b.chain !== false,                                    // 連續打：打完一隻直接去下一隻，全部打完才回練功圖
     estMax: Number(b.estMax) > 0 ? Number(b.estMax) : 15, visitMax: Number(b.visitMax) > 0 ? Number(b.visitMax) : 20,
     presetBoss: [1, 2, 3].includes(Number(b.presetBoss)) ? Number(b.presetBoss) : 0,   // 0＝不切換
@@ -705,50 +707,79 @@ function bossUnitOf(charId, pm) {
 const bossUnitFor = (charId, pm, c) => c.partyMode === 'split' ? { code: null, ids: [charId] } : bossUnitOf(charId, pm);
 const bossAllow = (unit, c) => new Set(unit.ids.flatMap(id => c.charMobs[id] || []));
 const bossAvail = id => { const s = db.chars[id]; return !!(s && s.char && s.playerCode && tabOf(s.playerCode, id) && s.char.auto && !bossBusy(id)); };
+// 從這幾隻角色（ids）可以打的王裡挑一隻：已重生、有勾、預估不會太久、別人沒在打、30 分鐘內沒失敗過；mobOk 再限制哪些王（依王決定時用）
+// 王的狀態：同隊伍的王是共用的，用隊伍裡最新回報的那一份（自己打時也一樣，隊友剛打死的王才會看成冷卻中）
+function bossPick(ids, c, now, busyInst, mobOk, dpsIds, stateIds) {
+  const b = bossDb();
+  const stId = (stateIds || ids).filter(id => b.state[id] && now - b.state[id].at < BOSS_STATE_STALE).sort((x, y) => b.state[y].at - b.state[x].at)[0];
+  if (!stId) return null;
+  const dps = (dpsIds || ids).reduce((t, id) => t + charDps(id), 0);
+  return bossRows(stId, dps, bossAllow({ ids }, c)).filter(r => r.ready && !r.skip && !busyInst.has(r.instanceId) && (!mobOk || mobOk(r.mob)))
+    .filter(r => !ids.some(id => { const l = b.last[id + '|' + r.mob]; return l && l.result !== 'killed' && l.result !== 'cooling' && now - l.at < BOSS_RETRY_MS; }))
+    .sort((x, y) => (x.estSec == null) - (y.estSec == null) || (x.estSec || 0) - (y.estSec || 0))[0] || null;
+}
+// 出發（試跑只寫紀錄）：go 的每隻各一個 boss 工作；code＝隊伍代碼（一起打）或 null（自己打）
+function bossDispatch(c, charId, unitIds, code, go, r, busyInst, now) {
+  const b = bossDb();
+  const est = r.estSec != null ? `預估 ${Math.max(1, Math.round(r.estSec / 60))} 分鐘` : '還沒有實戰 DPS，無法預估';
+  const names = go.map(id => db.chars[id].char.name);
+  const left = unitIds.filter(id => !go.includes(id)).map(id => db.chars[id].char.name);
+  const who = code ? `隊伍 ${names.join('、')} 一起` : '';
+  const leftTxt = left.length ? `；${left.join('、')} 沒有分頁／沒在掛機／有其他工作，這次不去` : '';
+  busyInst.add(r.instanceId);
+  if (c.mode === 'preview') {
+    const key = unitIds.slice().sort().join(',') + '|' + r.mob + '|' + Math.floor(now / BOSS_RETRY_MS);
+    if (!b.seen[key]) { b.seen[key] = 1; bossLog(charId, `試跑：${code ? `隊伍 ${names.join('、')} 會一起去` : '會去'} ${r.mapName} 打 ${r.name}（${est}，打完各自回原地圖${leftTxt}）`); }
+    return;
+  }
+  for (const id of go) {
+    const snap = db.chars[id], homeName = worldMapNames[b.home[id]] || b.homeName[id] || '原地圖';
+    const job = {
+      id: crypto.randomBytes(6).toString('hex'), kind: 'boss', status: 'approved', auto: true, createdAt: now, approvedAt: now,
+      fromCharId: id, fromName: snap.char.name, fromCode: snap.playerCode, toCharId: id, toName: snap.char.name, toCode: snap.playerCode,
+      batches: [{ items: [], gear: [], money: 0, boss: { mob: r.mob, name: r.name, map: r.map, mapName: r.mapName, instanceId: r.instanceId, back: b.home[id] || '', backName: homeName, visitMax: c.visitMax, presetBoss: c.presetBoss, presetTrain: c.presetTrain, chain: c.chain, unit: code || '', party: code ? names : null } }],
+      batchIndex: 0, log: [], lastMsg: '',
+    };
+    jobLog(job, `自動：${who}去 ${r.mapName} 打 ${r.name}（${est}）`);
+    db.jobs.push(job);
+  }
+  bossLog(charId, `出發：${who}去 ${r.mapName} 打 ${r.name}（${est}${leftTxt}）`);
+}
 function bossTick(force) {
   const c = bossCfg(); if (c.mode === 'off') return;
   const b = bossDb(), maps = bossMapSet(), pm = partyMap(), handled = new Set(), now = Date.now();
   const busyInst = new Set(db.jobs.filter(j => j.kind === 'boss' && ACTIVE.has(j.status)).map(j => j.batches[0].boss.instanceId));
+  const activeOf = id => db.jobs.some(j => j.kind === 'boss' && ACTIVE.has(j.status) && j.fromCharId === id);
+  const tog = new Set(c.togetherMobs);
   b.homeName = b.homeName || {};
   for (const charId of Object.keys(c.chars).filter(id => c.chars[id])) {
     if (handled.has(charId) || !db.chars[charId]) continue;
+    const party = bossUnitOf(charId, pm);
+    // 依王決定（mixed）：隊友各自先打「分開打」的王；全隊都空下來、而且沒有分開打的王可打了，才一起去打「一起打」的王
+    if (c.partyMode === 'mixed' && party.code) {
+      party.ids.forEach(id => handled.add(id));
+      for (const id of party.ids) { const sc = db.chars[id].char; if (sc.map && !maps.has(sc.map)) { b.home[id] = sc.map; b.homeName[id] = sc.mapName || ''; } }
+      const sent = new Set();
+      for (const id of party.ids) {
+        if (!c.chars[id] || activeOf(id) || !bossAvail(id)) continue;
+        const r = bossPick([id], c, now, busyInst, mob => !tog.has(mob), null, party.ids);
+        if (r) { bossDispatch(c, id, [id], null, [id], r, busyInst, now); sent.add(id); }
+      }
+      if (sent.size || party.ids.some(activeOf)) continue;
+      const go = party.ids.filter(bossAvail); if (!go.length) continue;
+      const r = bossPick(party.ids, c, now, busyInst, mob => tog.has(mob), go);
+      if (r) bossDispatch(c, charId, party.ids, party.code, go, r, busyInst, now);
+      continue;
+    }
     const unit = bossUnitFor(charId, pm, c);
     unit.ids.forEach(id => handled.add(id));
     for (const id of unit.ids) { const sc = db.chars[id].char; if (sc.map && !maps.has(sc.map)) { b.home[id] = sc.map; b.homeName[id] = sc.mapName || ''; } }
     // 隊伍裡還有人在打王：等大家都回來再一起挑下一隻
-    if (unit.ids.some(id => db.jobs.some(j => j.kind === 'boss' && ACTIVE.has(j.status) && j.fromCharId === id))) continue;
+    if (unit.ids.some(activeOf)) continue;
     const go = unit.ids.filter(bossAvail);                       // 有自己的分頁、在掛機、沒有其他工作
     if (!go.length) continue;
-    const stId = unit.ids.filter(id => b.state[id] && now - b.state[id].at < BOSS_STATE_STALE).sort((x, y) => b.state[y].at - b.state[x].at)[0];
-    if (!stId) continue;
-    const dps = go.reduce((t, id) => t + charDps(id), 0);
-    const cand = bossRows(stId, dps, bossAllow(unit, c)).filter(r => r.ready && !r.skip && !busyInst.has(r.instanceId))
-      .filter(r => !unit.ids.some(id => { const l = b.last[id + '|' + r.mob]; return l && l.result !== 'killed' && l.result !== 'cooling' && now - l.at < BOSS_RETRY_MS; }))
-      .sort((x, y) => (x.estSec == null) - (y.estSec == null) || (x.estSec || 0) - (y.estSec || 0));
-    const r = cand[0]; if (!r) continue;
-    const est = r.estSec != null ? `預估 ${Math.max(1, Math.round(r.estSec / 60))} 分鐘` : '還沒有實戰 DPS，無法預估';
-    const names = go.map(id => db.chars[id].char.name);
-    const left = unit.ids.filter(id => !go.includes(id)).map(id => db.chars[id].char.name);
-    const who = unit.code ? `隊伍 ${names.join('、')} 一起` : '';
-    const leftTxt = left.length ? `；${left.join('、')} 沒有分頁／沒在掛機／有其他工作，這次不去` : '';
-    if (c.mode === 'preview') {
-      const key = unit.ids.slice().sort().join(',') + '|' + r.mob + '|' + Math.floor(now / BOSS_RETRY_MS);
-      if (!b.seen[key]) { b.seen[key] = 1; bossLog(charId, `試跑：${unit.code ? `隊伍 ${names.join('、')} 會一起去` : '會去'} ${r.mapName} 打 ${r.name}（${est}，打完各自回原地圖${leftTxt}）`); }
-      continue;
-    }
-    for (const id of go) {
-      const snap = db.chars[id], homeName = worldMapNames[b.home[id]] || b.homeName[id] || '原地圖';
-      const job = {
-        id: crypto.randomBytes(6).toString('hex'), kind: 'boss', status: 'approved', auto: true, createdAt: now, approvedAt: now,
-        fromCharId: id, fromName: snap.char.name, fromCode: snap.playerCode, toCharId: id, toName: snap.char.name, toCode: snap.playerCode,
-        batches: [{ items: [], gear: [], money: 0, boss: { mob: r.mob, name: r.name, map: r.map, mapName: r.mapName, instanceId: r.instanceId, back: b.home[id] || '', backName: homeName, visitMax: c.visitMax, presetBoss: c.presetBoss, presetTrain: c.presetTrain, chain: c.chain, unit: unit.code || '', party: unit.code ? names : null } }],
-        batchIndex: 0, log: [], lastMsg: '',
-      };
-      jobLog(job, `自動：${who}去 ${r.mapName} 打 ${r.name}（${est}）`);
-      db.jobs.push(job);
-    }
-    busyInst.add(r.instanceId);
-    bossLog(charId, `出發：${who}去 ${r.mapName} 打 ${r.name}（${est}${leftTxt}）`);
+    const r = bossPick(unit.ids, c, now, busyInst, null, go, party.code ? party.ids : null);
+    if (r) bossDispatch(c, charId, unit.ids, unit.code, go, r, busyInst, now);
   }
   for (const k of Object.keys(b.seen)) if (Number(k.split('|').pop()) < Math.floor(now / BOSS_RETRY_MS) - 1) delete b.seen[k];
   save();
@@ -762,8 +793,15 @@ function bossNext(e) {
   if (c.mode !== 'auto' || !c.chain) return { none: true, why: c.mode !== 'auto' ? '打王不是自動出發' : '沒開連續打' };
   const job = db.jobs.find(j => j.id === e.jobId && j.kind === 'boss' && ACTIVE.has(j.status));
   if (!job || job.fromCharId !== e.charId) return { none: true, why: '找不到這個打王工作' };
-  const pm = partyMap(), unit = bossUnitFor(e.charId, pm, c);
-  const key = (unit.code || e.charId) + '|' + (e.prev || e.mob || '');
+  const pm = partyMap(), tog = new Set(c.togetherMobs);
+  let unit = bossUnitFor(e.charId, pm, c), mobOk = null;
+  // 依王決定：這個工作是一起打的（boss.unit 有隊伍代碼）就只接「一起打」的王，自己打的就只接「分開打」的王
+  if (c.partyMode === 'mixed') {
+    if (job.batches[0].boss.unit) { unit = bossUnitOf(e.charId, pm); mobOk = m => tog.has(m); }
+    else { unit = { code: null, ids: [e.charId] }; mobOk = m => !tog.has(m); }
+  }
+  // 同一次出發（同隊的工作 createdAt 相同）＋剛打完的那隻；自己打的用工作 id，避免拿到上一輪留下的決定
+  const key = (unit.code ? unit.code + '|' + job.createdAt : job.id) + '|' + (e.prev || e.mob || '');
   for (const [k, d] of Object.entries(bossNextDec)) if (now - d.at > 3 * 60000) delete bossNextDec[k];
   let dec = bossNextDec[key];
   if (!dec) {
@@ -773,11 +811,12 @@ function bossNext(e) {
     // 別人（不是這一組）正在打的王不去；同隊各自打時，隊友正在打的也算別人
     const busyInst = new Set(db.jobs.filter(j => active(j) && !parts.includes(j.fromCharId)).map(j => j.batches[0].boss.instanceId));
     const b = bossDb();
-    const stId = parts.filter(id => b.state[id]).sort((x, y) => b.state[y].at - b.state[x].at)[0];
+    const pIds = bossUnitOf(e.charId, pm).ids; // 狀態用整個隊伍最新的一份（隊伍的王共用）
+    const stId = [...new Set([...parts, ...pIds])].filter(id => b.state[id]).sort((x, y) => b.state[y].at - b.state[x].at)[0];
     let r = null;
     if (stId) {
       const dps = parts.reduce((t, id) => t + charDps(id), 0);
-      r = bossRows(stId, dps, bossAllow({ ids: parts }, c)).filter(x => x.ready && !x.skip && !busyInst.has(x.instanceId) && x.instanceId !== e.prev && x.mob !== e.mob)
+      r = bossRows(stId, dps, bossAllow({ ids: parts }, c)).filter(x => x.ready && !x.skip && !busyInst.has(x.instanceId) && x.instanceId !== e.prev && x.mob !== e.mob && (!mobOk || mobOk(x.mob)))
         .filter(x => !parts.some(id => { const l = b.last[id + '|' + x.mob]; return l && l.result !== 'killed' && l.result !== 'cooling' && now - l.at < BOSS_RETRY_MS; }))
         .sort((x, y) => (x.estSec == null) - (y.estSec == null) || (x.estSec || 0) - (y.estSec || 0))[0] || null;
     }

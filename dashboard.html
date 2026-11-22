@@ -738,10 +738,13 @@
         <div class="bar"><span>掛機設定</span><span>打王用</span><select id="bossPresetBoss"><option value="0">不切換</option><option value="1">設定 1</option><option value="2">設定 2</option><option value="3">設定 3</option></select>
           <span style="margin-left:8px">回練功圖用</span><select id="bossPresetTrain"><option value="0">出發前用的那套</option><option value="1">設定 1</option><option value="2">設定 2</option><option value="3">設定 3</option></select>
           <span class="dim sm">遊戲的掛機設定 1／2／3 各自獨立，第一次切到沒用過的那套是空白的，請先在遊戲裡設好</span></div>
-        <div class="bar"><span>隊伍打王</span><select id="bossPartyMode"><option value="together">整隊一起打同一隻</option><option value="split">保留隊伍，各自分開打（同一隻王不會同時去）</option></select>
+        <div class="bar"><span>隊伍打王</span><select id="bossPartyMode"><option value="together">整隊一起打同一隻</option><option value="split">保留隊伍，各自分開打（同一隻王不會同時去）</option><option value="mixed">依王決定：勾的王整隊一起打，其他各自分開打</option></select>
           <label style="margin-left:12px" title="打完一隻直接去下一隻已重生的王，全部打完才回練功圖；關掉＝每打完一隻就先回練功圖"><input type="checkbox" class="sw" id="bossChain"> 連續打，全部打完才回練功圖</label></div>
+        <div class="bar" id="bossTogBox" style="display:none"><span>整隊一起打的王</span><span class="chips" id="bossTogMobs"></span>
+          <span class="dim sm">快速設定：</span><input type="number" id="bossTogLv" min="1" max="250" placeholder="等級" style="width:64px"><button class="btn sm" id="bossTogLvBtn" title="等級大於等於這個數字的王一起打，其他分開打">以上的王一起打</button>
+          <div class="dim sm" style="flex-basis:100%">沒勾的王：隊友各自分開打（同一隻不會同時去）。勾的王：等隊友都把分開打的王打完、空下來之後，才整隊一起去。</div></div>
         <div class="dim sm">每分鐘檢查一次：有勾王的角色<b>在掛機、有自己的遊戲分頁</b>時，從它勾的王裡挑一隻已經重生的（預估最快打死的先去），換過去開始掛機打王，看血條打死後換回原本的地圖並重新開始掛機。
-          時間到、倒下、或 3 分鐘血量都沒降也會先回去；王的血量遊戲會保留，30 分鐘後再去。同隊伍的角色共用一份王：選「整隊一起打」時<b>隊伍裡有人勾就整隊一起去</b>，可以打的王是隊員勾的合起來（預估用隊員 DPS 加總）；選「各自分開打」時每隻照自己勾的王各打各的，隊友正在打的那隻不會同時去。開「連續打」時，打完一隻直接去下一隻已重生的王，沒有了才回練功圖。不會使用付費重生。</div>
+          時間到、倒下、或 3 分鐘血量都沒降也會先回去；王的血量遊戲會保留，30 分鐘後再去。同隊伍的角色共用一份王：選「整隊一起打」時<b>隊伍裡有人勾就整隊一起去</b>，可以打的王是隊員勾的合起來（預估用隊員 DPS 加總）；選「各自分開打」時每隻照自己勾的王各打各的，隊友正在打的那隻不會同時去；選「依王決定」時，勾為「一起打」的王整隊去，其他的各自分開打（先分開打完、全隊空下來才一起打）。開「連續打」時，打完一隻直接去下一隻已重生的王，沒有了才回練功圖。不會使用付費重生。</div>
       </details>
       <details><summary>紀錄</summary><div id="bossLog"></div></details>
     </div>
@@ -3159,7 +3162,7 @@ document.addEventListener('change', e => {
 
 // ================= 輪流打野王 =================
 let BOSS = null, bossLoadAt = 0;
-const bossCfg = () => { const c = { mode: 'off', chars: {}, mobs: null, estMax: 15, visitMax: 20, presetBoss: 0, presetTrain: 0, partyMode: 'together', chain: true, ...(S.boss || {}) }; c.charMobs = bossCharMobs(c); return c; };
+const bossCfg = () => { const c = { mode: 'off', chars: {}, mobs: null, estMax: 15, visitMax: 20, presetBoss: 0, presetTrain: 0, partyMode: 'together', chain: true, togetherMobs: [], ...(S.boss || {}) }; c.charMobs = bossCharMobs(c); return c; };
 // 每隻角色各自要打的王（{角色: ['*'] 或 [王…]}）；舊設定（chars＋共用 mobs）自動換算，和伺服器同一套規則
 function bossCharMobs(b) {
   const cm = {};
@@ -3191,7 +3194,9 @@ function renderBoss(force) {
   const editing = card.contains(document.activeElement) && document.activeElement.tagName === 'INPUT' && document.activeElement.type === 'number';
   if (force || !editing) {
     $('#bossMode').value = c.mode; $('#bossEst').value = c.estMax; $('#bossVisit').value = c.visitMax;
-    if (!$('#bossSetBox').contains(document.activeElement) || document.activeElement.tagName !== 'SELECT') { $('#bossPresetBoss').value = String(c.presetBoss || 0); $('#bossPresetTrain').value = String(c.presetTrain || 0); $('#bossPartyMode').value = c.partyMode === 'split' ? 'split' : 'together'; }
+    if (!$('#bossSetBox').contains(document.activeElement) || document.activeElement.tagName !== 'SELECT') { $('#bossPresetBoss').value = String(c.presetBoss || 0); $('#bossPresetTrain').value = String(c.presetTrain || 0); $('#bossPartyMode').value = ['split', 'mixed'].includes(c.partyMode) ? c.partyMode : 'together'; }
+    $('#bossTogBox').style.display = c.partyMode === 'mixed' ? '' : 'none';
+    if (c.partyMode === 'mixed') { const tg = new Set(c.togetherMobs || []); $('#bossTogMobs').innerHTML = bossList().map(x => `<label title="${esc(x.mapName)}"><input type="checkbox" data-bosstog="${esc(x.mob)}" ${tg.has(x.mob) ? 'checked' : ''}>${esc(x.name)} <span class="dim sm">Lv${x.lv || '?'}</span></label>`).join('') || '<span class="dim">還沒有野王資料</span>'; }
     $('#bossChain').checked = c.chain !== false;
     if (force || !$('#bossSetBox').contains(document.activeElement)) {
     }
@@ -3204,7 +3209,7 @@ function renderBoss(force) {
   for (const x of chars) { if (x.party && c.partyMode !== 'split') { if (!byCode[x.party.code]) units.push(byCode[x.party.code] = []); byCode[x.party.code].push(x); } else units.push([x]); }
   const live = (BOSS && BOSS.live) || [];
   const nChars = Object.values(c.chars).filter(Boolean).length;
-  $('#bossSetSum').textContent = `設定：${c.partyMode === 'split' ? '隊伍各自分開打' : '隊伍一起打'}・${c.chain !== false ? '連續打完才回練功圖' : '每隻打完先回練功圖'}・預估超過 ${c.estMax} 分不去・每次最多 ${c.visitMax} 分${Number(c.presetBoss) ? `・打王用掛機設定 ${c.presetBoss}、練功用${Number(c.presetTrain) ? '設定 ' + c.presetTrain : '出發前那套'}` : ''}`;
+  $('#bossSetSum').textContent = `設定：${c.partyMode === 'split' ? '隊伍各自分開打' : c.partyMode === 'mixed' ? `隊伍依王決定（${(c.togetherMobs || []).length} 隻一起打）` : '隊伍一起打'}・${c.chain !== false ? '連續打完才回練功圖' : '每隻打完先回練功圖'}・預估超過 ${c.estMax} 分不去・每次最多 ${c.visitMax} 分${Number(c.presetBoss) ? `・打王用掛機設定 ${c.presetBoss}、練功用${Number(c.presetTrain) ? '設定 ' + c.presetTrain : '出發前那套'}` : ''}`;
   // ── 正在打 ──
   $('#bossLive').innerHTML = live.map(g => {
     const p = g.hp != null && g.maxHp ? Math.max(0, Math.min(100, g.hp / g.maxHp * 100)) : null;
@@ -3311,13 +3316,15 @@ document.addEventListener('change', async e => {
     if (t.value === 'auto' && !confirm('開啟後，勾選的角色會自動換到野王的地圖打王，打完（或時間到）再換回原本的地圖。建議先用「試跑」看紀錄確認會去打哪幾隻。確定開啟？')) { t.value = bossCfg().mode; enhanceSegs($('#bossCard')); return; }
     await saveBoss({ mode: t.value }); $('#bossMsg').textContent = '已儲存'; return;
   }
-  if (t.id === 'bossPartyMode') { await saveBoss({ partyMode: t.value === 'split' ? 'split' : 'together' }); await loadBoss(true); renderBoss(true); return; }
+  if (t.id === 'bossPartyMode') { await saveBoss({ partyMode: ['split', 'mixed'].includes(t.value) ? t.value : 'together' }); await loadBoss(true); renderBoss(true); return; }
+  if (t.dataset.bosstog) { const set = new Set(bossCfg().togetherMobs || []); if (t.checked) set.add(t.dataset.bosstog); else set.delete(t.dataset.bosstog); await saveBoss({ togetherMobs: [...set] }); return; }
   if (t.id === 'bossChain') { await saveBoss({ chain: t.checked }); renderBoss(true); return; }
   if (t.id === 'bossPresetBoss' || t.id === 'bossPresetTrain') { await saveBoss({ [t.id === 'bossPresetBoss' ? 'presetBoss' : 'presetTrain']: Number(t.value) || 0 }); renderBoss(true); return; }
   if (t.id === 'bossEst') { await saveBoss({ estMax: Math.min(240, Math.max(1, Number(t.value) || 15)) }); return; }
   if (t.id === 'bossVisit') { await saveBoss({ visitMax: Math.min(240, Math.max(1, Number(t.value) || 20)) }); return; }
 });
 document.addEventListener('click', async e => {
+  if (e.target.id === 'bossTogLvBtn') { const lv = Number($('#bossTogLv').value); if (!lv) { alert('先填等級'); return; } await saveBoss({ togetherMobs: bossList().filter(x => (x.lv || 0) >= lv).map(x => x.mob) }); renderBoss(true); return; }
   if (e.target.id !== 'bossRun') return;
   $('#bossMsg').textContent = '檢查中…';
   try { BOSS = await api('/api/boss/run-now'); bossLoadAt = Date.now(); $('#bossMsg').textContent = '已檢查'; renderBoss(); } catch (err) { $('#bossMsg').textContent = '失敗：' + err.message; }

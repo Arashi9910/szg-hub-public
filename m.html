@@ -87,8 +87,9 @@
   </section>
   <section id="v-boss">
     <div class="bar"><div class="seg" id="bossMode"><button data-bm="off">關閉</button><button data-bm="preview">試跑</button><button data-bm="auto">自動出發</button></div><button class="btn sm" id="bossRun">立即檢查</button></div>
-    <div class="bar"><select id="bPartyMode" style="background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:6px;flex:1"><option value="together">隊伍：整隊一起打</option><option value="split">隊伍：各自分開打</option></select>
+    <div class="bar"><select id="bPartyMode" style="background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:6px;flex:1"><option value="together">隊伍：整隊一起打</option><option value="split">隊伍：各自分開打</option><option value="mixed">隊伍：依王決定</option></select>
       <label class="sm" style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="bChain"> 連續打完才回練功圖</label></div>
+    <div id="bTog" class="card" style="display:none"><div class="sm dim">整隊一起打的王（其他的各自分開打；分開的打完、全隊空下來才一起打）</div><div class="chips" id="bTogChips"></div></div>
     <div id="bossLive"></div>
     <h4>誰打哪些王 <span class="sm">（點王的名字切換，亮的＝會打）</span></h4>
     <div class="bar"><input type="search" id="bq" placeholder="搜尋角色" style="flex:1"><label class="sm"><input type="checkbox" id="bOnly"> 只看有勾的</label></div>
@@ -316,7 +317,9 @@ function bossList() {
 }
 function renderBoss() {
   const mode = (BOSS && BOSS.cfg.mode) || D.boss.mode;
-  if (BOSS) { $('#bPartyMode').value = BOSS.cfg.partyMode === 'split' ? 'split' : 'together'; $('#bChain').checked = BOSS.cfg.chain !== false; }
+  if (BOSS) { $('#bPartyMode').value = ['split', 'mixed'].includes(BOSS.cfg.partyMode) ? BOSS.cfg.partyMode : 'together'; $('#bChain').checked = BOSS.cfg.chain !== false;
+    $('#bTog').style.display = BOSS.cfg.partyMode === 'mixed' ? '' : 'none';
+    if (BOSS.cfg.partyMode === 'mixed') { const tg = new Set(BOSS.cfg.togetherMobs || []); $('#bTogChips').innerHTML = bossList().map(b => `<span class="chip ${tg.has(b.mob) ? 'on' : ''}" data-btog="${esc(b.mob)}">${esc(b.name)}</span>`).join(''); } }
   document.querySelectorAll('#bossMode button').forEach(b => b.classList.toggle('on', b.dataset.bm === mode));
   const live = D.boss.live || [];
   $('#bossLive').innerHTML = live.length ? `<h4>正在打</h4>` + live.map(g => { const p = g.hp != null && g.maxHp ? g.hp / g.maxHp * 100 : null;
@@ -393,7 +396,7 @@ function go(v) {
   window.scrollTo(0, 0); render();
 }
 document.addEventListener('click', async e => {
-  const t = e.target.closest('button, [data-ch], [data-pickmap], [data-bkm]'); if (!t) return;
+  const t = e.target.closest('button, [data-ch], [data-pickmap], [data-bkm], [data-btog]'); if (!t) return;
   const d = t.dataset;
   try {
     if (d.v) return go(d.v);
@@ -425,6 +428,7 @@ document.addEventListener('click', async e => {
     if (t.id === 'bossRun') { BOSS = await api('/api/boss/run-now', {}); toast('已檢查'); return render(); }
     if (d.bkm) { const [id, mob] = d.bkm.split('|'), cm = BOSS.cfg.charMobs || {}; let l = [...(cm[id] || [])]; if (mob === '*') l = bossList().map(b => b.mob); else l = l.includes(mob) ? l.filter(x => x !== mob) : [...l, mob]; return setCharMobs(id, l); }
     if (d.bk) { const [a, id] = d.bk.split('|'), c = byId(id); return setCharMobs(id, a === 'all' ? ['*'] : a === 'none' ? [] : bossList().filter(b => (b.lv || 0) <= ((c && c.lv) || 0)).map(b => b.mob)); }
+    if (d.btog) { const set = new Set(BOSS.cfg.togetherMobs || []); set.has(d.btog) ? set.delete(d.btog) : set.add(d.btog); return saveBoss({ togetherMobs: [...set] }); }
     if (d.pt) return applyParties([d.pt]);
     if (t.id === 'ptAll') return applyParties(null);
     if (t.id === 'logout') { if (!confirm('登出這台手機？之後要重新掃 QR code 配對。（要完全撤銷請在電腦面板的「📱 手機」移除這台）')) return; try { localStorage.removeItem('szgM_t'); } catch (_) {} location.replace(location.pathname); return; }
@@ -435,7 +439,7 @@ $('#tgt').oninput = e => { const v = Math.floor(Number(e.target.value)); ui.tgt 
 $('#sortBy').onchange = e => { ui.sort = e.target.value; try { localStorage.setItem('szgM_sort', ui.sort); } catch (_) {} renderChars(); };
 $('#bq').oninput = e => { ui.bq = e.target.value; renderBoss(); };
 $('#bOnly').onchange = e => { ui.bOnly = e.target.checked; renderBoss(); };
-$('#bPartyMode').onchange = async e => { if (!BOSS) await loadBoss(); await saveBoss({ partyMode: e.target.value }).catch(err => toast('失敗：' + err.message)); toast(e.target.value === 'split' ? '隊伍改成各自分開打' : '隊伍改成整隊一起打'); };
+$('#bPartyMode').onchange = async e => { if (!BOSS) await loadBoss(); await saveBoss({ partyMode: e.target.value }).catch(err => toast('失敗：' + err.message)); toast(e.target.value === 'split' ? '隊伍改成各自分開打' : e.target.value === 'mixed' ? '隊伍改成依王決定：點下面的王選哪些一起打' : '隊伍改成整隊一起打'); render(); };
 $('#bChain').onchange = async e => { if (!BOSS) await loadBoss(); await saveBoss({ chain: e.target.checked }).catch(err => toast('失敗：' + err.message)); toast(e.target.checked ? '連續打：全部打完才回練功圖' : '每打完一隻先回練功圖'); };
 document.addEventListener('visibilitychange', () => { if (!document.hidden) load(true); });
 setInterval(() => { if (!document.hidden) { load(true); if (view === 'boss' && D && (D.boss.live || []).length) loadBoss().then(render); } }, 10000);
