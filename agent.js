@@ -420,7 +420,14 @@ function agentMain(ctx) {
         autoSellAll: (() => { const a = (c.autoSell && c.autoSell.maps) || {}; const o = {}; for (const [m, x] of Object.entries(a).slice(0, 60)) if (x) o[m] = { enabled: !!x.enabled, itemIds: (x.itemIds || []).slice(0, 400) }; return o; })(),
         points: (() => { const v = state.cashPoints != null ? state.cashPoints : (c.cashPoints != null ? c.cashPoints : c.points); return typeof v === 'number' ? v : (v && typeof v.balance === 'number' ? v.balance : undefined); })(),
         idleOffline: trackOffline() ? { since: offlineSince } : undefined,
-        party: (() => { try { const t = JSON.stringify({ party: state.party || null, invites: state.partyInvites || null, accountParty: state.accountParty || null }); return t.length < 8000 ? JSON.parse(t) : { truncated: true }; } catch (_) { return undefined; } })(),
+        // 隊伍：只留中控用得到的欄位。以前整包（含隊伍聊天 messages，最多 40 則約 4.5KB）超過 8000 字就整個丟掉，
+        // 4 人隊＋聊天紀錄一定超過 → 中控以為大家都是單人，打王只有勾的那隻去（v0.54.1 修正）
+        party: (() => { try {
+          const p = state.party;
+          const mem = m => m && { id: m.id, name: m.name, lv: m.lv, job: m.job, map: m.map, auto: m.auto, hp: m.hp, maxhp: m.maxhp, leader: !!m.leader, self: !!m.self };
+          return { party: p ? { code: p.code || null, leader: p.leader || null, members: (Array.isArray(p.members) ? p.members : []).slice(0, 12).map(mem).filter(Boolean) } : null,
+            invites: Array.isArray(state.partyInvites) ? state.partyInvites.length : 0, accountParty: state.accountParty || null };
+        } catch (_) { return undefined; } })(),
         knowledge: (() => { const k = lastKnowledge || state.knowledge; return k ? { ready: !!k.ready, remaining: k.remaining,
           round: k.round ? { index: k.round.index, done: !!k.round.done, correct: k.round.correct } : null, dbg: { why: quizDbg.why, err: quizDbg.err, step: quizDbg.step, ticks: quizDbg.ticks } } : undefined; })(),
         gear, items,
