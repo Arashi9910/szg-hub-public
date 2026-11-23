@@ -2091,5 +2091,6 @@ function agentMain(ctx) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
     else start();
 
+    if (BG) BG.isBusy = () => agentBusy || agentRunning; // 背景執行定時重新整理前先問（有工作、打王中不重整）
     return { version: AGENT_VERSION, isBusy: () => agentBusy || agentRunning };
 }

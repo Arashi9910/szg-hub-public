@@ -18,6 +18,7 @@ const LOGIN_PATH = process.env.SZG_BG_LOGIN_PATH || '/game/';
 const LOGIN_HEADLESS = process.env.SZG_BG_LOGIN_HEADLESS === '1'; // 只給測試用（雲端沒有螢幕）
 const TICK_MS = Number(process.env.SZG_BG_TICK_MS) || 15000;
 const ACCT_CHECK_MS = 60000;
+const RELOAD_GAP_MS = Number(process.env.SZG_BG_RELOAD_GAP_MS) || 60000; // 定時重新整理：兩頁之間至少隔多久（錯開）
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const onGameUrl = u => String(u || '').startsWith(GAME + '/game');
@@ -74,7 +75,7 @@ class Cdp {
 
 // 每個分頁檢查一次：網址、畫面上的角色、腳本有沒有在跑、是否讓位；每分鐘多問一次帳號（看有沒有登入）
 const probeExpr = withAcct => `(async () => {
-  const o = { url: location.href, char: sessionStorage.getItem('mapleCharacter') || '', bg: window.__szgBg ? { key: window.__szgBg.key, standby: !!window.__szgBg.standby } : null, hidden: document.hidden, badge: ((document.getElementById('szg-hub-badge') || {}).textContent || '').slice(0, 120) };
+  const o = { url: location.href, char: sessionStorage.getItem('mapleCharacter') || '', hasState: !!sessionStorage.getItem('mapleSessionView'), loadedAt: Math.round(performance.timeOrigin), busy: !!(window.__szgBg && window.__szgBg.isBusy && window.__szgBg.isBusy()), bg: window.__szgBg ? { key: window.__szgBg.key, standby: !!window.__szgBg.standby, lite: !!window.__szgBg.lite } : null, hidden: document.hidden, badge: ((document.getElementById('szg-hub-badge') || {}).textContent || '').slice(0, 120) };
   if (${withAcct ? 'true' : 'false'} && location.origin === ${JSON.stringify(GAME)}) {
     try { const r = await fetch('/api/account', { cache: 'no-store', credentials: 'same-origin' }); o.acct = r.status; if (r.ok) { const j = await r.json(); o.code = j.playerCode || ''; o.chars = j.characterIds || []; } } catch (e) { o.acct = 0; }
   }
@@ -85,7 +86,7 @@ module.exports = function makeBg(opt) {
   const { dataDir, hubUrl, getCfg, setCfg, userscript, agent } = opt;
   const log = opt.log || (m => console.log('[背景] ' + m));
   const run = {}; // 設定檔 id -> 執行狀態
-  const cfg = () => { const c = getCfg() || {}; return { chromePath: c.chromePath || '', profiles: Array.isArray(c.profiles) ? c.profiles : [] }; };
+  const cfg = () => { const c = getCfg() || {}; return { chromePath: c.chromePath || '', lite: c.lite !== false, reloadHours: c.reloadHours === undefined ? 6 : Math.max(0, Number(c.reloadHours) || 0), profiles: Array.isArray(c.profiles) ? c.profiles : [] }; };
   const prof = id => cfg().profiles.find(p => p.id === id);
   const dirOf = id => path.join(dataDir, 'bg', String(id).replace(/[^\w-]/g, ''));
   const R = id => run[id] || (run[id] = { id, state: 'off', msg: '', pages: {}, fails: [], busy: false, needLogin: false, cdp: null, login: null });
@@ -104,13 +105,17 @@ module.exports = function makeBg(opt) {
   const sandboxArgs = () => (process.platform === 'linux' && process.getuid && process.getuid() === 0 ? ['--no-sandbox'] : []);
 
   // ---------- 分頁裡注入的程式（等於背景版的竄改猴＋中控腳本） ----------
-  function injected(id, key) {
+  function injected(id, key, lite) {
     const us = userscript(); const body = us.split('// ==/UserScript==')[1] || us;
     const fixed = body.replace(/const HUB = '[^']*';/, `const HUB = ${JSON.stringify(hubUrl)};`);
     return `(function(){
 if (location.origin !== ${JSON.stringify(GAME)} || location.pathname.indexOf('/game') !== 0) return;
 if (window.__szgBg) return; // 防止重複注入
-window.__szgBg = { profile: ${JSON.stringify(id)}, key: ${JSON.stringify(key)}, standby: false };
+window.__szgBg = { profile: ${JSON.stringify(id)}, key: ${JSON.stringify(key)}, standby: false, lite: ${lite ? 'true' : 'false'} };
+${lite ? `// 省資源模式：背景分頁沒人看，動畫每 0.5 秒畫一格就好（遊戲資料照常同步），關掉 CSS 動畫
+(function(){ try { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = cb => setTimeout(() => raf(cb), 500); } catch (_) {}
+  const st = () => { try { const e = document.createElement('style'); e.textContent = '*,*::before,*::after{animation:none!important;transition:none!important}'; (document.head || document.documentElement).appendChild(e); } catch (_) {} };
+  if (document.documentElement) st(); else document.addEventListener('DOMContentLoaded', st); })();` : ''}
 const unsafeWindow = window;
 const GM_getValue = (k, d) => { try { const v = localStorage.getItem('__gm:' + k); return v == null ? d : JSON.parse(v); } catch (_) { return d; } };
 const GM_setValue = (k, v) => { try { localStorage.setItem('__gm:' + k, JSON.stringify(v)); } catch (_) {} };
@@ -140,21 +145,41 @@ ${fixed}
     cdp.send('Runtime.evaluate', { expression: `window.__szgGmxDone && window.__szgGmxDone(${Number(o.id)}, ${JSON.stringify(out)})`, contextId: p.executionContextId }, sid).catch(() => {});
   }
 
+  // 省資源模式：背景（看不到的）分頁不下載圖片、音效、影片（遊戲資料、全身照 /api/appearance 不受影響）
+  const LITE_BLOCK = ['*.png', '*.png?*', '*.jpg', '*.jpg?*', '*.jpeg', '*.gif', '*.gif?*', '*.webp', '*.webp?*', '*.svg', '*.mp3', '*.mp3?*', '*.ogg', '*.ogg?*', '*.wav', '*.m4a', '*.mp4', '*.webm', '*.woff', '*.woff2', '*.ttf'];
+  const liteFor = r => cfg().lite && !r.visible && !r.noLite;
+  async function applyLiteNet(r, sid) {
+    await r.cdp.send('Network.enable', {}, sid).catch(() => {});
+    await r.cdp.send('Network.setBlockedURLs', { urls: liteFor(r) ? LITE_BLOCK : [] }, sid).catch(() => {});
+  }
   async function setupSession(r, key, sid) {
     const { cdp } = r;
     await cdp.send('Page.enable', {}, sid);
     await cdp.send('Runtime.enable', {}, sid);
     await cdp.send('Runtime.addBinding', { name: '__szgGmx' }, sid);
     await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true }, sid).catch(() => {}); // 背景分頁也當成「看得到」，不會掉進離線掛機
-    const { identifier } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: injected(r.id, key) }, sid);
+    await applyLiteNet(r, sid);
+    const { identifier } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: injected(r.id, key, liteFor(r)) }, sid);
     return identifier;
   }
   // 「帳號目前的角色」那頁（key '_'）改成固定那隻角色：不重開分頁，只換注入的 key（重新整理、中控重啟後也認得）
+  // 省資源模式切換後：每頁換注入、換擋的網址，再重新整理
+  async function reapplyLite(r) {
+    for (const [key, pg] of Object.entries(r.pages)) {
+      try {
+        if (pg.scriptId) await r.cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: pg.scriptId }, pg.sessionId).catch(() => {});
+        await applyLiteNet(r, pg.sessionId);
+        pg.scriptId = (await r.cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: injected(r.id, key, liteFor(r)) }, pg.sessionId)).identifier;
+        await r.cdp.send('Page.reload', {}, pg.sessionId);
+        pg.openedAt = Date.now();
+      } catch (_) {}
+    }
+  }
   async function rekeyPage(r, from, to) {
     const pg = r.pages[from]; if (!pg || r.pages[to] || !r.cdp) return false;
     try {
       if (pg.scriptId) await r.cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: pg.scriptId }, pg.sessionId).catch(() => {});
-      const { identifier } = await r.cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: injected(r.id, to) }, pg.sessionId);
+      const { identifier } = await r.cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: injected(r.id, to, liteFor(r)) }, pg.sessionId);
       await r.cdp.send('Runtime.evaluate', { expression: `window.__szgBg && (window.__szgBg.key = ${JSON.stringify(to)})` }, pg.sessionId).catch(() => {});
       pg.scriptId = identifier; pg.char = to;
       delete r.pages[from]; r.pages[to] = pg;
@@ -228,7 +253,11 @@ ${fixed}
         try { fs.unlinkSync(path.join(dir, 'DevToolsActivePort')); } catch (_) {}
         const args = [...(opt.visible ? ['--new-window'] : ['--headless=new']), '--remote-debugging-port=0', `--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check',
           '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
-          '--mute-audio', '--window-size=1280,800', '--disable-features=Translate,MediaRouter', ...sandboxArgs(), 'about:blank'];
+          '--mute-audio', '--window-size=1280,800',
+          // 省記憶體：同一個遊戲網站的分頁共用一個程序；關掉背景 Chrome 用不到的功能（同步、擴充、元件更新、翻譯…）
+          '--process-per-site', '--disable-extensions', '--disable-component-update', '--disable-default-apps', '--disable-sync', '--disable-background-networking',
+          '--disable-breakpad', '--no-pings', '--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication,CalculateNativeWinOcclusion,HeavyAdIntervention,BackForwardCache',
+          ...(opt.visible ? [] : ['--disable-gpu', '--disable-gpu-compositing']), ...sandboxArgs(), 'about:blank'];
         const proc = spawn(chrome, args, { detached: true, stdio: 'ignore', windowsHide: true });
         proc.on('error', e => { r.msg = '開不了 Chrome：' + e.message; });
         proc.unref();
@@ -338,6 +367,13 @@ ${fixed}
       const v = await r.cdp.send('Runtime.evaluate', { expression: probeExpr(withAcct), awaitPromise: true, returnByValue: true }, pg.sessionId, 15000);
       const o = (v.result && v.result.value) || {};
       pg.info = { ...(pg.info || {}), ...o, at: now }; pg.fail = 0;
+      if (o.hasState) pg.stateOk = true;
+      // 省資源模式的保險：遊戲頁載入 2 分鐘還沒有遊戲資料 → 這個帳號改回完整模式（可能遊戲有地方需要圖片才會啟動）
+      if (o.bg && o.bg.lite && !o.hasState && onGameUrl(o.url) && !r.needLogin && o.loadedAt && now - o.loadedAt > 120000 && !r.noLite) {
+        r.noLite = true; log(`${(prof(r.id) || {}).name}：省資源模式下遊戲沒有載入完成，這個帳號改回完整模式`);
+        (r.logs || (r.logs = [])).push({ at: now, page: key, msg: '省資源模式下遊戲沒有載入完成，已改回完整模式（中控重開前有效）' });
+        await reapplyLite(r); return;
+      }
       if (!onGameUrl(o.url) && now - pg.openedAt > 30000) r.needLogin = true; // 被導到登入頁之類的地方
       const onGame = onGameUrl(o.url);
       if (withAcct && o.acct !== undefined) { // 頁面還沒載入（about:blank）時不算檢查過
@@ -363,7 +399,7 @@ ${fixed}
     }
   }
 
-  let ticking = false;
+  let ticking = false, lastReloadAt = 0;
   async function tick() {
     if (ticking) return; ticking = true;
     try {
@@ -382,19 +418,67 @@ ${fixed}
         for (const k of want) if (!r.pages[k]) await openPage(r, k).catch(e => { r.msg = e.message; });
         for (const [k, pg] of Object.entries(r.pages)) await probe(r, k, pg);
       }
+      // 定時重新整理：掛久了頁面記憶體會越長越大。一輪只重整一頁、錯開；有工作／打王（isBusy）、讓位中、看得到的視窗不重整
+      const H = cfg().reloadHours;
+      if (H > 0) {
+        const now = Date.now();
+        outer: for (const p of cfg().profiles) {
+          const r = run[p.id]; if (!r || !r.cdp || r.busy || r.visible || r.state !== 'running') continue;
+          for (const pg of Object.values(r.pages)) {
+            const i = pg.info || {};
+            if (!i.loadedAt || now - i.loadedAt < H * 3600e3 || i.busy || (i.bg && i.bg.standby) || now - (lastReloadAt || 0) < RELOAD_GAP_MS) continue;
+            await r.cdp.send('Page.reload', {}, pg.sessionId).catch(() => {});
+            lastReloadAt = now; pg.info = { ...i, loadedAt: now };
+            r.reloads = (r.reloads || 0) + 1;
+            break outer;
+          }
+        }
+      }
     } catch (e) { log('檢查失敗：' + e.message); }
     finally { ticking = false; }
   }
 
+  // ---------- 記憶體：每個背景帳號的 Chrome（主程式＋所有子程序）用了多少 ----------
+  let mem = { at: 0, by: {}, total: 0, err: '' }, memBusy = false;
+  function runCmd(cmd, args) { return new Promise(res => execFile(cmd, args, { timeout: 20000, windowsHide: true, maxBuffer: 32 * 1024 * 1024 }, (e, out) => res(e ? '' : String(out)))); }
+  async function refreshMem() {
+    if (memBusy || Date.now() - mem.at < 30000) return; memBusy = true;
+    try {
+      let procs = [];
+      if (process.platform === 'win32') {
+        const out = await runCmd('powershell', ['-NoProfile', '-NonInteractive', '-Command', "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Select-Object ProcessId,ParentProcessId,WorkingSetSize,CommandLine | ConvertTo-Json -Compress"]);
+        let j = []; try { j = JSON.parse(out || '[]'); } catch (_) {}
+        procs = (Array.isArray(j) ? j : [j]).filter(Boolean).map(x => ({ pid: x.ProcessId, ppid: x.ParentProcessId, bytes: Number(x.WorkingSetSize) || 0, cmd: x.CommandLine || '' }));
+      } else {
+        const out = await runCmd('ps', ['-eo', 'pid=,ppid=,rss=,args=']);
+        procs = out.split('\n').map(l => l.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)).filter(Boolean).map(m => ({ pid: +m[1], ppid: +m[2], bytes: +m[3] * 1024, cmd: m[4] }));
+      }
+      const kids = new Map(); for (const p of procs) (kids.get(p.ppid) || kids.set(p.ppid, []).get(p.ppid)).push(p);
+      const by = {}; let total = 0;
+      for (const p of cfg().profiles) {
+        const dir = dirOf(p.id), re = new RegExp(dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(["\\s]|$)'), roots = procs.filter(x => !/--type=/.test(x.cmd) && re.test(x.cmd));
+        let sum = 0, n = 0; const seen = new Set();
+        const walk = x => { if (seen.has(x.pid)) return; seen.add(x.pid); sum += x.bytes; n++; for (const c of kids.get(x.pid) || []) walk(c); };
+        roots.forEach(walk);
+        if (n) { by[p.id] = { mb: Math.round(sum / 1048576), procs: n }; total += sum; }
+      }
+      mem = { at: Date.now(), by, total: Math.round(total / 1048576), err: procs.length ? '' : '讀不到程序清單' };
+    } catch (e) { mem = { ...mem, at: Date.now(), err: e.message }; }
+    finally { memBusy = false; }
+  }
+
   function status() {
+    refreshMem();
     const c = cfg();
     return {
       batch: { cur: batch.cur, queue: [...batch.queue], done: batch.done.length, skipped: batch.skipped.length, total: batch.done.length + batch.skipped.length + batch.queue.length + (batch.cur ? 1 : 0) },
+      lite: c.lite, reloadHours: c.reloadHours, mem: { total: mem.total, at: mem.at, err: mem.err },
       chrome: findChrome(c.chromePath), chromePath: c.chromePath, nodeOk: typeof WebSocket === 'function', node: process.version, game: GAME,
       profiles: c.profiles.map(p => {
         const r = run[p.id] || {};
         return {
           id: p.id, name: p.name, email: p.email || '', note: p.note || '', on: !!p.on, visible: (run[p.id] || {}).visible || '', pages: p.pages || [''], code: p.code || '', charIds: p.charIds || [],
+          mem: mem.by[p.id] || null, noLite: !!r.noLite, reloads: r.reloads || 0,
           state: r.state || 'off', msg: r.msg || '', logs: (r.logs || []).slice(-10), needLogin: !!r.needLogin, startedAt: r.startedAt || 0, dir: dirOf(p.id),
           live: Object.entries(r.pages || {}).map(([k, pg]) => ({ key: k, char: (pg.info && pg.info.char) || pg.char, url: pg.info && pg.info.url, standby: !!(pg.info && pg.info.bg && pg.info.bg.standby), injected: !!(pg.info && pg.info.bg), badge: pg.info && pg.info.badge, at: (pg.info && pg.info.at) || 0, fail: pg.fail })),
         };
@@ -405,7 +489,16 @@ ${fixed}
   // ---------- 面板用的操作 ----------
   async function action(name, b) {
     const c = getCfg() || {}; const list = Array.isArray(c.profiles) ? c.profiles : [];
-    if (name === 'config') { setCfg({ ...c, chromePath: String(b.chromePath || '').trim() }); return status(); }
+    if (name === 'config') {
+      const patch = {};
+      if (b.chromePath !== undefined) patch.chromePath = String(b.chromePath || '').trim();
+      if (b.reloadHours !== undefined) patch.reloadHours = Math.max(0, Math.min(168, Number(b.reloadHours) || 0));
+      const liteChanged = b.lite !== undefined && (b.lite !== false) !== (c.lite !== false);
+      if (b.lite !== undefined) patch.lite = b.lite !== false;
+      setCfg({ ...c, ...patch });
+      if (liteChanged) for (const p of list) { const r = run[p.id]; if (r && r.cdp && r.state === 'running') { r.noLite = false; await reapplyLite(r); } }
+      return status();
+    }
     if (name === 'add') {
       const id = 'p' + Date.now().toString(36);
       setCfg({ ...c, profiles: [...list, { id, name: String(b.name || '').trim().slice(0, 20) || `帳號 ${list.length + 1}`, email: String(b.email || '').trim().slice(0, 120), note: '', on: false, pages: [''] }] });

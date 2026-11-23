@@ -910,6 +910,7 @@
       <h3>🖥 背景執行帳號</h3>
       <div class="dim help-src">中控在背景開 Chrome 跑遊戲和中控腳本（看不到視窗），面板、手機照樣下指令。每個遊戲帳號一個獨立的 Chrome 資料夾，和你平常的 Chrome 分開，第一次要登入一次。<b>點角色名字</b>會把那個帳號換成看得到的 Chrome 視窗並顯示那隻角色（中控腳本照跑），關掉視窗就回到背景。你平常的 Chrome 也開著同一隻角色時，背景那頁會自動暫停。拖曳左邊 ⠿ 調整順序；點整列勾選後，上面的按鈕只處理勾選的帳號（沒勾就是全部）。</div>
       <div id="acSys"></div>
+      <div class="bar" id="acPerf"></div>
       <div class="bar" id="acBar">
         <button class="btn primary" data-acact="login-batch" title="依序跳出登入視窗（自動帶入 Email），你輸入密碼後關掉視窗就換下一個">🔑 批次登入</button>
         <button class="btn" data-acact="start-all">▶ 開始</button>
@@ -5918,7 +5919,7 @@ function acStateHtml(p) {
   const [t, c] = p.needLogin && p.state === 'running' ? ['需要登入', 'bad'] : (BG_STATE[p.state] || [p.state, '']);
   const live = p.live || [], stand = live.filter(x => x.standby).length;
   return `<div class="ac-st"><span class="bg-dot ${c}"></span> <span class="${c === 'ok' ? 'good' : c}">${esc(t)}</span>${p.visible ? ' <span class="tag">👁 顯示中</span>' : ''}`
-    + (p.state === 'running' && live.length ? `<div class="dim sm">${live.length} 個分頁${stand ? `，${stand} 個暫停（你的 Chrome 開著）` : ''}</div>` : '')
+    + (p.state === 'running' && live.length ? `<div class="dim sm">${live.length} 個分頁${stand ? `，${stand} 個暫停（你的 Chrome 開著）` : ''}${p.mem ? `・${p.mem.mb >= 1024 ? (p.mem.mb / 1024).toFixed(1) + ' GB' : p.mem.mb + ' MB'}` : ''}${p.noLite ? '・<span class="warn" title="省資源模式下遊戲沒有載入完成，這個帳號先用完整模式">完整模式</span>' : ''}</div>` : '')
     + (p.state === 'error' && p.msg ? `<div class="bad sm">${esc(p.msg)}</div>` : '')
     + ((p.logs || []).length ? `<details><summary class="dim sm">錯誤紀錄（${p.logs.length}）</summary><div class="bg-log">${p.logs.map(l => `${new Date(l.at).toLocaleTimeString()} ${esc(l.page)} ${esc(l.msg)}`).join('\n')}</div></details>` : '') + '</div>';
 }
@@ -5947,6 +5948,10 @@ function drawAccts() {
     + (s.chrome ? `<div class="dim sm">Chrome：${esc(s.chrome)}</div>` : '<div class="bad sm">找不到 Chrome，請填 chrome.exe 的完整路徑：</div>')
     + (!s.chrome || s.chromePath ? `<div class="bar" style="margin:0"><input id="bgChrome" value="${esc(s.chromePath || '')}" placeholder="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" style="flex:1"><button class="btn sm" data-acact="config">儲存</button></div>` : '');
   const ps = s.profiles || [];
+  const memTxt = mb => mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + ' MB';
+  if (!(ae && ae.closest && ae.closest('#acPerf'))) $('#acPerf').innerHTML = `<label title="背景（看不到的）分頁不下載遊戲圖片、音效，動畫每 0.5 秒才畫一格；遊戲資料照常同步。點角色名字叫出的視窗照常顯示。某個帳號遊戲載入不完整時會自動改回完整模式"><input type="checkbox" class="sw" id="acLite"${s.lite ? ' checked' : ''}> 省資源模式</label>
+    <label title="掛久了頁面記憶體會越長越大：每隔幾小時重新整理一次背景分頁（一次一頁、錯開；有工作或打王中不會重整）。0＝不要">每 <input type="number" id="acReload" min="0" max="168" step="1" value="${s.reloadHours}" style="width:56px"> 小時重新整理分頁</label>
+    <span class="dim">背景 Chrome 記憶體：<b>${s.mem && s.mem.at ? memTxt(s.mem.total) : '計算中…'}</b>${s.mem && s.mem.err ? `（${esc(s.mem.err)}）` : ''}</span><span class="dim sm">（Windows 工作管理員的「記憶體」數字，約略值，30 秒更新）</span>`;
   for (const id of [...ui.acSel]) if (!ps.find(p => p.id === id)) ui.acSel.delete(id);
   $('#acSelInfo').textContent = ui.acSel.size ? `已勾選 ${ui.acSel.size} 個帳號` : `沒勾選＝全部 ${ps.length} 個`;
   // 批次登入進度
@@ -5986,6 +5991,13 @@ document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset && t.dataset.acpick) { if (t.checked) ui.acSel.add(t.dataset.acpick); else ui.acSel.delete(t.dataset.acpick); t.closest('tr').classList.toggle('picked', t.checked); $('#acSelInfo').textContent = ui.acSel.size ? `已勾選 ${ui.acSel.size} 個帳號` : `沒勾選＝全部 ${((bgLast || {}).profiles || []).length} 個`; return; }
   if (t.id === 'acAll') { const ps = (bgLast && bgLast.profiles) || []; ui.acSel = new Set(t.checked ? ps.map(p => p.id) : []); drawAccts(); return; }
+  if (t.id === 'acLite' || t.id === 'acReload') {
+    try {
+      if (t.id === 'acLite' && !confirm(`${t.checked ? '開啟' : '關閉'}省資源模式？執行中的背景分頁會重新整理一次。`)) { t.checked = !t.checked; return; }
+      await api('/api/bg/config', t.id === 'acLite' ? { lite: t.checked } : { reloadHours: Number(t.value) || 0 }); t.blur(); await loadBg(); drawAccts();
+    } catch (err) { alert('失敗：' + err.message); }
+    return;
+  }
   if (t.dataset && t.dataset.acf) { try { await api('/api/bg/edit', { id: t.dataset.id, [t.dataset.acf]: t.value }); t.blur(); await loadBg(); drawAccts(); } catch (err) { alert('失敗：' + err.message); } return; }
   if (t.dataset && t.dataset.bgpage) {
     const id = t.dataset.bgpage;
