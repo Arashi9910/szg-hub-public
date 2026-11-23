@@ -2026,7 +2026,7 @@ function renderGivePick() {
 
 // ---------- 背包頁 ----------
 // ---------- 背包（全角色） ----------
-ui.bag = { view: 'item', q: '', kind: '', sellOnly: false, hideLocked: false, wh: false, guild: false, guildAt: 0, chars: new Set(), giveTo: '', guildTo: '', judge: 'all' };
+ui.bag = { view: 'item', listLimit: 1000, q: '', kind: '', sellOnly: false, hideLocked: false, wh: false, guild: false, guildAt: 0, chars: new Set(), giveTo: '', guildTo: '', judge: 'all' };
 // 「含公倉」已拿掉：公倉的東西請到「公倉」分頁（背包、公倉並排搬移）
 // ---- 背包的「含公倉」：公會倉庫的東西也列出來，可以選取後「從公倉領取」給某隻角色 ----
 // 道具 key 的類別：先看角色背包裡同一種東西的類別，沒有的話用道具編號判斷（204xxxx 卷軸、2xxxxxx 消耗、3xxxxxx 裝飾、4xxxxxx 其他）
@@ -2137,9 +2137,11 @@ function bagListView(vis) {
     : kindRank(a.r.kind) - kindRank(b.r.kind) || cmp(typ(a), typ(b)) || cmp(a.r.name, b.r.name) || ((b.j ? b.j.score : -999) - (a.j ? a.j.score : -999)));
   const nG = rows.filter(x => x.r.t === 'g').length, nNo = rows.filter(x => !x.guild && x.j && !x.j.ok && !x.r.locked).length;
   const th = (k, l, cls = '') => `<th class="${cls}" data-blsort="${k}" style="cursor:pointer">${l}${sortKey === k ? ' ▼' : ''}</th>`;
+  const limit = ui.bag.listLimit || 1000, shown = rows.slice(0, limit);
+  ui.bagListShown = shown.map(x => x.sid);
   let h = `<div class="card" style="padding:0"><div class="bar" style="padding:8px 10px 0"><span class="dim">共 ${rows.length} 列（裝備 ${nG} 件）</span>${nNo ? `<button class="btn sm" data-bquick="rollno">選取畫面上浮動未達標、沒鎖定的裝備（${nNo} 件）</button>` : ''}<span class="dim sm">判斷依「部位設定」：每個部位、武器種類看的素質不同（上方可以改）</span></div>
-    <table class="sticky"><thead><tr><th class="nosort" style="width:28px"></th>${th('kind', '物品')}<th class="nosort">類別／部位</th>${th('owner', '在誰身上')}<th class="nosort num">數量</th><th class="nosort">強化／可衝</th><th class="nosort">掉落浮動</th>${th('score', '判斷')}<th class="nosort num">商店單價</th><th class="nosort">狀態</th></tr></thead><tbody>`;
-  for (const x of rows.slice(0, 800)) {
+    <table class="sticky"><thead><tr><th class="nosort" style="width:28px"><input type="checkbox" id="bListAll" title="全選／取消畫面上顯示的列"${shown.length && shown.every(x => ui.bagSel.has(x.sid)) ? ' checked' : ''}></th>${th('kind', '物品')}<th class="nosort">類別／部位</th>${th('owner', '在誰身上')}<th class="nosort num">數量</th><th class="nosort">強化／可衝</th><th class="nosort">掉落浮動</th>${th('score', '判斷')}<th class="nosort num">商店單價</th><th class="nosort">狀態</th></tr></thead><tbody>`;
+  for (const x of shown) {
     const r = x.r, sel = ui.bagSel.has(x.sid), g = r.g;
     const plus = r.t !== 'g' ? '' : x.guild ? `${g.successes ? '+' + g.successes : '—'} / ${g.slots ?? '?'}` : `${g.plus ? `<span class="plus">+${g.plus}</span>` : '—'} / ${g.slotsLeft}`;
     const st = x.guild ? '<span class="dim">公倉</span>' : r.locked ? ic('lock') + ' 鎖定' : r.t === 'i' && r.i.supply ? `<span title="補給使用中，不會被賣掉">${ic('pill')} 補給</span>` : r.sellable ? '' : '<span class="dim">不可賣</span>';
@@ -2154,7 +2156,7 @@ function bagListView(vis) {
       <td class="num dim">${r.t === 'i' && r.i && r.i.sellPrice ? fmt(r.i.sellPrice) : ''}</td>
       <td>${st}</td></tr>`;
   }
-  return h + `</tbody></table>${rows.length > 800 ? '<div class="dim" style="padding:8px">只顯示前 800 列，請用搜尋、類別或浮動篩選縮小範圍</div>' : ''}</div>`;
+  return h + `</tbody></table>${rows.length > limit ? `<div class="bar" style="padding:8px 10px"><span class="dim">顯示前 ${fmt(limit)} 列，共 ${fmt(rows.length)} 列</span><button class="btn sm" data-blmore="1000">再顯示 1,000 列</button><button class="btn sm" data-blmore="all">全部顯示</button><span class="dim sm">列很多時畫面會慢一點；也可以用搜尋、類別、浮動篩選縮小範圍</span></div>` : ''}<div class="dim sm" style="padding:0 10px 8px">點整列選取；按住 Shift 再點另一列，可以一次選取（或取消）中間的所有列。</div></div>`;
 }
 // 依道具：每種東西一行，後面列出誰有多少；點名字選那一份，勾左邊選全部
 function bagItemView(vis) {
@@ -2409,12 +2411,20 @@ function bagJobs(kind) {
   if (!reqs.length) throw new Error('選取的物品裡沒有可以' + JOB_KIND[kind] + '的');
   return reqs;
 }
+document.addEventListener('change', e => {
+  if (e.target.id !== 'bListAll') return;
+  for (const id of ui.bagListShown || []) { if (e.target.checked) ui.bagSel.add(id); else ui.bagSel.delete(id); }
+  renderBagList();
+});
+// Shift＋點選列時不要反白文字
+document.addEventListener('mousedown', e => { if (e.shiftKey && e.target.closest && e.target.closest('#bag [data-bpick]')) e.preventDefault(); });
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-bview],[data-bkind],[data-bchar],[data-bpick],[data-bcharsel],[data-bquick],[data-bact],[data-bguildsel],[data-blsort]');
+  const t = e.target.closest('[data-bview],[data-bkind],[data-bchar],[data-bpick],[data-bcharsel],[data-bquick],[data-bact],[data-bguildsel],[data-blsort],[data-blmore]');
   if (!t || !t.closest('#bag')) return;
   const d = t.dataset, b = ui.bag;
   try {
     if (d.blsort) { b.lsort = d.blsort; renderBagList(); return; }
+    if (d.blmore) { b.listLimit = d.blmore === 'all' ? Infinity : (b.listLimit || 1000) + Number(d.blmore); renderBagList(); return; }
     if (d.bview) { b.view = d.bview; try { localStorage.setItem('bagView', b.view); } catch (_) {} renderBag(); return; }
     if (d.bkind !== undefined) { b.kind = d.bkind; renderBagList(); return; }
     if (d.bchar) {
@@ -2425,7 +2435,22 @@ document.addEventListener('click', async e => {
       b.cp = b.chars.size ? { mode: 'custom', ids: [...b.chars] } : { mode: 'all' };
       renderBagList(); return;
     }
-    if (d.bpick) { const ids = d.bpick.split(','), allSel = ids.every(id => ui.bagSel.has(id)); for (const id of ids) { if (allSel) ui.bagSel.delete(id); else ui.bagSel.add(id); } renderBagList(); return; }
+    if (d.bpick) {
+      // Shift＋點：條列（或格子）從上一次點的那列到這列，全部選取／取消（跟這列點下去的結果一樣）
+      const single = !d.bpick.includes(','), box = t.parentElement;
+      if (e.shiftKey && single && ui.bagLast && box && (t.matches('tr.pickrow') || t.classList.contains('tile'))) {
+        const sibs = [...box.querySelectorAll(':scope > [data-bpick]')].map(x => x.dataset.bpick);
+        const i = sibs.indexOf(ui.bagLast), j = sibs.indexOf(d.bpick);
+        if (i >= 0 && j >= 0) {
+          const want = !ui.bagSel.has(d.bpick);
+          for (const id of sibs.slice(Math.min(i, j), Math.max(i, j) + 1)) { if (want) ui.bagSel.add(id); else ui.bagSel.delete(id); }
+          ui.bagLast = d.bpick; try { getSelection().removeAllRanges(); } catch (_) {} renderBagList(); return;
+        }
+      }
+      const ids = d.bpick.split(','), allSel = ids.every(id => ui.bagSel.has(id)); for (const id of ids) { if (allSel) ui.bagSel.delete(id); else ui.bagSel.add(id); }
+      if (single) ui.bagLast = d.bpick;
+      renderBagList(); return;
+    }
     if (d.bcharsel) {
       const s = DATA.chars[d.bcharsel]; if (!s) return;
       for (const r of bagRows(s)) { const sid = bagSid(s.char.id, r.id); if (d.mode === 'none') ui.bagSel.delete(sid); else if (d.mode === 'all' || r.sellable) ui.bagSel.add(sid); }
