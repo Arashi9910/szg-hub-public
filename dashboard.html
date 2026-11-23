@@ -5919,7 +5919,7 @@ function acStateHtml(p) {
   const [t, c] = p.needLogin && p.state === 'running' ? ['需要登入', 'bad'] : (BG_STATE[p.state] || [p.state, '']);
   const live = p.live || [], stand = live.filter(x => x.standby).length;
   return `<div class="ac-st"><span class="bg-dot ${c}"></span> <span class="${c === 'ok' ? 'good' : c}">${esc(t)}</span>${p.visible ? ' <span class="tag">👁 顯示中</span>' : ''}`
-    + (p.state === 'running' && live.length ? `<div class="dim sm">${live.length} 個分頁${stand ? `，${stand} 個暫停（你的 Chrome 開著）` : ''}${p.mem ? `・${p.mem.mb >= 1024 ? (p.mem.mb / 1024).toFixed(1) + ' GB' : p.mem.mb + ' MB'}` : ''}${p.noLite ? '・<span class="warn" title="省資源模式下遊戲沒有載入完成，這個帳號先用完整模式">完整模式</span>' : ''}</div>` : '')
+    + (p.state === 'running' && live.length ? `<div class="dim sm">${live.length} 個分頁${stand ? `，${stand} 個暫停（你的 Chrome 開著）` : ''}${p.mem ? `・<span title="遊戲分頁 ${p.mem.pageMb} MB、Chrome 本身 ${p.mem.baseMb} MB（${p.mem.procs} 個程序）">${p.mem.mb >= 1024 ? (p.mem.mb / 1024).toFixed(1) + ' GB' : p.mem.mb + ' MB'}</span>` : ''}${p.noLite ? '・<span class="warn" title="省資源模式下遊戲沒有載入完成，這個帳號先用完整模式">完整模式</span>' : ''}</div>` : '')
     + (p.state === 'error' && p.msg ? `<div class="bad sm">${esc(p.msg)}</div>` : '')
     + ((p.logs || []).length ? `<details><summary class="dim sm">錯誤紀錄（${p.logs.length}）</summary><div class="bg-log">${p.logs.map(l => `${new Date(l.at).toLocaleTimeString()} ${esc(l.page)} ${esc(l.msg)}`).join('\n')}</div></details>` : '') + '</div>';
 }
@@ -5951,7 +5951,7 @@ function drawAccts() {
   const memTxt = mb => mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + ' MB';
   if (!(ae && ae.closest && ae.closest('#acPerf'))) $('#acPerf').innerHTML = `<label title="背景（看不到的）分頁不下載遊戲圖片、音效，動畫每 0.5 秒才畫一格；遊戲資料照常同步。點角色名字叫出的視窗照常顯示。某個帳號遊戲載入不完整時會自動改回完整模式"><input type="checkbox" class="sw" id="acLite"${s.lite ? ' checked' : ''}> 省資源模式</label>
     <label title="掛久了頁面記憶體會越長越大：每隔幾小時重新整理一次背景分頁（一次一頁、錯開；有工作或打王中不會重整）。0＝不要">每 <input type="number" id="acReload" min="0" max="168" step="1" value="${s.reloadHours}" style="width:56px"> 小時重新整理分頁</label>
-    <span class="dim">背景 Chrome 記憶體：<b>${s.mem && s.mem.at ? memTxt(s.mem.total) : '計算中…'}</b>${s.mem && s.mem.err ? `（${esc(s.mem.err)}）` : ''}</span><span class="dim sm">（Windows 工作管理員的「記憶體」數字，約略值，30 秒更新）</span>`;
+    <span class="dim">背景 Chrome 記憶體：<b>${s.mem && s.mem.at ? memTxt(s.mem.total) : '計算中…'}</b>${s.mem && s.mem.total ? `（遊戲分頁 ${memTxt(s.mem.page)}、<span title="每個 Chrome 自己的主程式、網路、儲存等程序。合併成一個 Chrome 時省的就是這部分">Chrome 本身 ${memTxt(s.mem.base)}</span>）` : ''}${s.mem && s.mem.err ? `（${esc(s.mem.err)}）` : ''}</span><span class="dim sm">（Windows 工作管理員的「記憶體」數字，約略值，30 秒更新）</span>`;
   for (const id of [...ui.acSel]) if (!ps.find(p => p.id === id)) ui.acSel.delete(id);
   $('#acSelInfo').textContent = ui.acSel.size ? `已勾選 ${ui.acSel.size} 個帳號` : `沒勾選＝全部 ${ps.length} 個`;
   // 批次登入進度

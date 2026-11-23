@@ -446,7 +446,8 @@ ${fixed}
     try {
       let procs = [];
       if (process.platform === 'win32') {
-        const out = await runCmd('powershell', ['-NoProfile', '-NonInteractive', '-Command', "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Select-Object ProcessId,ParentProcessId,WorkingSetSize,CommandLine | ConvertTo-Json -Compress"]);
+        // 輸出強制 UTF-8（路徑有中文時，預設的 Big5 會變亂碼）
+        const out = await runCmd('powershell', ['-NoProfile', '-NonInteractive', '-Command', "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Select-Object ProcessId,ParentProcessId,WorkingSetSize,CommandLine | ConvertTo-Json -Compress"]);
         let j = []; try { j = JSON.parse(out || '[]'); } catch (_) {}
         procs = (Array.isArray(j) ? j : [j]).filter(Boolean).map(x => ({ pid: x.ProcessId, ppid: x.ParentProcessId, bytes: Number(x.WorkingSetSize) || 0, cmd: x.CommandLine || '' }));
       } else {
@@ -454,15 +455,16 @@ ${fixed}
         procs = out.split('\n').map(l => l.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)).filter(Boolean).map(m => ({ pid: +m[1], ppid: +m[2], bytes: +m[3] * 1024, cmd: m[4] }));
       }
       const kids = new Map(); for (const p of procs) (kids.get(p.ppid) || kids.set(p.ppid, []).get(p.ppid)).push(p);
-      const by = {}; let total = 0;
+      const by = {}; let total = 0, totalPage = 0;
       for (const p of cfg().profiles) {
-        const dir = dirOf(p.id), re = new RegExp(dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(["\\s]|$)'), roots = procs.filter(x => !/--type=/.test(x.cmd) && re.test(x.cmd));
-        let sum = 0, n = 0; const seen = new Set();
-        const walk = x => { if (seen.has(x.pid)) return; seen.add(x.pid); sum += x.bytes; n++; for (const c of kids.get(x.pid) || []) walk(c); };
+        // 只用「data\bg\<帳號編號>」比對（編號是英數字），不受資料夾路徑的中文、大小寫影響
+        const id = String(p.id).replace(/[^\w-]/g, ''), re = new RegExp('[\\\\/]bg[\\\\/]' + id + '(["\\s\\\\/]|$)', 'i'), roots = procs.filter(x => !/--type=/.test(x.cmd) && re.test(x.cmd));
+        let sum = 0, page = 0, n = 0; const seen = new Set();
+        const walk = x => { if (seen.has(x.pid)) return; seen.add(x.pid); sum += x.bytes; if (/--type=renderer/.test(x.cmd) && !/--extension-process/.test(x.cmd)) page += x.bytes; n++; for (const c of kids.get(x.pid) || []) walk(c); };
         roots.forEach(walk);
-        if (n) { by[p.id] = { mb: Math.round(sum / 1048576), procs: n }; total += sum; }
+        if (n) { by[p.id] = { mb: Math.round(sum / 1048576), pageMb: Math.round(page / 1048576), baseMb: Math.round((sum - page) / 1048576), procs: n }; total += sum; totalPage += page; }
       }
-      mem = { at: Date.now(), by, total: Math.round(total / 1048576), err: procs.length ? '' : '讀不到程序清單' };
+      mem = { at: Date.now(), by, total: Math.round(total / 1048576), page: Math.round(totalPage / 1048576), base: Math.round((total - totalPage) / 1048576), procs: procs.length, matched: Object.keys(by).length, err: !procs.length ? '讀不到程序清單' : !Object.keys(by).length && cfg().profiles.some(p => run[p.id] && run[p.id].state === 'running') ? '對不到背景 Chrome 的程序' : '' };
     } catch (e) { mem = { ...mem, at: Date.now(), err: e.message }; }
     finally { memBusy = false; }
   }
@@ -472,7 +474,7 @@ ${fixed}
     const c = cfg();
     return {
       batch: { cur: batch.cur, queue: [...batch.queue], done: batch.done.length, skipped: batch.skipped.length, total: batch.done.length + batch.skipped.length + batch.queue.length + (batch.cur ? 1 : 0) },
-      lite: c.lite, reloadHours: c.reloadHours, mem: { total: mem.total, at: mem.at, err: mem.err },
+      lite: c.lite, reloadHours: c.reloadHours, mem: { total: mem.total, page: mem.page || 0, base: mem.base || 0, at: mem.at, err: mem.err },
       chrome: findChrome(c.chromePath), chromePath: c.chromePath, nodeOk: typeof WebSocket === 'function', node: process.version, game: GAME,
       profiles: c.profiles.map(p => {
         const r = run[p.id] || {};
