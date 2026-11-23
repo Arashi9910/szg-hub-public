@@ -176,9 +176,13 @@ ${fixed}
     }
   }
 
-  function onEvent(r, m) {
-    if (m.method === '__closed') { if (r.state === 'running') { r.state = 'error'; r.msg = '背景 Chrome 關掉了，稍後自動重開'; r.fails.push(Date.now()); } r.cdp = null; r.pages = {}; return; }
-    if (m.method === 'Runtime.bindingCalled' && m.params && m.params.name === '__szgGmx') return void gmx(r.cdp, m.sessionId, m.params);
+  function onEvent(r, m, cdp) {
+    if (m.method === '__closed') {
+      if (r.cdp && r.cdp !== cdp) return; // 舊的連線（已經換新的 Chrome 了）
+      if (r.stopping) { r.cdp = null; r.pages = {}; return; } // 中控自己關的（停止、登入、切換顯示）：不算當掉
+      if (r.visible) { r.visible = ''; r.state = 'off'; r.msg = ''; r.cdp = null; r.pages = {}; log(`${(prof(r.id) || {}).name}：顯示的視窗關掉了，回到背景`); return; } // 使用者關掉「顯示」的視窗：下一輪自動回到無頭背景
+      if (r.state === 'running') { r.state = 'error'; r.msg = '背景 Chrome 關掉了，稍後自動重開'; r.fails.push(Date.now()); } r.cdp = null; r.pages = {}; return; }
+    if (m.method === 'Runtime.bindingCalled' && m.params && m.params.name === '__szgGmx') return void gmx(cdp, m.sessionId, m.params);
     const pg = Object.entries(r.pages).find(([, p]) => p.sessionId === m.sessionId);
     // 分頁裡的錯誤記下來（面板看得到最近幾筆，方便查問題）
     if (m.method === 'Runtime.exceptionThrown' || (m.method === 'Runtime.consoleAPICalled' && m.params && (m.params.type === 'error' || m.params.type === 'warning'))) {
@@ -190,7 +194,7 @@ ${fixed}
     if (m.method === 'Target.detachedFromTarget' && m.params) { const k = Object.entries(r.pages).find(([, p]) => p.sessionId === m.params.sessionId); if (k) delete r.pages[k[0]]; }
   }
 
-  async function start(id) {
+  async function start(id, opt = {}) {
     const p = prof(id); if (!p) throw new Error('沒有這個背景帳號');
     const r = R(id);
     if (r.busy || r.login) return;
@@ -201,10 +205,11 @@ ${fixed}
       if (!chrome) throw new Error('找不到 Chrome：請在下面填 chrome.exe 的位置');
       const dir = dirOf(id); prepDir(dir);
       // 中控重新啟動後，背景 Chrome 可能還在跑：直接接上
-      let ws = await wsFromDir(dir, 0), reattach = !!ws;
+      let ws = opt.visible ? '' : await wsFromDir(dir, 0), reattach = !!ws;
+      r.visible = opt.visible ? String(opt.visible) : '';
       if (!ws) {
         try { fs.unlinkSync(path.join(dir, 'DevToolsActivePort')); } catch (_) {}
-        const args = ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check',
+        const args = [...(opt.visible ? ['--new-window'] : ['--headless=new']), '--remote-debugging-port=0', `--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check',
           '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
           '--mute-audio', '--window-size=1280,800', '--disable-features=Translate,MediaRouter', ...sandboxArgs(), 'about:blank'];
         const proc = spawn(chrome, args, { detached: true, stdio: 'ignore', windowsHide: true });
@@ -215,7 +220,7 @@ ${fixed}
       }
       const cdp = new Cdp(ws); await cdp.ready;
       r.cdp = cdp; r.pages = {};
-      cdp.on(m => onEvent(r, m));
+      cdp.on(m => onEvent(r, m, cdp));
       const { targetInfos } = await cdp.send('Target.getTargets');
       const pagesT = (targetInfos || []).filter(t => t.type === 'page');
       const want = wantKeys(p);
@@ -234,10 +239,12 @@ ${fixed}
         }
         extra.push(t.targetId);
       }
+      if (reattach) { try { const v = await cdp.send('Browser.getVersion'); if (!/Headless/i.test(v.userAgent || '')) r.visible = r.visible || '_'; } catch (_) {} }
       for (const k of want) if (!r.pages[k]) await openPage(r, k);
+      if (r.visible) { const pg = r.pages[r.visible] || r.pages[want[0]]; if (pg) await cdp.send('Target.activateTarget', { targetId: pg.targetId }).catch(() => {}); }
       for (const t of extra) await cdp.send('Target.closeTarget', { targetId: t }).catch(() => {}); // 開機時的空白頁、上次留下的頁面
       r.state = 'running'; r.startedAt = Date.now();
-      log(`${p.name}：${reattach ? '接上執行中的' : '啟動'}背景 Chrome（${want.length} 個分頁）`);
+      log(`${p.name}：${reattach ? '接上執行中的' : '啟動'}${r.visible ? '看得到的' : '背景'} Chrome（${want.length} 個分頁）`);
     } catch (e) {
       r.state = 'error'; r.msg = e.message; r.fails.push(Date.now());
       if (r.cdp) { try { await r.cdp.send('Browser.close'); } catch (_) {} r.cdp.close(); r.cdp = null; }
@@ -250,7 +257,8 @@ ${fixed}
     const dir = dirOf(id);
     let cdp = r.cdp;
     if (!cdp || cdp.closed) { const ws = await wsFromDir(dir, 0); if (ws) { cdp = new Cdp(ws); try { await cdp.ready; } catch (_) { cdp = null; } } }
-    if (cdp) { try { await cdp.send('Browser.close', {}, undefined, 5000); } catch (_) {} cdp.close(); }
+    r.stopping = true;
+    try { if (cdp) { try { await cdp.send('Browser.close', {}, undefined, 5000); } catch (_) {} cdp.close(); } } finally { setTimeout(() => { r.stopping = false; }, 1500); }
     r.cdp = null; r.pages = {};
     // 等 Chrome 放開資料夾
     for (let i = 0; i < 30 && fs.existsSync(path.join(dir, 'DevToolsActivePort')) && await wsFromDir(dir, 0); i++) await sleep(300);
@@ -260,7 +268,7 @@ ${fixed}
   async function stop(id) { const r = R(id); r.busy = true; try { await stopBrowser(id); } finally { r.busy = false; } r.state = 'off'; r.msg = ''; }
 
   // 登入：同一個資料夾開「一般的 Chrome 視窗」（不接 DevTools，不是自動化瀏覽器，Google 登入不會被擋）
-  async function login(id) {
+  async function login(id, opt = {}) {
     const p = prof(id); if (!p) throw new Error('沒有這個背景帳號');
     const chrome = findChrome(cfg().chromePath);
     if (!chrome) throw new Error('找不到 Chrome：請先填 chrome.exe 的位置');
@@ -269,7 +277,10 @@ ${fixed}
     await stop(id);
     const dir = dirOf(id); prepDir(dir);
     try { fs.unlinkSync(path.join(dir, 'DevToolsActivePort')); } catch (_) {}
-    const args = [`--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check', ...(LOGIN_HEADLESS ? ['--headless=new', '--remote-debugging-port=0', ...sandboxArgs()] : []), GAME + LOGIN_PATH];
+    const args = [`--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check', ...(LOGIN_HEADLESS ? ['--headless=new', '--remote-debugging-port=0', ...sandboxArgs()] : []),
+      // 第一次登入、有填 Email：多開一頁 Google 登入（帶入 Email），登入 Google 後遊戲頁按 Google 登入只要選帳號
+      ...(p.email && !p.code && !LOGIN_HEADLESS ? [`https://accounts.google.com/ServiceLogin?Email=${encodeURIComponent(p.email)}&continue=${encodeURIComponent('https://accounts.google.com/')}`] : []),
+      GAME + LOGIN_PATH.replace('{name}', encodeURIComponent(p.name))]; // {name} 只給測試用
     const proc = spawn(chrome, args, { detached: true, stdio: 'ignore' });
     r.login = proc; r.state = 'login'; r.msg = ''; r.needLogin = false;
     proc.on('error', e => { r.login = null; r.state = 'error'; r.msg = '開不了 Chrome：' + e.message; });
@@ -277,6 +288,7 @@ ${fixed}
       r.login = null; r.state = 'off';
       log(`${p.name}：登入視窗關掉了`);
       const q = prof(id); if (q && q.on) setTimeout(() => start(id).catch(() => {}), 1500); // 登入完自動開始背景
+      if (batch.cur === id) { batch.done.push(id); batch.cur = ''; setTimeout(nextBatch, 2500); } // 批次登入：換下一個
     });
     log(`${p.name}：開啟登入視窗`);
   }
@@ -289,6 +301,16 @@ ${fixed}
     if (process.platform === 'win32') execFile('taskkill', ['/PID', String(proc.pid)], () => {});
     else { try { proc.kill('SIGTERM'); } catch (_) {} }
     return true;
+  }
+
+  // ---------- 批次登入：一次跳一個登入視窗，關掉就換下一個 ----------
+  const batch = { queue: [], cur: '', done: [], skipped: [] };
+  async function nextBatch() {
+    if (batch.cur) return;
+    const id = batch.queue.shift(); if (!id) return;
+    if (!prof(id)) return nextBatch();
+    batch.cur = id;
+    try { await login(id); } catch (e) { batch.skipped.push(id); batch.cur = ''; log('批次登入：' + e.message); return nextBatch(); }
   }
 
   async function probe(r, key, pg) {
@@ -341,11 +363,12 @@ ${fixed}
   function status() {
     const c = cfg();
     return {
+      batch: { cur: batch.cur, queue: [...batch.queue], done: batch.done.length, skipped: batch.skipped.length, total: batch.done.length + batch.skipped.length + batch.queue.length + (batch.cur ? 1 : 0) },
       chrome: findChrome(c.chromePath), chromePath: c.chromePath, nodeOk: typeof WebSocket === 'function', node: process.version, game: GAME,
       profiles: c.profiles.map(p => {
         const r = run[p.id] || {};
         return {
-          id: p.id, name: p.name, on: !!p.on, pages: p.pages || [''], code: p.code || '', charIds: p.charIds || [],
+          id: p.id, name: p.name, email: p.email || '', note: p.note || '', on: !!p.on, visible: (run[p.id] || {}).visible || '', pages: p.pages || [''], code: p.code || '', charIds: p.charIds || [],
           state: r.state || 'off', msg: r.msg || '', logs: (r.logs || []).slice(-10), needLogin: !!r.needLogin, startedAt: r.startedAt || 0, dir: dirOf(p.id),
           live: Object.entries(r.pages || {}).map(([k, pg]) => ({ key: k, char: (pg.info && pg.info.char) || pg.char, url: pg.info && pg.info.url, standby: !!(pg.info && pg.info.bg && pg.info.bg.standby), injected: !!(pg.info && pg.info.bg), badge: pg.info && pg.info.badge, at: (pg.info && pg.info.at) || 0, fail: pg.fail })),
         };
@@ -359,11 +382,48 @@ ${fixed}
     if (name === 'config') { setCfg({ ...c, chromePath: String(b.chromePath || '').trim() }); return status(); }
     if (name === 'add') {
       const id = 'p' + Date.now().toString(36);
-      setCfg({ ...c, profiles: [...list, { id, name: String(b.name || '').trim().slice(0, 20) || `帳號 ${list.length + 1}`, on: false, pages: [''] }] });
+      setCfg({ ...c, profiles: [...list, { id, name: String(b.name || '').trim().slice(0, 20) || `帳號 ${list.length + 1}`, email: String(b.email || '').trim().slice(0, 120), note: '', on: false, pages: [''] }] });
       return { id, ...status() };
     }
+    if (name === 'order') {
+      const ids = Array.isArray(b.ids) ? b.ids : [];
+      const byId = new Map(list.map(x => [x.id, x]));
+      const out = ids.map(i => byId.get(i)).filter(Boolean); for (const x of list) if (!out.includes(x)) out.push(x);
+      setCfg({ ...c, profiles: out }); return status();
+    }
+    if (name === 'all') { // 依序開始／停止（一次開十幾個 Chrome 會卡）
+      const ids = Array.isArray(b.ids) && b.ids.length ? b.ids : list.map(x => x.id);
+      for (const id of ids) { if (!list.find(x => x.id === id)) continue; if (b.op === 'start') { patchProf(id, { on: true }); R(id).fails = []; await start(id); } else if (b.op === 'stop') { patchProf(id, { on: false }); await stop(id); } }
+      return status();
+    }
+    if (name === 'login-batch') {
+      const ids = (Array.isArray(b.ids) ? b.ids : []).filter(id => list.find(x => x.id === id) && id !== batch.cur && !batch.queue.includes(id));
+      if (!batch.cur && !batch.queue.length) { batch.done = []; batch.skipped = []; }
+      for (const id of ids) patchProf(id, { on: true });
+      batch.queue.push(...ids); nextBatch(); return status();
+    }
+    if (name === 'login-cancel') { batch.queue = []; return status(); }
+    if (name === 'login-skip') { const id = batch.cur; if (id) { batch.skipped.push(id); batch.cur = ''; await loginDone(id); } setTimeout(nextBatch, 1500); return status(); }
+    if (name === 'import') return importCsv(String(b.csv || ''), !!b.dry);
     const p = list.find(x => x.id === b.id); if (!p) throw new Error('沒有這個背景帳號');
     if (name === 'rename') patchProf(p.id, { name: String(b.name || '').trim().slice(0, 20) || p.name });
+    else if (name === 'edit') {
+      const patch = {};
+      if (b.name !== undefined) patch.name = String(b.name || '').trim().slice(0, 20) || p.name;
+      if (b.email !== undefined) patch.email = String(b.email || '').trim().slice(0, 120);
+      if (b.note !== undefined) patch.note = String(b.note || '').slice(0, 200);
+      patchProf(p.id, patch);
+    }
+    else if (name === 'show') { // 改成看得到的視窗，顯示那隻角色（中控腳本照跑；關掉視窗就回到背景）
+      const ch = String(b.char || '');
+      const pages = p.pages && p.pages.length ? p.pages : [''];
+      if (ch && !pages.includes(ch)) patchProf(p.id, { pages: [...pages.filter(x => x), ch].slice(0, 6) });
+      patchProf(p.id, { on: true });
+      const r = R(p.id);
+      if (r.visible && r.cdp && !r.cdp.closed) { const pg = r.pages[ch || '_'] || Object.values(r.pages)[0]; if (pg) await r.cdp.send('Target.activateTarget', { targetId: pg.targetId }).catch(() => {}); r.visible = ch || '_'; }
+      else { r.busy = true; try { await stopBrowser(p.id); } finally { r.busy = false; } await start(p.id, { visible: ch || '_' }); }
+    }
+    else if (name === 'hide') { const r = R(p.id); if (r.visible) { r.busy = true; try { await stopBrowser(p.id); } finally { r.busy = false; } r.visible = ''; await start(p.id); } }
     else if (name === 'remove') { await stop(p.id); delete run[p.id]; setCfg({ ...c, profiles: list.filter(x => x.id !== p.id) }); }
     else if (name === 'start') { patchProf(p.id, { on: true }); R(p.id).fails = []; await start(p.id); }
     else if (name === 'stop') { patchProf(p.id, { on: false }); await stop(p.id); }
@@ -378,9 +438,57 @@ ${fixed}
     return status();
   }
 
+  // ---------- CSV 匯出／匯入（Excel 可以直接開；欄位：名稱,Email,遊戲ID,背景角色ID,開啟,備註） ----------
+  const CSV_HEAD = ['名稱', 'Email', '遊戲ID', '背景角色ID', '角色名稱（參考，匯入時不讀）', '開啟', '備註'];
+  const csvCell = v => { v = String(v == null ? '' : v); return /[",\r\n]/.test(v) || /^[=+\-@]/.test(v) ? '"' + (/^[=+\-@]/.test(v) ? "'" : '') + v.replace(/"/g, '""') + '"' : v; };
+  function exportCsv(nameOf) {
+    const rows = cfg().profiles.map(p => [p.name, p.email || '', p.code || '', (p.pages || []).filter(Boolean).join(' '), (p.pages || []).filter(Boolean).map(id => nameOf(id)).join(' '), p.on ? '是' : '否', p.note || '']);
+    return '﻿' + [CSV_HEAD, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+  }
+  function parseCsv(t) {
+    t = t.replace(/^﻿/, ''); const rows = []; let row = [], f = '', q = false;
+    for (let i = 0; i < t.length; i++) {
+      const ch = t[i];
+      if (q) { if (ch === '"') { if (t[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += ch; }
+      else if (ch === '"') q = true;
+      else if (ch === ',' || ch === '\t') { row.push(f); f = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && t[i + 1] === '\n') i++; row.push(f); rows.push(row); row = []; f = ''; }
+      else f += ch;
+    }
+    if (f !== '' || row.length) { row.push(f); rows.push(row); }
+    return rows.filter(r => r.some(x => String(x).trim() !== ''));
+  }
+  function importCsv(text, dry) {
+    const rows = parseCsv(text); if (!rows.length) throw new Error('檔案是空的');
+    const head = rows[0].map(x => String(x).trim()); const col = n => head.findIndex(h => h === n || h.startsWith(n));
+    const iName = col('名稱'), iMail = col('Email'), iPages = col('背景角色ID'), iOn = col('開啟'), iNote = col('備註');
+    if (iName < 0 && iMail < 0) throw new Error('第一列要有欄位名稱（至少要有「名稱」或「Email」），可以先匯出一份當範本');
+    const c = getCfg() || {}; const list = (c.profiles || []).map(x => ({ ...x }));
+    const out = [], added = [], updated = [];
+    const used = new Set();
+    for (const r of rows.slice(1)) {
+      const g = i => i >= 0 ? String(r[i] == null ? '' : r[i]).trim().replace(/^'(?=[=+\-@])/, '') : undefined;
+      const name = g(iName), email = g(iMail);
+      if (!name && !email) continue;
+      let p = list.find(x => !used.has(x.id) && email && x.email && x.email.toLowerCase() === email.toLowerCase()) || list.find(x => !used.has(x.id) && name && x.name === name);
+      const patch = {};
+      if (name) patch.name = name.slice(0, 20);
+      if (email !== undefined) patch.email = email.slice(0, 120);
+      if (iNote >= 0) patch.note = g(iNote).slice(0, 200);
+      if (iPages >= 0) { const pg = g(iPages).split(/[\s;、，,]+/).filter(x => /^[\w-]{1,64}$/.test(x)).slice(0, 6); patch.pages = pg.length ? pg : ['']; }
+      if (iOn >= 0) patch.on = /^(是|y|yes|1|true|開|on)$/i.test(g(iOn));
+      if (p) { Object.assign(p, patch); used.add(p.id); updated.push(p.name); out.push(p); }
+      else { p = { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: patch.name || email.split('@')[0].slice(0, 20), email: patch.email || '', note: patch.note || '', on: false, pages: patch.pages || [''] }; added.push(p.name); out.push(p); }
+    }
+    for (const x of list) if (!used.has(x.id)) out.push(x); // 檔案裡沒有的保留在最後
+    const sum = { added: added.length, updated: updated.length, kept: list.length - used.size, addedNames: added.slice(0, 20), updatedNames: updated.slice(0, 20) };
+    if (!dry) { setCfg({ ...c, profiles: out }); setTimeout(tick, 100); }
+    return { ...status(), import: sum };
+  }
+
   let timer = null;
   function boot() {
-    for (const p of cfg().profiles) if (p.on) start(p.id).catch(() => {});
+    (async () => { for (const p of cfg().profiles) if (p.on) await start(p.id).catch(() => {}); })(); // 依序開，避免十幾個 Chrome 同時啟動
     timer = setInterval(tick, TICK_MS);
   }
   // 中控正常關閉（Ctrl+C、關視窗）時一起關掉背景 Chrome；自動更新重新啟動時不關（中控起來後會接回去）
@@ -389,5 +497,5 @@ ${fixed}
     await Promise.all(cfg().profiles.map(p => (run[p.id] && run[p.id].cdp) ? stopBrowser(p.id).catch(() => {}) : null));
   }
 
-  return { boot, tick, status, action, shutdown, GAME };
+  return { boot, tick, status, action, shutdown, exportCsv, GAME };
 };

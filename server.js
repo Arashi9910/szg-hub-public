@@ -1081,8 +1081,12 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/bg' || url.pathname.startsWith('/api/bg/')) {
       if (!isLocal(req)) return send(res, 403, { error: '背景執行只能在這台電腦上的面板操作' });
       if (req.method === 'GET' && url.pathname === '/api/bg') return send(res, 200, bg.status());
+      if (req.method === 'GET' && url.pathname === '/api/bg/export.csv') {
+        res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="szg-bg-accounts-${new Date().toISOString().slice(0, 10)}.csv"` });
+        return res.end(bg.exportCsv(id => charName(id)));
+      }
       const act = url.pathname.slice('/api/bg/'.length);
-      if (req.method === 'POST' && /^(config|add|rename|remove|start|stop|login|login-done|reload|pages)$/.test(act)) {
+      if (req.method === 'POST' && /^(config|add|rename|edit|remove|start|stop|login|login-done|login-batch|login-skip|login-cancel|reload|pages|order|all|import|show|hide)$/.test(act)) {
         return send(res, 200, await bg.action(act, JSON.parse((await readBody(req)) || '{}')));
       }
       return send(res, 404, { error: 'not found' });
