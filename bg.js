@@ -187,7 +187,11 @@ ${fixed}
     // 分頁裡的錯誤記下來（面板看得到最近幾筆，方便查問題）
     if (m.method === 'Runtime.exceptionThrown' || (m.method === 'Runtime.consoleAPICalled' && m.params && (m.params.type === 'error' || m.params.type === 'warning'))) {
       const d = m.params.exceptionDetails, txt = d ? ((d.exception && d.exception.description) || d.text || '') : (m.params.args || []).map(a => a.value !== undefined ? String(a.value) : (a.description || '')).join(' ');
-      (r.logs || (r.logs = [])).push({ at: Date.now(), page: pg ? pg[0] : '', msg: String(txt).slice(0, 300) }); if (r.logs.length > 30) r.logs.shift();
+      // 只記中控腳本自己的錯誤、和真正沒處理到的例外；遊戲自己的連線逾時（client error during sync AbortError）是遊戲會自己重試的訊息，不列入
+      const t = String(txt);
+      const mine = /szg-hub|中控/.test(t), benign = /AbortError|signal is aborted|client error during sync|Failed to fetch/i.test(t);
+      if (m.method === 'Runtime.consoleAPICalled' ? !mine : (benign && !mine)) return;
+      (r.logs || (r.logs = [])).push({ at: Date.now(), page: pg ? pg[0] : '', msg: t.slice(0, 300) }); if (r.logs.length > 30) r.logs.shift();
       return;
     }
     if (m.method === 'Inspector.targetCrashed' && pg) { pg[1].crashed = true; return; }
