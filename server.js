@@ -1071,6 +1071,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/agent.js') {
       return send(res, 200, agentSource(), 'text/javascript; charset=utf-8');
     }
+    // 更新公告（version.json 的 changelog，最近 5 次）
+    if (req.method === 'GET' && url.pathname === '/api/changelog') {
+      let v = {}; try { v = JSON.parse(fs.readFileSync(path.join(__dirname, 'version.json'), 'utf8')); } catch (_) {}
+      return send(res, 200, { version: v.version || '', changelog: (v.changelog || []).filter(e => !e.private).slice(0, 5) });
+    }
     if (req.method === 'GET' && url.pathname === '/api/agent-version') {
       return send(res, 200, { version: scriptVersion() });
     }

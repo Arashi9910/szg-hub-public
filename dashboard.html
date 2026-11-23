@@ -296,7 +296,11 @@
   .ac-chars { display: flex; flex-wrap: wrap; gap: 4px; } .ac-ch { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--line); border-radius: 8px; padding: 1px 4px 1px 2px; }
   .ac-ch.on { border-color: var(--accent); } .ac-ch label { display: inline-flex; padding: 2px; cursor: pointer; } .ac-ch .ac-show { background: none; border: 0; color: var(--text); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; padding: 1px 2px; font: inherit; } .ac-ch .ac-show:hover { color: var(--accent); text-decoration: underline; }
   .ac-ch .ava { width: 22px; height: 22px; } .ac-batch { border: 1px solid #8a5a12; background: rgba(217,164,58,.08); border-radius: 8px; padding: 8px 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
-  .bg-pop { width: 520px !important; } .bg-prof { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .bg-pop { width: 520px !important; }
+  .news-drawer { width: min(720px, 96vw); } .news-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--bad); margin-left: 4px; vertical-align: middle; }
+  .news-ver { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 10px 0; } .news-ver.cur { border-color: var(--accent); }
+  .news-ver h4 { margin: 0 0 6px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; } .news-it { margin: 8px 0 0; padding-left: 10px; border-left: 3px solid var(--line); }
+  .news-it.new { border-left-color: var(--accent); } .news-it.fix { border-left-color: #d9a43a; } .news-it .how { margin-top: 3px; } .news-tag { font-size: 11px; padding: 0 6px; border-radius: 8px; background: var(--panel2); color: var(--dim); } .bg-prof { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
   .bg-prof .hd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; } .bg-prof .hd b { flex: 1; min-width: 120px; }
   .bg-ch { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; } .bg-ch:hover { background: var(--panel2); } .bg-ch.on { background: var(--panel2); }
   .bg-ch .nm { flex: 1; } .bg-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); } .bg-dot.ok { background: var(--good, #4caf50); } .bg-dot.warn { background: #d9a43a; } .bg-dot.bad { background: var(--bad); }
@@ -533,11 +537,16 @@
     <button data-tab="accts">帳號</button>
   </nav>
   <button id="jobBtn" class="jobs-btn" title="交易、背包的工作佇列">工作<span id="jobBadge"></span></button>
+  <button id="newsBtn" class="mbox-btn" title="更新公告：最近 5 次更新做了什麼、新功能怎麼用">📢 更新<span id="newsDot" class="news-dot" style="display:none"></span></button>
   <button id="bgSum" class="mbox-btn" title="背景執行：不用開 Chrome 視窗，由中控在背景開 Chrome 跑遊戲">🖥 背景</button>
   <details id="mBox" class="mbox"><summary title="用手機看和操作中控">📱 手機</summary><div class="sys-pop m-pop" id="mPop"></div></details>
   <details id="sysBox" class="sysbox"><summary id="sysSum" title="版本、腳本、更新設定">連線中…</summary>
     <div class="sys-pop"><div id="status">連線中…</div><div id="updBox"></div></div></details>
 </header>
+<aside id="newsDrawer" class="drawer news-drawer" style="display:none">
+  <div class="dhd"><b>📢 更新公告</b><span class="dim" style="flex:1">最近 5 次更新。中控會自動更新，更新後第一次打開面板會跳出這裡。</span><button class="btn" id="newsClose">關閉 ✕</button></div>
+  <div id="newsOut"></div>
+</aside>
 <aside id="jobDrawer" class="drawer" style="display:none">
   <div class="dhd"><b>工作佇列</b><span class="dim" style="flex:1">待確認的要按「確認執行」才會開始；執行時那隻角色要有自己的遊戲分頁（同一個帳號可以開兩個分頁）。</span><button class="btn" id="jobClose">關閉 ✕</button></div>
   <div id="jobOutAll"></div>
@@ -6053,6 +6062,35 @@ document.addEventListener('click', async e => {
     renderOverview();
   }
 });
+
+// ---------- 📢 更新公告（version.json 的 changelog）----------
+let NEWS = null;
+const NEWS_TYPE = { new: ['新功能', 'new'], fix: ['修正', 'fix'], change: ['調整', 'change'] };
+async function loadNews() { try { NEWS = await (await fetch('/api/changelog', { cache: 'no-store' })).json(); } catch (_) { NEWS = null; } markNews(); return NEWS; }
+function newsSeen() { try { return localStorage.getItem('newsSeen') || ''; } catch (_) { return ''; } }
+function markNews() { const v = NEWS && NEWS.version, has = v && (NEWS.changelog || []).some(e => e.version === v); $('#newsDot').style.display = has && newsSeen() !== v ? '' : 'none'; }
+function renderNews() {
+  const cl = (NEWS && NEWS.changelog) || [];
+  $('#newsOut').innerHTML = cl.length ? cl.map((e, i) => `<div class="news-ver${i === 0 && e.version === NEWS.version ? ' cur' : ''}"><h4><span>v${esc(e.version)}</span><span>${esc(e.title || '')}</span><span class="dim sm">${esc(e.date || '')}${e.version === NEWS.version ? '・目前版本' : ''}</span></h4>
+    ${(e.items || []).map(it => { const [tl, tc] = NEWS_TYPE[it.type] || ['更新', '']; return `<div class="news-it ${tc}"><div><span class="news-tag">${tl}</span> <b>${esc(it.name || '')}</b></div>${it.what ? `<div>${esc(it.what)}</div>` : ''}${it.how ? `<div class="how dim"><b>怎麼用：</b>${esc(it.how)}</div>` : ''}</div>`; }).join('')}</div>`).join('')
+    : '<div class="dim">目前沒有更新公告。</div>';
+}
+async function openNews() {
+  if (!NEWS) await loadNews();
+  renderNews(); $('#jobDrawer').style.display = 'none'; $('#newsDrawer').style.display = '';
+  try { if (NEWS && NEWS.version) localStorage.setItem('newsSeen', NEWS.version); } catch (_) {}
+  markNews();
+}
+document.addEventListener('click', e => {
+  if (e.target.closest && e.target.closest('#newsBtn')) { if ($('#newsDrawer').style.display === 'none') openNews(); else $('#newsDrawer').style.display = 'none'; }
+  if (e.target.id === 'newsClose') $('#newsDrawer').style.display = 'none';
+  if (e.target.closest && e.target.closest('#jobBtn')) $('#newsDrawer').style.display = 'none';
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#newsDrawer').style.display !== 'none') $('#newsDrawer').style.display = 'none'; });
+// 中控更新到新版後，第一次打開面板自動跳一次（第一次安裝的人也會看到）
+setTimeout(async () => { await loadNews(); const v = NEWS && NEWS.version; if (v && !navigator.webdriver /* 自動化測試不自動跳 */ && (NEWS.changelog || []).some(x => x.version === v) && newsSeen() !== v) openNews(); }, 1200);
+// 面板開著時中控自己更新了：重新抓，亮紅點
+setInterval(() => { if (!document.hidden && NEWS && DATA && DATA.scriptVersion && DATA.scriptVersion !== NEWS.version) loadNews(); }, 30000);
 
 async function renderMPop(newDev) {
   const box = $('#mPop'); if (!box) return;
