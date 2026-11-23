@@ -93,6 +93,8 @@ function agentMain(ctx) {
   }
 
     // ---------- 共用 ----------
+    // 連不到中控（中控自動更新重新啟動那幾秒、電腦忙）：這種是暫時的，自動功能下一輪會自己再做，不記成錯誤
+    const hubDown = e => /^hub (timeout|offline|5\d\d)$/.test(String((e && e.message) || ''));
     function hub(method, path, body) {
       return new Promise((resolve, reject) => {
         const headers = { 'Content-Type': 'application/json' };
@@ -750,7 +752,7 @@ function agentMain(ctx) {
           if (ch && ch.id === x.id && !ch.auto) { try { await gameRetry({ type: 'start', characterId: x.id }); started = '並重新開始掛機'; } catch (_) {} }
           if (x.own) { try { const dd = document.getElementById('deathDialog'); if (dd && dd.open) dd.close(); } catch (_) {} lastHash = ''; }
           await hub('POST', '/api/idle-log', { charId: x.id, kind: 'revive', msg: `角色死亡，已自動原地復活${started}（這小時第 ${list.length} 次，每次扣本級經驗 5%）` }).catch(() => {});
-        } catch (e) { await hub('POST', '/api/idle-log', { charId: x.id, msg: '自動原地復活失敗：' + e.message }).catch(() => {}); }
+        } catch (e) { if (!hubDown(e)) await hub('POST', '/api/idle-log', { charId: x.id, msg: '自動原地復活失敗：' + e.message }).catch(() => {}); }
       }
     }
     async function idleTick() {
@@ -899,7 +901,7 @@ function agentMain(ctx) {
         await log(`自動賣出 ${q.rows.length} 件，共 ${(Number(q.total) || 0).toLocaleString()} 楓幣：${desc}`);
       } catch (e) {
         console.warn('[szg-hub autosell]', e);
-        hub('POST', '/api/gear-log', { msg: '自動處理出錯：' + e.message }).catch(() => {});
+        if (!hubDown(e)) hub('POST', '/api/gear-log', { msg: '自動處理出錯：' + e.message }).catch(() => {});
       } finally { asRunning = false; setTimeout(() => setBadge('ok'), 3000); }
     }
 
@@ -984,7 +986,7 @@ function agentMain(ctx) {
       if (mine && r && Array.isArray(r.delist) && r.delist.length) await delistOverdue(charId, r.delist);
       if (mine && mine.proceeds > 0 && r && r.autoClaim) {
         try { await game({ type: 'marketClaim', characterId: charId }); await hub('POST', '/api/market/log', { charId, msg: `已領取攤位收益 ${Number(mine.proceeds).toLocaleString()} 楓幣` }); }
-        catch (e) { await hub('POST', '/api/market/log', { charId, msg: '領取收益失敗：' + e.message }).catch(() => {}); }
+        catch (e) { if (!hubDown(e)) await hub('POST', '/api/market/log', { charId, msg: '領取收益失敗：' + e.message }).catch(() => {}); }
       }
       return m;
     }
@@ -1069,7 +1071,7 @@ function agentMain(ctx) {
         if (done.length) await log('已上架：' + done.join('、'));
         if (skipped.length) await log('略過：' + skipped.join('、'));
         if (done.length) { lastStallAt = 0; await stallTick(true).catch(() => {}); } // 回報最新攤位
-      } catch (e) { console.warn('[szg-hub autolist]', e); log('自動上架出錯：' + e.message); }
+      } catch (e) { console.warn('[szg-hub autolist]', e); if (!hubDown(e)) log('自動上架出錯：' + e.message); }
       finally { mktBusy = false; }
     }
 
@@ -1308,7 +1310,7 @@ function agentMain(ctx) {
         if (e.message !== lastQuizErr.msg || Date.now() - lastQuizErr.at > 10 * 60 * 1000) {
           lastQuizErr = { msg: e.message, at: Date.now() };
           const st = readState();
-          hub('POST', '/api/quiz/log', { charId: st && st.character && st.character.id, msg: '自動作答出錯：' + e.message }).catch(() => {});
+          if (!hubDown(e)) hub('POST', '/api/quiz/log', { charId: st && st.character && st.character.id, msg: '自動作答出錯：' + e.message }).catch(() => {});
         }
       } finally {
         quizRunning = false; qstep('閒置');
