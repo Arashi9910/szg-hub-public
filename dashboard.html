@@ -5453,12 +5453,15 @@ function bagGuildPlan() {
   }
   return { reqs: Object.entries(by).filter(([, v]) => v.items.length || v.gear.length).map(([from, v]) => ({ kind: 'guildDeposit', fromCharId: from, batches: [{ items: v.items, gear: v.gear }] })), skipped };
 }
-// 存進公倉改到「公倉」分頁（背包、公倉並排搬移）；背包只負責賣、鎖、給角色
-bagExtraActions = () => `<a href="#" class="sm" data-goto="guild" title="存進公倉請到「公倉」分頁，左邊背包選好按「存入 →」">存公倉 ›</a>`;
+// 背包直接存進公倉（使用者要求：不用再到公倉分頁挑一次）；公倉分頁的並排搬移照樣可以用
+bagExtraActions = sel => `<button class="btn" data-bact="guild" ${sel && sel.length ? '' : 'disabled'} title="把選取的裝備、道具存進公會倉庫（鎖定、補給中、不可交易的會略過）">${ic('warehouse')} 存進公倉</button>`;
 bagActHooks.guild = async () => {
   const { reqs, skipped } = bagGuildPlan();
   if (!reqs.length) { alert('選取的東西都不能存（已鎖定、補給使用中或不可交易）'); return; }
   const nI = reqs.reduce((t, r) => t + r.batches[0].items.length, 0), nG = reqs.reduce((t, r) => t + r.batches[0].gear.length, 0);
+  // 公倉容量（有讀過公倉才知道）：裝備格不夠先提醒
+  const gd = GUILD && GUILD.data, cap = (gd && gd.capacity) || {};
+  if (gd && cap.gear && nG > cap.gear - (gd.gear || []).length && !confirm(`公倉裝備格只剩 ${Math.max(0, cap.gear - (gd.gear || []).length)} 格，這次要存 ${nG} 件，放不下的會失敗。還是要繼續嗎？`)) return;
   if (!confirm(`把 ${reqs.length} 隻角色的 ${nI ? nI + ' 種道具' : ''}${nI && nG ? '、' : ''}${nG ? nG + ' 件裝備' : ''} 存進公倉？存入後可以在「公倉」分頁領回。${skipped.length ? `\n\n略過：${[...new Set(skipped)].slice(0, 8).join('、')}${skipped.length > 8 ? '…' : ''}` : ''}`)) return;
   const r = await api('/api/jobs', reqs);
   for (const j of r.jobs) await api(`/api/jobs/${j.id}/approve`); // 存入可以再領回，直接執行
