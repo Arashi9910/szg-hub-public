@@ -146,7 +146,20 @@ ${fixed}
     await cdp.send('Runtime.enable', {}, sid);
     await cdp.send('Runtime.addBinding', { name: '__szgGmx' }, sid);
     await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true }, sid).catch(() => {}); // 背景分頁也當成「看得到」，不會掉進離線掛機
-    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: injected(r.id, key) }, sid);
+    const { identifier } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: injected(r.id, key) }, sid);
+    return identifier;
+  }
+  // 「帳號目前的角色」那頁（key '_'）改成固定那隻角色：不重開分頁，只換注入的 key（重新整理、中控重啟後也認得）
+  async function rekeyPage(r, from, to) {
+    const pg = r.pages[from]; if (!pg || r.pages[to] || !r.cdp) return false;
+    try {
+      if (pg.scriptId) await r.cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: pg.scriptId }, pg.sessionId).catch(() => {});
+      const { identifier } = await r.cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: injected(r.id, to) }, pg.sessionId);
+      await r.cdp.send('Runtime.evaluate', { expression: `window.__szgBg && (window.__szgBg.key = ${JSON.stringify(to)})` }, pg.sessionId).catch(() => {});
+      pg.scriptId = identifier; pg.char = to;
+      delete r.pages[from]; r.pages[to] = pg;
+      return true;
+    } catch (_) { return false; }
   }
 
   async function openPage(r, key) {
@@ -154,8 +167,8 @@ ${fixed}
     const url = GAME + '/game/' + (char ? '?szgChar=' + encodeURIComponent(char) : '');
     const { targetId } = await r.cdp.send('Target.createTarget', { url: 'about:blank' });
     const { sessionId } = await r.cdp.send('Target.attachToTarget', { targetId, flatten: true });
-    await setupSession(r, key, sessionId);
-    r.pages[key] = { targetId, sessionId, char, openedAt: Date.now(), info: null, fail: 0, acctAt: 0 };
+    const scriptId = await setupSession(r, key, sessionId);
+    r.pages[key] = { targetId, sessionId, scriptId, char, openedAt: Date.now(), info: null, fail: 0, acctAt: 0 };
     await r.cdp.send('Page.navigate', { url }, sessionId);
   }
   async function closePage(r, key) {
@@ -236,8 +249,8 @@ ${fixed}
           let key = '';
           try { const v = await cdp.send('Runtime.evaluate', { expression: 'window.__szgBg ? window.__szgBg.key : ""', returnByValue: true }, sessionId); key = (v.result && v.result.value) || ''; } catch (_) {}
           if (key && want.includes(key) && !r.pages[key]) {
-            await setupSession(r, key, sessionId);
-            r.pages[key] = { targetId: t.targetId, sessionId, char: key === '_' ? '' : key, openedAt: Date.now(), info: null, fail: 0, acctAt: 0 };
+            const scriptId = await setupSession(r, key, sessionId);
+            r.pages[key] = { targetId: t.targetId, sessionId, scriptId, char: key === '_' ? '' : key, openedAt: Date.now(), info: null, fail: 0, acctAt: 0 };
             continue;
           }
         }
@@ -333,6 +346,15 @@ ${fixed}
         if (o.code) {
           const p = prof(r.id) || {};
           if (p.code !== o.code || JSON.stringify(p.charIds || []) !== JSON.stringify(o.chars || [])) patchProf(r.id, { code: o.code, charIds: o.chars || [] });
+          // 登入後知道帳號有哪些角色了：「帳號目前的角色」改成帳號的角色（最多兩隻同時在線），目前顯示的那隻排第一、沿用原本的分頁
+          const pages = p.pages && p.pages.length ? p.pages : [''];
+          if (pages.includes('') && (o.chars || []).length) {
+            const cur = key === '_' && o.char && o.chars.includes(o.char) ? o.char : '';
+            const next = [...new Set([...pages.filter(Boolean), cur, ...o.chars].filter(Boolean))].slice(0, Math.max(2, pages.filter(Boolean).length));
+            if (cur && next.includes(cur)) await rekeyPage(r, '_', cur);
+            patchProf(r.id, { pages: next });
+            log(`${p.name}：登入後改成開帳號的角色（${next.length} 隻）`);
+          }
         }
       }
     } catch (e) {
@@ -435,7 +457,11 @@ ${fixed}
     else if (name === 'login-done') await loginDone(p.id);
     else if (name === 'reload') { const r = R(p.id); for (const pg of Object.values(r.pages)) if (r.cdp) await r.cdp.send('Page.reload', {}, pg.sessionId).catch(() => {}); }
     else if (name === 'pages') {
-      const pages = [...new Set((Array.isArray(b.pages) ? b.pages : []).map(x => String(x || '')).filter(x => x === '' || /^[\w-]{1,64}$/.test(x)))].slice(0, 6);
+      let pages = [...new Set((Array.isArray(b.pages) ? b.pages : []).map(x => String(x || '')).filter(x => x === '' || /^[\w-]{1,64}$/.test(x)))].slice(0, 6);
+      if ((p.charIds || []).length) { // 登入過、知道有哪些角色：只能勾帳號的角色
+        pages = pages.filter(x => x && p.charIds.includes(x));
+        if (!pages.length) throw new Error('至少要勾一隻角色；這個帳號不想在背景開的話，請按「停止」');
+      }
       patchProf(p.id, { pages: pages.length ? pages : [''] });
       setTimeout(tick, 100);
     } else throw new Error('不明的操作');
