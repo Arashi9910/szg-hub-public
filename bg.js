@@ -473,6 +473,7 @@ ${fixed}
     refreshMem();
     const c = cfg();
     return {
+      all: allJob && (!allJob.end || Date.now() - allJob.end < 15000) ? { ...allJob } : null,
       batch: { cur: batch.cur, queue: [...batch.queue], done: batch.done.length, skipped: batch.skipped.length, total: batch.done.length + batch.skipped.length + batch.queue.length + (batch.cur ? 1 : 0) },
       lite: c.lite, reloadHours: c.reloadHours, mem: { total: mem.total, page: mem.page || 0, base: mem.base || 0, at: mem.at, err: mem.err },
       chrome: findChrome(c.chromePath), chromePath: c.chromePath, nodeOk: typeof WebSocket === 'function', node: process.version, game: GAME,
@@ -512,9 +513,30 @@ ${fixed}
       const out = ids.map(i => byId.get(i)).filter(Boolean); for (const x of list) if (!out.includes(x)) out.push(x);
       setCfg({ ...c, profiles: out }); return status();
     }
-    if (name === 'all') { // 依序開始／停止（一次開十幾個 Chrome 會卡）
-      const ids = Array.isArray(b.ids) && b.ids.length ? b.ids : list.map(x => x.id);
-      for (const id of ids) { if (!list.find(x => x.id === id)) continue; if (b.op === 'start') { patchProf(id, { on: true }); R(id).fails = []; await start(id); } else if (b.op === 'stop') { patchProf(id, { on: false }); await stop(id); } }
+    if (name === 'all') { // 依序開始／停止（一次開十幾個 Chrome 會卡）：背景進行，面板看進度
+      if (allJob && !allJob.end) throw new Error(`上一批還在${allJob.op === 'start' ? '開始' : '停止'}（${allJob.done}/${allJob.total}），等它做完`);
+      const ids = (Array.isArray(b.ids) && b.ids.length ? b.ids : list.map(x => x.id)).filter(id => list.find(x => x.id === id));
+      if (b.op !== 'start' && b.op !== 'stop') throw new Error('不明的操作');
+      const job = allJob = { op: b.op, total: ids.length, done: 0, skipped: 0, cur: '', at: Date.now(), end: 0 };
+      (async () => {
+        for (const id of ids) {
+          job.cur = id;
+          const r = R(id);
+          try {
+            if (b.op === 'start') {
+              patchProf(id, { on: true }); r.fails = [];
+              if (r.state === 'running' && r.cdp && !r.cdp.closed) job.skipped++; // 已經在跑的不用重開
+              else await start(id);
+            } else {
+              patchProf(id, { on: false });
+              if (r.state === 'off' && !r.cdp) job.skipped++;
+              else { r.state = 'stopping'; await stop(id); }
+            }
+          } catch (e) { log('依序' + (b.op === 'start' ? '開始' : '停止') + '：' + e.message); }
+          job.done++;
+        }
+        job.cur = ''; job.end = Date.now();
+      })();
       return status();
     }
     if (name === 'login-batch') {
@@ -611,6 +633,7 @@ ${fixed}
     return { ...status(), import: sum };
   }
 
+  let allJob = null;
   let timer = null;
   function boot() {
     (async () => { for (const p of cfg().profiles) if (p.on) await start(p.id).catch(() => {}); })(); // 依序開，避免十幾個 Chrome 同時啟動

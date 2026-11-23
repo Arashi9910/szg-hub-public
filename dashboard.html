@@ -5904,7 +5904,7 @@ setInterval(poll, 10000);
 setInterval(() => { if (!document.hidden && (DATA.jobs || []).some(j => ['approved', 'running'].includes(j.status))) poll(); }, 3000);
 // ---- 手機配對（只在家裡電腦上能用）：產生裝置通行碼、顯示 QR code、撤銷 ----
 // ---------- 🖥 背景執行（bg.js）：「帳號」分頁 ----------
-const BG_STATE = { off: ['已停止', ''], starting: ['啟動中…', 'warn'], running: ['執行中', 'ok'], login: ['登入視窗開著', 'warn'], error: ['有問題', 'bad'] };
+const BG_STATE = { off: ['已停止', ''], stopping: ['停止中…', 'warn'], starting: ['啟動中…', 'warn'], running: ['執行中', 'ok'], login: ['登入視窗開著', 'warn'], error: ['有問題', 'bad'] };
 let bgLast = null;
 ui.acSel = new Set();
 async function loadBg() { const r = await fetch('/api/bg'); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status); bgLast = j; renderBgSum(); return j; }
@@ -5954,12 +5954,16 @@ function drawAccts() {
     <span class="dim">背景 Chrome 記憶體：<b>${s.mem && s.mem.at ? memTxt(s.mem.total) : '計算中…'}</b>${s.mem && s.mem.total ? `（遊戲分頁 ${memTxt(s.mem.page)}、<span title="每個 Chrome 自己的主程式、網路、儲存等程序。合併成一個 Chrome 時省的就是這部分">Chrome 本身 ${memTxt(s.mem.base)}</span>）` : ''}${s.mem && s.mem.err ? `（${esc(s.mem.err)}）` : ''}</span><span class="dim sm">（Windows 工作管理員的「記憶體」數字，約略值，30 秒更新）</span>`;
   for (const id of [...ui.acSel]) if (!ps.find(p => p.id === id)) ui.acSel.delete(id);
   $('#acSelInfo').textContent = ui.acSel.size ? `已勾選 ${ui.acSel.size} 個帳號` : `沒勾選＝全部 ${ps.length} 個`;
+  // 依序開始／停止的進度
+  const aj = s.all, ajCur = aj && aj.cur && ps.find(p => p.id === aj.cur);
+  document.querySelectorAll('[data-acact="start-all"],[data-acact="stop-all"]').forEach(x => { x.disabled = !!(aj && !aj.end); });
+  const allHtml = aj ? `<div class="ac-batch"><b>${aj.op === 'start' ? '▶ 依序開始' : '■ 依序停止'} ${aj.done}/${aj.total}</b>${aj.end ? `<span class="good">完成${aj.skipped ? `（${aj.skipped} 個${aj.op === 'start' ? '本來就在執行' : '本來就停著'}，略過）` : ''}</span>` : `<span>目前：<b>${esc(ajCur ? ajCur.name : '…')}</b></span><span class="dim sm">一個一個來，避免同時開十幾個 Chrome 把電腦卡住；每個約幾秒。</span>`}</div>` : '';
   // 批次登入進度
   const b = s.batch || {}, cur = b.cur && ps.find(p => p.id === b.cur);
-  $('#acBatch').innerHTML = cur || (b.queue || []).length ? `<div class="ac-batch"><b>🔑 批次登入 ${b.done + b.skipped + 1}/${b.total}</b>
+  $('#acBatch').innerHTML = allHtml + (cur || (b.queue || []).length ? `<div class="ac-batch"><b>🔑 批次登入 ${b.done + b.skipped + 1}/${b.total}</b>
     ${cur ? `<span>目前：<b>${esc(cur.name)}</b>${cur.email ? `　Email <code>${esc(cur.email)}</code> <button class="btn sm" data-accopy="${esc(cur.email)}">📋 複製</button>` : ''}</span>
     <span class="dim sm" style="flex-basis:100%">在跳出的 Chrome 視窗登入 Google 和遊戲（看到遊戲畫面就好），然後<b>關掉那個視窗</b>，就會自動換下一個。Chrome 問要不要儲存密碼可以選儲存，下次登入更快。</span>` : '<span class="dim">準備下一個…</span>'}
-    <span style="flex:1"></span><button class="btn sm" data-acact="login-skip">略過這個</button><button class="btn sm" data-acact="login-cancel">停止批次</button></div>` : '';
+    <span style="flex:1"></span><button class="btn sm" data-acact="login-skip">略過這個</button><button class="btn sm" data-acact="login-cancel">停止批次</button></div>` : '');
   if (typing) return; // 正在打字時不要重畫表格
   let h = `<table class="ac-table"><thead><tr><th class="nosort"><input type="checkbox" id="acAll" title="全選"></th><th class="nosort"></th><th class="nosort">名稱</th><th class="nosort">Google Email</th><th class="nosort">遊戲 ID</th><th class="nosort">狀態</th><th class="nosort">角色（勾＝背景開；點名字＝顯示視窗）</th><th class="nosort">操作</th><th class="nosort">備註</th></tr></thead><tbody>`;
   if (!ps.length) h += '<tr><td colspan="9" class="empty">還沒有背景帳號：在下面新增，或匯入 CSV。</td></tr>';
@@ -6030,7 +6034,7 @@ document.addEventListener('click', async e => {
     else if (act === 'start-all' || act === 'stop-all') {
       if (!tg.length) return;
       if (!ui.acSel.size && !confirm(`${act === 'start-all' ? '開始' : '停止'}全部 ${tg.length} 個背景帳號？（會一個一個來）`)) return;
-      t.disabled = true; await api('/api/bg/all', { op: act === 'start-all' ? 'start' : 'stop', ids: tg.map(p => p.id) });
+      t.disabled = true; await api('/api/bg/all', { op: act === 'start-all' ? 'start' : 'stop', ids: tg.map(p => p.id) }); // 立刻回來，進度顯示在上方
     }
     else if (act === 'login-batch') {
       const list = ui.acSel.size ? tg : tg.filter(p => p.needLogin || !p.code);
