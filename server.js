@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const updater = require('./update');
 const makeMarket = require('./market');
 const makeExtDb = require('./extdb');
+const makeBg = require('./bg');
 
 const PORT = Number(process.env.PORT) || 8787;
 // 只接受本機連線
@@ -232,7 +233,12 @@ const tabs = {}; // 帳號代碼 -> { 角色 id: { page, at, hidden, off } }
 function seenTab(code, charId, q) {
   if (!code || !charId) return;
   const t = tabs[code] || (tabs[code] = {});
-  t[charId] = { page: q.page || '', at: Date.now(), hidden: q.hidden === '1', off: q.off === '1' };
+  t[charId] = { page: q.page || '', at: Date.now(), hidden: q.hidden === '1', off: q.off === '1', bg: q.bg === '1' };
+}
+// 背景執行（bg.js）的分頁：你自己的 Chrome 也開著同一隻角色時讓位，避免同一件事做兩次
+function realTabFor(code, charId, page) {
+  const t = tabOf(code, charId);
+  return !!(t && !t.bg && t.page !== page);
 }
 function tabOf(code, charId) {
   const t = code && charId && tabs[code] && tabs[code][charId];
@@ -1046,6 +1052,11 @@ async function mobileApi(req, url) {
   }
   return null;
 }
+const bg = makeBg({
+  dataDir: DATA_DIR, hubUrl: `http://127.0.0.1:${PORT}`,
+  getCfg: () => db.settings.bg || {}, setCfg: c => { db.settings.bg = c; save(); },
+  userscript: userscriptSource, agent: agentSource, log: m => console.log('[背景執行] ' + m),
+});
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${HOST}`);
@@ -1062,6 +1073,19 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/agent-version') {
       return send(res, 200, { version: scriptVersion() });
+    }
+    // 背景執行（不用開 Chrome 視窗）：只能在這台電腦上操作
+    if (req.method === 'GET' && url.pathname === '/api/bg/standby') {
+      return send(res, 200, { standby: realTabFor(url.searchParams.get('code') || '', url.searchParams.get('charId') || '', url.searchParams.get('page') || '') });
+    }
+    if (url.pathname === '/api/bg' || url.pathname.startsWith('/api/bg/')) {
+      if (!isLocal(req)) return send(res, 403, { error: '背景執行只能在這台電腦上的面板操作' });
+      if (req.method === 'GET' && url.pathname === '/api/bg') return send(res, 200, bg.status());
+      const act = url.pathname.slice('/api/bg/'.length);
+      if (req.method === 'POST' && /^(config|add|rename|remove|start|stop|login|login-done|reload|pages)$/.test(act)) {
+        return send(res, 200, await bg.action(act, JSON.parse((await readBody(req)) || '{}')));
+      }
+      return send(res, 404, { error: 'not found' });
     }
     if (req.method === 'GET' && url.pathname === '/szg-hub.user.js') {
       return send(res, 200, userscriptSource(), 'text/javascript; charset=utf-8');
@@ -1091,7 +1115,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname.startsWith('/api/m/')) { const r = await mobileApi(req, url); if (r) return send(res, r[0], r[1]); }
     if (req.method === 'GET' && url.pathname === '/api/data') {
-      const tabsOut = {}; for (const [code, m] of Object.entries(tabs)) for (const [id, t] of Object.entries(m)) if (Date.now() - t.at < TAB_LIVE_MS) tabsOut[id] = { code, at: t.at, hidden: t.hidden, off: t.off };
+      const tabsOut = {}; for (const [code, m] of Object.entries(tabs)) for (const [id, t] of Object.entries(m)) if (Date.now() - t.at < TAB_LIVE_MS) tabsOut[id] = { code, at: t.at, hidden: t.hidden, off: t.off, bg: !!t.bg };
       return send(res, 200, { now: Date.now(), tabs: tabsOut, chars: db.chars, dps: db.dps || {}, expLive: expLive(), avatars: Object.fromEntries(Object.entries(db.avatars || {}).map(([k, v]) => [k, v.at])), settings: db.settings, jobs: db.jobs.slice(-100), expTable: db.expTable || {}, idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo, alerts: alertSummary(), auto: automationInfo() });
     }
 
@@ -1457,6 +1481,7 @@ const server = http.createServer(async (req, res) => {
     // 腳本查詢：這個帳號現在要做什麼
     // 分頁心跳：分頁在做很久的工作（打王、批次衝卷）時不會來問工作，用這個告訴中控它還在，免得工作被改派給同帳號的別的分頁
     if (req.method === 'GET' && url.pathname === '/api/agent/beat') {
+      if (url.searchParams.get('bg') === '1' && realTabFor(url.searchParams.get('code') || '', url.searchParams.get('charId') || '', url.searchParams.get('page') || '')) return send(res, 200, { ok: true, standby: true });
       seenTab(url.searchParams.get('code') || '', url.searchParams.get('charId') || '', Object.fromEntries(url.searchParams));
       return send(res, 200, { ok: true });
     }
@@ -1464,6 +1489,7 @@ const server = http.createServer(async (req, res) => {
       const code = url.searchParams.get('code') || '';
       const pollChar = url.searchParams.get('charId') || '';
       const peek = url.searchParams.get('peek') === '1';
+      if (url.searchParams.get('bg') === '1' && realTabFor(code, pollChar, url.searchParams.get('page') || '')) return send(res, 200, { job: null, standby: true });
       if (!peek) seenTab(code, pollChar, Object.fromEntries(url.searchParams));
       // 掛機指令馬上執行，不用排在交易後面（交給指定的分頁；沒指定就給帳號的任一分頁）
       const idleJob = db.jobs.filter(j => j.kind === 'idle' && ACTIVE.has(j.status) && j.fromCode === code).sort(jobCmp).find(j => routeOf(j, code) === pollChar);
@@ -1542,4 +1568,16 @@ server.listen(PORT, HOST, () => {
   console.log('保持這個視窗開著；關掉視窗就會停止。');
   checkUpdate();
   setInterval(checkUpdate, 2 * 60 * 1000);
+  bg.boot();
 });
+// 正常關閉中控（Ctrl+C、關掉視窗）時一起關掉背景 Chrome；自動更新重新啟動（exit 3）不會經過這裡，背景 Chrome 會繼續跑、中控起來後接回去
+let shuttingDown = false;
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK']) {
+  try {
+    process.on(sig, () => {
+      if (shuttingDown) return; shuttingDown = true;
+      clearTimeout(saveTimer); try { fs.writeFileSync(STATE_FILE, JSON.stringify(db)); } catch (_) {}
+      Promise.race([bg.shutdown(), new Promise(r => setTimeout(r, 8000))]).finally(() => process.exit(0));
+    });
+  } catch (_) {}
+}

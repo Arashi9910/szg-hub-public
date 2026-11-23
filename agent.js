@@ -57,7 +57,15 @@ function agentMain(ctx) {
   }
   // 別的分頁是否正在負責某隻角色（同帳號的另一隻有自己的分頁時，這個分頁就不幫它做事）
   const otherTabHas = id => { const v = GM_getValue(tabKey(id), null); return !!(v && !isMe(v) && tabFresh(v)); };
-  const passive = () => dupTab;
+  // 中控「背景執行」開的無頭 Chrome 分頁（bg.js 注入 window.__szgBg）。你自己的 Chrome 也開著同一隻角色時，背景這頁讓位（暫停中控功能）
+  const BG = (W && W.__szgBg) || null;
+  let bgStandby = false;
+  const passive = () => dupTab || bgStandby;
+  function setBgStandby(v) {
+    v = !!v; if (!BG || v === bgStandby) return;
+    bgStandby = v; BG.standby = v;
+    if (v) setBadge(null, '背景執行：你的 Chrome 已經開著這隻角色，這頁先暫停'); else setBadge('ok');
+  }
   // 直接開新分頁時，遊戲會載入帳號「目前」那隻（通常是已經有分頁的 A）：
   // 剛開的分頁發現這隻已經有人負責、同帳號另一隻沒有分頁 → 自動換成另一隻（等於按了「＋ 開 某某 的分頁」）
   let becoming = false;
@@ -1836,7 +1844,7 @@ function agentMain(ctx) {
       } catch (e) { console.warn('[szg-hub] guild hook failed', e); }
     })();
 
-    const pollQs = charId => `code=${encodeURIComponent((account && account.playerCode) || '')}&charId=${encodeURIComponent(charId || '')}&page=${PAGE_ID}&hidden=${document.hidden ? 1 : 0}&off=${isIdleOffline() ? 1 : 0}`;
+    const pollQs = charId => `code=${encodeURIComponent((account && account.playerCode) || '')}&charId=${encodeURIComponent(charId || '')}&page=${PAGE_ID}&hidden=${document.hidden ? 1 : 0}&off=${isIdleOffline() ? 1 : 0}${BG ? '&bg=1' : ''}`;
     async function agentTick() {
       if (agentRunning || passive()) return;
       agentRunning = true;
@@ -1846,6 +1854,7 @@ function agentMain(ctx) {
         if (!account || !state) return;
         const charId = sessionStorage.getItem('mapleCharacter');
         const res = await hub('GET', '/api/agent?' + pollQs(charId));
+        if (res && res.standby) setBgStandby(true);
         const job = res && res.job;
         if (!job && res && res.needUpdate && GM_getValue(ck('reloadForUpdate'), '') !== res.needUpdate) {
           GM_setValue(ck('reloadForUpdate'), res.needUpdate);
@@ -2070,6 +2079,8 @@ function agentMain(ctx) {
       setInterval(quizTick, 45000);
       // 做很久的工作時（agentRunning，不會來問工作）每 20 秒報到一次
       setInterval(() => { if (agentRunning && !passive() && account && account.playerCode) hub('GET', '/api/agent/beat?' + pollQs(myChar())).catch(() => {}); }, 20000);
+      // 背景執行的分頁：每 15 秒問中控「你的 Chrome 有沒有開著這隻」，有就讓位、關掉就接手
+      if (BG) setInterval(() => { if (account && account.playerCode) hub('GET', '/api/bg/standby?' + pollQs(myChar())).then(r => setBgStandby(r && r.standby)).catch(() => {}); }, 15000);
       setTimeout(() => avatarTick().catch(() => {}), 20000);
       setInterval(() => avatarTick().catch(() => {}), 5 * 60 * 1000);
       setTimeout(() => bossStateTick(true), 15000);

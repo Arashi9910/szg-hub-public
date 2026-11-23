@@ -290,6 +290,11 @@
   .m-pop { width: 420px !important; max-width: 92vw; font-size: 13px; } .m-pop ol { margin: 0; padding-left: 18px; } .m-pop code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; user-select: all; }
   .m-pop .qr { background: #fff; padding: 8px; border-radius: 8px; align-self: center; line-height: 0; } .m-pop .qr svg { width: 220px; height: 220px; }
   .m-pop .dev { display: flex; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--line); }
+  .bg-pop { width: 520px !important; } .bg-prof { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .bg-prof .hd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; } .bg-prof .hd b { flex: 1; min-width: 120px; }
+  .bg-ch { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; } .bg-ch:hover { background: var(--panel2); } .bg-ch.on { background: var(--panel2); }
+  .bg-ch .nm { flex: 1; } .bg-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); } .bg-dot.ok { background: var(--good, #4caf50); } .bg-dot.warn { background: #d9a43a; } .bg-dot.bad { background: var(--bad); }
+  .bg-log { max-height: 120px; overflow: auto; font-size: 11px; color: var(--dim); white-space: pre-wrap; word-break: break-all; }
   .sys-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 50; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; width: max-content; max-width: 70vw; box-shadow: 0 10px 30px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 8px; }
   .sys-pop #updBox { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   /* 沒選東西時，浮動操作列縮成右下角的小列，不擋內容 */
@@ -521,6 +526,7 @@
     <button data-tab="guild">公倉</button>
   </nav>
   <button id="jobBtn" class="jobs-btn" title="交易、背包的工作佇列">工作<span id="jobBadge"></span></button>
+  <details id="bgBox" class="mbox"><summary id="bgSum" title="不用開 Chrome 視窗：由中控在背景開 Chrome 跑遊戲">🖥 背景</summary><div class="sys-pop m-pop bg-pop" id="bgPop"></div></details>
   <details id="mBox" class="mbox"><summary title="用手機看和操作中控">📱 手機</summary><div class="sys-pop m-pop" id="mPop"></div></details>
   <details id="sysBox" class="sysbox"><summary id="sysSum" title="版本、腳本、更新設定">連線中…</summary>
     <div class="sys-pop"><div id="status">連線中…</div><div id="updBox"></div></div></details>
@@ -1749,7 +1755,7 @@ const ONLINE_MS = 90 * 1000;
 const isOnline = s => !!s && (hasTab(s.char.id) || Date.now() - (s.receivedAt || 0) < ONLINE_MS);
 // 角色狀態：tab＝有自己的遊戲分頁；bg＝帳號有開分頁但不是這隻（背景掛機，工作要等開分頁或切換）；off＝整個帳號都沒開
 function charState(s) { if (!s) return 'off'; if (hasTab(s.char.id)) return 'tab'; return accTabs(s.accountId).length ? 'bg' : 'off'; }
-function stateHtml(s) { const st = charState(s); return st === 'tab' ? `<span class="good">● 分頁中</span>${(tabOf(s.char.id) || {}).hidden ? ' <span class="warn sm">（背景）</span>' : ''}` : st === 'bg' ? '<span class="warn" title="沒有自己的遊戲分頁，在背景掛機；執行工作前要開它的分頁或切換過去">● 背景掛機</span>' : '<span class="bad">● 離線</span>'; }
+function stateHtml(s) { const st = charState(s); return st === 'tab' ? `<span class="good">● 分頁中</span>${(tabOf(s.char.id) || {}).bg ? ' <span class="dim sm" title="由中控的「🖥 背景」執行，不用開 Chrome 視窗">（背景執行）</span>' : (tabOf(s.char.id) || {}).hidden ? ' <span class="warn sm">（背景）</span>' : ''}` : st === 'bg' ? '<span class="warn" title="沒有自己的遊戲分頁，在背景掛機；執行工作前要開它的分頁或切換過去">● 背景掛機</span>' : '<span class="bad">● 離線</span>'; }
 const stateSuffix = s => ({ tab: '', bg: '（背景掛機）', off: '（離線）' })[charState(s)];
 const JOB_STATUS = { pending: ['待確認', 'warn'], approved: ['排隊中', ''], running: ['執行中', 'good'], done: ['完成', 'good'], failed: ['失敗', 'bad'], cancelled: ['已取消', 'dim'] };
 const JOB_KIND = { collect: '收集', give: '分發', sell: '賣出', lock: '鎖定', unlock: '解鎖' };
@@ -5827,6 +5833,89 @@ setInterval(poll, 10000);
 // 有工作在執行時每 3 秒更新一次，做完的結果（強化結果、背包變化）馬上看得到
 setInterval(() => { if (!document.hidden && (DATA.jobs || []).some(j => ['approved', 'running'].includes(j.status))) poll(); }, 3000);
 // ---- 手機配對（只在家裡電腦上能用）：產生裝置通行碼、顯示 QR code、撤銷 ----
+// ---------- 🖥 背景執行（bg.js）：不用開 Chrome 視窗 ----------
+const BG_STATE = { off: ['已停止', ''], starting: ['啟動中…', 'warn'], running: ['執行中', 'ok'], login: ['登入視窗開著', 'warn'], error: ['有問題', 'bad'] };
+let bgLast = null, bgTimer = null;
+async function loadBg() { const r = await fetch('/api/bg'); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status); bgLast = j; renderBgSum(); return j; }
+function renderBgSum() {
+  const el = $('#bgSum'); if (!el || !bgLast) return;
+  const ps = bgLast.profiles || [], run = ps.filter(p => p.state === 'running' && !p.needLogin).length, bad = ps.some(p => p.on && (p.needLogin || p.state === 'error'));
+  el.textContent = '🖥 背景' + (ps.length ? ` ${run}/${ps.filter(p => p.on).length || ps.length}` : '');
+  el.style.color = bad ? 'var(--bad)' : run ? 'var(--good, #4caf50)' : '';
+}
+function bgCharLabel(id) { const n = charNameOf(id); return n && n !== id ? n : id; }
+function bgProfHtml(p) {
+  const [stTxt, stCls] = p.needLogin && p.state === 'running' ? ['需要登入', 'bad'] : (BG_STATE[p.state] || [p.state, '']);
+  const live = Object.fromEntries((p.live || []).map(x => [x.key, x]));
+  const want = new Set((p.pages || ['']).map(x => x || '_'));
+  const chars = p.charIds && p.charIds.length ? p.charIds : [];
+  const pageRow = (key, label) => {
+    const on = want.has(key), l = live[key];
+    const st = !on ? '' : !l ? '<span class="dim sm">開啟中…</span>' : l.standby ? '<span class="warn sm" title="你自己的 Chrome 開著這隻角色，背景這頁先暫停；關掉後約 1～2 分鐘自動接手">暫停：你的 Chrome 開著</span>' : !l.injected ? '<span class="warn sm">載入中…</span>' : '<span class="good sm">● 執行中</span>';
+    return `<label class="bg-ch${on ? ' on' : ''}"><input type="checkbox" data-bgpage="${esc(p.id)}" value="${esc(key === '_' ? '' : key)}"${on ? ' checked' : ''}><span class="nm">${esc(label)}</span>${st}</label>`;
+  };
+  const rows = chars.length ? chars.map(id => pageRow(id, bgCharLabel(id))).join('') + (want.has('_') ? pageRow('_', '帳號目前的角色') : '')
+    : pageRow('_', '帳號目前的角色') + '<div class="dim sm">登入、開始後會抓到這個帳號有哪些角色，就能每隻各開一個分頁。</div>';
+  const hint = p.state === 'login' ? `<div class="warn sm">已經開了一個 Chrome 視窗：在裡面用 Google 登入遊戲，看到遊戲畫面後<b>直接關掉那個視窗</b>（或按「登入完成」），背景就會自動開始。</div>`
+    : p.needLogin ? '<div class="bad sm">這個背景帳號還沒登入，或登入過期了：按「登入」。</div>'
+    : p.state === 'error' ? `<div class="bad sm">${esc(p.msg || '發生錯誤')}</div>` : p.msg ? `<div class="dim sm">${esc(p.msg)}</div>` : '';
+  return `<div class="bg-prof"><div class="hd"><span class="bg-dot ${stCls}"></span><b>${esc(p.name)}</b><span class="dim sm">${esc(stTxt)}${p.code ? '・ID ' + esc(p.code) : ''}</span></div>
+    ${hint}
+    <div class="bar" style="margin:0;flex-wrap:wrap">
+      ${p.state === 'login' ? `<button class="btn primary sm" data-bgact="login-done" data-id="${esc(p.id)}">登入完成</button>` : `<button class="btn sm${p.needLogin || !p.code ? ' primary' : ''}" data-bgact="login" data-id="${esc(p.id)}" title="開一個一般的 Chrome 視窗讓你登入（背景會先暫停）">登入</button>`}
+      ${p.on && p.state !== 'off' ? `<button class="btn sm" data-bgact="stop" data-id="${esc(p.id)}">停止</button>` : `<button class="btn sm${p.code ? ' primary' : ''}" data-bgact="start" data-id="${esc(p.id)}">開始</button>`}
+      ${p.state === 'running' ? `<button class="btn sm" data-bgact="reload" data-id="${esc(p.id)}" title="重新整理這個帳號的背景分頁">重新整理分頁</button>` : ''}
+      <span style="flex:1"></span>
+      <button class="btn sm" data-bgact="rename" data-id="${esc(p.id)}">改名</button>
+      <button class="btn sm" data-bgact="remove" data-id="${esc(p.id)}">移除</button></div>
+    <div><div class="dim sm">要在背景開哪些角色（點整列勾選；同一個帳號最多兩隻同時在線）</div>${rows}</div>
+    ${(p.logs || []).length ? `<details><summary class="dim sm">分頁錯誤紀錄（${p.logs.length}）</summary><div class="bg-log">${p.logs.map(l => `${new Date(l.at).toLocaleTimeString()} ${esc(l.page)} ${esc(l.msg)}`).join('\n')}</div></details>` : ''}
+  </div>`;
+}
+async function renderBgPop() {
+  const box = $('#bgPop'); if (!box) return;
+  let s; try { s = await loadBg(); } catch (e) { box.innerHTML = `<div class="dim">${esc(e.message)}</div>`; return; }
+  if (box.contains(document.activeElement) && document.activeElement.tagName === 'INPUT' && document.activeElement.type === 'text') return; // 正在打字時不要重畫
+  box.innerHTML = `<b>🖥 背景執行（不用開 Chrome 視窗）</b>
+    <div class="dim sm">中控會在背景開 Chrome 跑遊戲和中控腳本，畫面上看不到視窗，面板一樣能下指令。每個遊戲帳號用一個獨立的 Chrome 資料夾（和你平常的 Chrome 分開），第一次要按「登入」用 Google 登入一次。你平常的 Chrome 也開著同一隻角色時，背景那頁會自動暫停，不會重複做事。中控視窗關掉時背景 Chrome 也會一起關；中控自動更新重新啟動時不會中斷。</div>
+    ${!s.nodeOk ? `<div class="bad sm">背景執行需要 Node.js 22 以上，目前是 ${esc(s.node)}：請到 nodejs.org 安裝新版 LTS 後重開中控。</div>` : ''}
+    ${s.chrome ? `<div class="dim sm">Chrome：${esc(s.chrome)}</div>` : '<div class="bad sm">找不到 Chrome，請填 chrome.exe 的完整路徑：</div>'}
+    ${!s.chrome || s.chromePath ? `<div class="bar" style="margin:0"><input id="bgChrome" value="${esc(s.chromePath || '')}" placeholder="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" style="flex:1"><button class="btn sm" data-bgact="config">儲存</button></div>` : ''}
+    ${(s.profiles || []).map(bgProfHtml).join('') || '<div class="dim sm">還沒有背景帳號。</div>'}
+    <div class="bar" style="margin:0"><input id="bgNewName" placeholder="名稱，例如：佐藤嵐思的帳號" style="flex:1"><button class="btn primary sm" data-bgact="add">＋ 新增背景帳號</button></div>
+    <div class="dim sm">每個背景分頁大約用 150～300 MB 記憶體。</div>`;
+}
+document.addEventListener('toggle', e => {
+  if (e.target.id !== 'bgBox') return;
+  clearInterval(bgTimer);
+  if (e.target.open) { renderBgPop(); bgTimer = setInterval(() => { if (!document.hidden) renderBgPop(); }, 3000); }
+}, true);
+setInterval(() => { if (!document.hidden && !($('#bgBox') || {}).open) loadBg().catch(() => {}); }, 20000);
+setTimeout(() => loadBg().catch(() => {}), 1500);
+document.addEventListener('change', async e => {
+  const t = e.target; if (!t.dataset || !t.dataset.bgpage) return;
+  const id = t.dataset.bgpage;
+  const pages = [...document.querySelectorAll(`#bgPop input[data-bgpage="${CSS.escape(id)}"]:checked`)].map(x => x.value);
+  if (pages.length > 2 && !confirm('同一個遊戲帳號一次只有兩隻角色能同時在線（A、B 各一個分頁），確定要開 ' + pages.length + ' 個？')) { t.checked = false; return; }
+  try { await api('/api/bg/pages', { id, pages }); renderBgPop(); } catch (err) { alert('失敗：' + err.message); }
+});
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('[data-bgact]'); if (!t || !t.closest('#bgPop')) return;
+  const act = t.dataset.bgact, id = t.dataset.id;
+  try {
+    if (act === 'add') { await api('/api/bg/add', { name: $('#bgNewName').value.trim() }); }
+    else if (act === 'config') { await api('/api/bg/config', { chromePath: $('#bgChrome').value.trim() }); }
+    else if (act === 'rename') { const p = (bgLast.profiles || []).find(x => x.id === id); const n = prompt('背景帳號名稱', p ? p.name : ''); if (n == null) return; await api('/api/bg/rename', { id, name: n }); }
+    else if (act === 'remove') {
+      const p = (bgLast.profiles || []).find(x => x.id === id);
+      if (!confirm(`移除「${p ? p.name : id}」？背景 Chrome 會關掉。\n登入資料不會刪掉，還留在：\n${p ? p.dir : ''}\n（不需要的話可以自己刪掉那個資料夾）`)) return;
+      await api('/api/bg/remove', { id });
+    }
+    else { t.disabled = true; await api('/api/bg/' + act, { id }); }
+    renderBgPop();
+  } catch (err) { alert('失敗：' + err.message); renderBgPop(); }
+});
+
 async function renderMPop(newDev) {
   const box = $('#mPop'); if (!box) return;
   let info, devs;

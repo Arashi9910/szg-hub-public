@@ -301,6 +301,9 @@ Using: node
 
 安裝步驟見 **[手機版安裝教學](mobile.md)**（Tailscale、HTTPS、掃 QR code、加到主畫面）。
 
+### 背景執行（試用）
+不想一直開著好幾個 Chrome 視窗的話：面板右上角「🖥 背景」→ 新增背景帳號 → 按「登入」，在跳出來的 Chrome 視窗用 Google 登入遊戲，看到遊戲畫面後關掉那個視窗。之後中控會在背景開 Chrome 跑遊戲（看不到視窗），勾選要開哪幾隻角色就好。你平常的 Chrome 也開著同一隻時，背景那頁會自動暫停。需要 Node.js 22 以上。詳見 [README 的背景執行](../README.md#背景執行v057-起試用)。
+
 ---
 
 ## 自動更新
@@ -336,6 +339,7 @@ Using: node
 
 - 專案：上漲谷中控（GitHub `Arashi9910/szg-hub-public`），給同時玩多個帳號的人用的本機中控面板。遊戲網址 `https://play.szg08.com/game/`。
 - 組成：Node.js 本機伺服器 `server.js`（**只聽 `127.0.0.1:8787`**，不要改成對外開放、不要開路由器連接埠）＋面板 `dashboard.html`（`http://127.0.0.1:8787`）＋每個 Chrome 設定檔裡的 Tampermonkey 載入器 `szg-hub.user.js`（從 `http://127.0.0.1:8787/szg-hub.user.js` 安裝，執行時由伺服器提供 `agent.js`）。
+- 背景執行（v0.57 起，`bg.js`）：面板「🖥 背景」讓中控用使用者電腦上的 Google Chrome（`--headless=new`，每個帳號獨立的 `data/bg/<編號>` 資料夾）跑遊戲分頁並注入中控腳本，不需要 Tampermonkey；登入是開一般的 Chrome 視窗讓使用者自己用 Google 登入後關掉。需要 Node.js 22 以上（內建 WebSocket）。
 - 啟動：Windows 雙擊 `start.bat`（找 Node.js → 先跑 `update.js` 自動更新 → 跑 `server.js`；結束碼 3 表示更新後重啟）。需要 Node.js LTS。
 - Tampermonkey 必要設定：Chrome 138 以上在 `chrome://extensions` → Tampermonkey「詳細資料」開啟「允許使用者指令碼」；更舊的 Chrome 開「開發人員模式」（參考 <https://www.tampermonkey.net/faq.php?q=Q209>）。另外 Tampermonkey 設定改「進階」模式，「外部 → 更新間隔」設「總是」。
 - 驗證順序：① 黑色視窗顯示「上漲谷中控已啟動」→ ② 瀏覽器打開 `http://127.0.0.1:8787` 看得到面板 → ③ 遊戲分頁右下角顯示「中控：已連線」→ ④ 面板上出現角色。
