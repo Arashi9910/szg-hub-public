@@ -65,6 +65,11 @@
 
 ---
 
+### Mac
+1. 到 [nodejs.org](https://nodejs.org) 安裝 Node.js LTS。
+2. 下載中控的 ZIP 解壓縮，雙擊 `start.command`（第一次被擋住：「系統設定 → 隱私權與安全性」按「強制打開」；或在終端機進到資料夾執行 `chmod +x start.command`）。也可以在終端機進到資料夾執行 `node server.js`。
+3. 終端機視窗要保持開著；中控自動更新後會自己重新啟動。
+
 ## 二、日常使用
 
 ### 基本觀念
@@ -337,6 +342,7 @@
 | 檔案 | 用途 |
 |---|---|
 | `start.bat` | 啟動中控（含自動更新後重啟） |
+| `start.command` | Mac 雙擊啟動中控（含自動更新後重啟） |
 | `server.js` | 本機伺服器，只接受本機（127.0.0.1）連線 |
 | `market.js` | 市場行情紀錄、掃描排程、自動上架定價 |
 | `dashboard.html` | 面板 |

@@ -14,7 +14,7 @@ const rawBase = ref => TEST_URL || `https://raw.githubusercontent.com/${OWNER_RE
 const DIR = __dirname;
 const LOCAL_MANIFEST = path.join(DIR, 'version.json');
 // .bat 不自動更新：Windows 執行中的 .bat 被覆蓋會出錯
-const NEVER_UPDATE = new Set(['start.bat']);
+const NEVER_UPDATE = new Set(['start.bat', 'start.command']);
 
 function localVersion() {
   try { return JSON.parse(fs.readFileSync(LOCAL_MANIFEST, 'utf8')).version || '0.0.0'; } catch (_) { return '0.0.0'; }

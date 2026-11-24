@@ -2,6 +2,23 @@
 // 啟動：node server.js   然後打開 http://127.0.0.1:8787
 'use strict';
 
+// Mac／Linux 直接用 `node server.js` 開時：自動更新要「結束（代碼 3）再重開」，Windows 由 start.bat 重開，
+// 這裡沒有 start.bat，所以第一個程序當看門的，真正的中控是子程序；子程序結束代碼 3 就重開一個（v0.67.1，有人回報 Mac 一更新就停）
+if (process.platform !== 'win32' && !process.env.SZG_LAUNCHER && !process.env.SZG_CHILD) {
+  const { spawn } = require('child_process');
+  let child = null, stopping = false;
+  const run = () => {
+    child = spawn(process.execPath, [...process.execArgv, __filename, ...process.argv.slice(2)], { stdio: 'inherit', env: { ...process.env, SZG_CHILD: '1' } });
+    child.on('exit', code => {
+      if (code === 3 && !stopping) { console.log('已更新，重新啟動中控…'); setTimeout(run, 500); return; }
+      process.exit(code == null ? 0 : code);
+    });
+  };
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { stopping = true; if (child && child.exitCode === null) child.kill(sig); });
+  run();
+  return; // eslint-disable-line no-unreachable
+}
+
 const http = require('http');
 const fs = require('fs');
 const os = require('os');
@@ -1094,13 +1111,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/agent.js') {
       return send(res, 200, agentSource(), 'text/javascript; charset=utf-8');
     }
+    if (process.env.SZG_TEST_RESTART && req.method === 'POST' && url.pathname === '/__test/exit3') { send(res, 200, { ok: true, pid: process.pid }); setTimeout(() => process.exit(3), 200); return; } // 只給測試用
     // 記憶體診斷（中控本身、組隊大廳伺服器）
     if (req.method === 'GET' && url.pathname === '/api/sys') {
       const mb = n => Math.round(n / 1048576);
       const m = process.memoryUsage(); let lobbyMem = null;
       try { const h = (db.settings.lobbyHost || {}); if (h.on) { const j = await (await fetch(`http://127.0.0.1:${Number(h.port) || 8790}/api/ping`, { signal: AbortSignal.timeout(2000) })).json(); lobbyMem = j.mem || null; } } catch (_) {}
       let stateKB = 0; try { stateKB = Math.round(fs.statSync(STATE_FILE).size / 1024); } catch (_) {}
-      return send(res, 200, { node: process.version, uptimeMin: Math.round(process.uptime() / 60), rss: mb(m.rss), heapUsed: mb(m.heapUsed), heapTotal: mb(m.heapTotal), external: mb(m.external), arrayBuffers: mb(m.arrayBuffers), stateKB, execArgv: process.execArgv, lobby: lobbyMem,
+      return send(res, 200, { pid: process.pid, node: process.version, uptimeMin: Math.round(process.uptime() / 60), rss: mb(m.rss), heapUsed: mb(m.heapUsed), heapTotal: mb(m.heapTotal), external: mb(m.external), arrayBuffers: mb(m.arrayBuffers), stateKB, execArgv: process.execArgv, lobby: lobbyMem,
         counts: { chars: Object.keys(db.chars).length, jobs: db.jobs.length, tabs: Object.values(tabs).reduce((a, t) => a + Object.keys(t).length, 0) } });
     }
     // 更新公告（version.json 的 changelog，最近 5 次）

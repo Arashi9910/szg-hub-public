@@ -1,6 +1,6 @@
 {
-  "version": "0.67.0",
-  "notes": "背景執行多了「記憶體整理」：每 10 分鐘（可改）輪流請背景 Chrome 釋放快取、整理每個遊戲分頁的 JS 記憶體，不影響遊戲；「帳號」分頁可以按「🧹 立刻整理」。",
+  "version": "0.67.1",
+  "notes": "修正 Mac／Linux：直接用 node server.js 開中控時，自動更新後中控會停掉不會重開；現在會自己重新啟動。另外附上 Mac 雙擊啟動用的 start.command。",
   "files": [
     "server.js",
     "market.js",
@@ -19,6 +19,25 @@
     "quiz-bank.json"
   ],
   "changelog": [
+    {
+      "version": "0.67.1",
+      "date": "2026-11-24",
+      "title": "Mac 更新後中控停掉",
+      "items": [
+        {
+          "type": "fix",
+          "name": "Mac／Linux 更新後中控停掉",
+          "what": "中控自動更新後要重新啟動，Windows 由 start.bat 負責；Mac、Linux 直接用 node server.js 開的話沒有人重開，看起來就是更新一次就掛掉。現在中控會自己重新啟動（終端機視窗要保持開著，按 Ctrl+C 一樣可以關掉）。",
+          "how": "Mac 使用者：這一次要手動重新開一次中控，之後的更新就會自動重開。"
+        },
+        {
+          "type": "new",
+          "name": "Mac 雙擊啟動",
+          "what": "資料夾裡多了 start.command，Mac 雙擊就能啟動中控並打開面板（跟 Windows 的 start.bat 一樣）。",
+          "how": "重新從 GitHub 下載 ZIP 才會有這個檔案。第一次被系統擋住時，到「系統設定 → 隱私權與安全性」按「強制打開」；或在終端機進到中控資料夾執行 chmod +x start.command。"
+        }
+      ]
+    },
     {
       "version": "0.67.0",
       "date": "2026-11-24",
@@ -84,18 +103,6 @@
           "name": "通知",
           "what": "大廳分頁最下面列出最近的事：誰加入、誰離開、誰被踢、誰跟著隊長換圖；有新通知時畫面下方會跳提示。",
           "how": "打開「組隊大廳」分頁看最下面的「🔔 通知」。"
-        }
-      ]
-    },
-    {
-      "version": "0.65.1",
-      "date": "2026-11-24",
-      "title": "網頁版大廳調整",
-      "items": [
-        {
-          "type": "change",
-          "name": "網頁版拿掉外部連結",
-          "what": "組隊大廳網頁版不再顯示中控的 GitHub 連結。"
         }
       ]
     }
