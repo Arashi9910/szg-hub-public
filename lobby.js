@@ -156,12 +156,12 @@ async function handle(req, res) {
 
   if (M === 'POST' && P === '/api/publish') {
     if (limited('pub:' + c.id, 30, 60000)) return send(res, 429, { error: '公布太頻繁' }); // 正常是 30 秒一次
-    const b = await readBody(req), now = Date.now(), keep = new Set(), ids = {};
+    const b = await readBody(req), now = Date.now(), keep = new Set(), ids = {}, avaOk = [];
     for (const x of (Array.isArray(b.listings) ? b.listings : []).slice(0, 6)) {
       const key = str(x.key, 64); if (!key) continue;
       let l = Object.values(db.listings).find(l => l.owner === c.id && l.key === key);
       const members = (Array.isArray(x.members) ? x.members : []).slice(0, MAX_PARTY).map(m => ({ name: str(m.name, 24), lv: num(m.lv, 1, 300), job: str(m.job, 40), jobName: str(m.jobName, 20), branch: str(m.branch, 10), map: str(m.map, 40), mapName: str(m.mapName, 40), leader: !!m.leader })).filter(m => m.name);
-      if (x.avas && typeof x.avas === 'object') for (const [n, b64] of Object.entries(x.avas).slice(0, MAX_PARTY)) if (members.some(m => m.name === n)) putAva(str(n, 24), b64);
+      if (x.avas && typeof x.avas === 'object') for (const [n, b64] of Object.entries(x.avas).slice(0, MAX_PARTY)) if (members.some(m => m.name === n)) { putAva(str(n, 24), b64); if (db.avas[str(n, 24)]) avaOk.push(str(n, 24)); }
       if (!members.length) continue;
       const rules = x.rules || {};
       const data = {
@@ -179,7 +179,7 @@ async function handle(req, res) {
     }
     for (const [id, l] of Object.entries(db.listings)) if (l.owner === c.id && !keep.has(id)) delete db.listings[id];
     save();
-    return send(res, 200, { ok: true, ids, banned: banned(c) ? c.bannedUntil : 0 });
+    return send(res, 200, { ok: true, ids, avas: avaOk, banned: banned(c) ? c.bannedUntil : 0 }); // avas：收下的全身照（中控只把這些記成已送）
   }
 
   if (M === 'GET' && P === '/api/mine') {

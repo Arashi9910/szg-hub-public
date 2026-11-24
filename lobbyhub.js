@@ -68,13 +68,14 @@ module.exports = function makeLobby(o) {
     const c = s.char, mi = mapInfo(c.map), live = expLive()[charId];
     const members = (party.members || []).map(m => { const own = db().chars[m.id]; return { name: m.name, lv: m.lv, job: m.job, jobName: m.jobName || (own && own.char.jobName) || '', branch: m.branch || (own && own.char.branch) || '', map: m.map, mapName: mapInfo(m.map).name || '', leader: !!m.leader || m.id === charId && mem.length <= 1 }; });
     // 隊員裡自己的角色：全身照一起送（沒變就不送）
-    const avas = {}; const sentN = st().avaSentN || (st().avaSentN = {});
-    for (const m of party.members || []) { const a = (db().avatars || {})[m.id]; if (a && sentN[m.name] !== a.at) { try { avas[m.name] = fs.readFileSync(path.join(avatarDir, m.id + '.gif')).toString('base64'); sentN[m.name] = a.at; } catch (_) {} } }
+    // 大廳回覆收下了才記成已送（v0.66.1：大廳還是舊版時送了沒收，以前會被當成送過）
+    const avas = {}, avaAt = {}; const sentN = st().avaSent2 || (st().avaSent2 = {});
+    for (const m of party.members || []) { const a = (db().avatars || {})[m.id]; if (a && sentN[m.name] !== a.at) { try { avas[m.name] = fs.readFileSync(path.join(avatarDir, m.id + '.gif')).toString('base64'); avaAt[m.name] = a.at; } catch (_) {} } }
     const l = {
       key: charId, code: party.code,
       leader: { name: c.name, lv: c.lv, jobName: c.jobName || '', branch: c.branch || '' },
       map: c.map, mapName: c.mapName || mi.name || c.map, mapLv: mi.minLevel || 0, region: mi.region || '',
-      members, avas, exp: Math.round((live && live.rate) || c.hourlyExp || 0), dps: Math.round(charDps(charId) || 0), note: pc.note || '', rules: pc.rules || {},
+      members, avas, _avaN: avaAt, exp: Math.round((live && live.rate) || c.hourlyExp || 0), dps: Math.round(charDps(charId) || 0), note: pc.note || '', rules: pc.rules || {},
     };
     const ava = (db().avatars || {})[charId];
     if (ava && st().avaSent[charId] !== ava.at) { try { l.ava = fs.readFileSync(path.join(avatarDir, charId + '.gif')).toString('base64'); l._avaAt = ava.at; } catch (_) {} }
@@ -92,8 +93,9 @@ module.exports = function makeLobby(o) {
         if (b.listing) out.push(b.listing);
       }
       if (!out.length && !Object.keys(status.lastPub || {}).length && !force) { status.pub = pub; return; }
-      const r = await call('POST', '/api/publish', { listings: out.map(l => { const x = { ...l }; delete x._avaAt; return x; }) });
-      for (const l of out) { if (r.ids && r.ids[l.key]) pub[l.key].listingId = r.ids[l.key]; if (l._avaAt) st().avaSent[l.key] = l._avaAt; }
+      const r = await call('POST', '/api/publish', { listings: out.map(l => { const x = { ...l }; delete x._avaAt; delete x._avaN; return x; }) });
+      const sentN = st().avaSent2 || (st().avaSent2 = {});
+      for (const l of out) { if (r.ids && r.ids[l.key]) pub[l.key].listingId = r.ids[l.key]; if (l._avaAt) st().avaSent[l.key] = l._avaAt; for (const n of r.avas || []) if (l._avaN && l._avaN[n]) sentN[n] = l._avaN[n]; }
       status.pub = pub; status.lastPub = r.ids || {}; save();
     } catch (e) { status.err = e.message; }
     finally { pubBusy = false; }
