@@ -59,8 +59,10 @@ module.exports = function makeLobby(o) {
       if (!busy && Date.now() - (creating[charId] || 0) > 2 * 60 * 1000) { creating[charId] = Date.now(); createPartyJob(charId, { role: 'leader', ops: true, create: true, noStart: true }, '組隊大廳：建立隊伍'); }
       return { state: 'creating', msg: '沒有隊伍，正在幫你建立一個' };
     }
-    const leaderId = party.leader || ((party.members || []).find(m => m.leader) || {}).id;
-    if (leaderId && leaderId !== charId) return { state: 'notLeader', msg: `在 ${charName(leaderId)} 的隊伍裡，不是隊長` };
+    // 誰是隊長：真實遊戲的 party.leader 是「自己是不是隊長」（true／false），隊員資料有 leader 旗標；模擬遊戲是隊長的 id，兩種都認
+    const mem = party.members || [], me = mem.find(m => m.id === charId || m.self), lm = mem.find(m => m.leader);
+    const isLeader = party.leader === true || party.leader === charId || !!(me && me.leader) || (mem.length <= 1 && party.leader !== false);
+    if (!isLeader) return { state: 'notLeader', msg: `在 ${lm ? lm.name : '別人'} 的隊伍裡，不是隊長` };
     const c = s.char, mi = mapInfo(c.map), live = expLive()[charId];
     const members = (party.members || []).map(m => ({ name: m.name, lv: m.lv, job: m.job, jobName: (db().chars[m.id] && db().chars[m.id].char.jobName) || '' }));
     const l = {
