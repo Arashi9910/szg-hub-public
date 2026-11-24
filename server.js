@@ -360,12 +360,19 @@ function guildRollPass(g, dep) {
   const ok = cs.map(c => c.k === '_pass' ? pass() : (c.k === '_sum' ? sum() : d(c.k)) >= Number(c.min));
   return dep.mode === 'any' ? ok.some(Boolean) : ok.every(Boolean);
 }
+// 技能書獨立一類：舊腳本把技能書回報成「消耗」，用遊戲目錄（world.json 的 names：[名稱, 類別]）改回來
+let _bookIds = { at: 0, set: new Set() };
+function bookIds() {
+  try { const st = fs.statSync(WORLD_FILE); if (st.mtimeMs !== _bookIds.at) { const w = JSON.parse(fs.readFileSync(WORLD_FILE, 'utf8')); _bookIds = { at: st.mtimeMs, set: new Set(Object.entries(w.names || {}).filter(([, n]) => n && n[1] === '技能書').map(([id]) => Number(id))) }; } } catch (_) {}
+  return _bookIds.set;
+}
+const itemKind = it => (it.kind === '消耗' && bookIds().has(Number(it.itemId)) ? '技能書' : it.kind);
 function guildPlanFor(snap, dep) {
   const names = new Set(dep.names || []), cats = new Set(dep.cats || []), keep = Math.max(0, Number(dep.keep) || 0);
   const items = [], gear = [];
   for (const it of snap.items || []) {
     if (it.loc !== '背包' || !(it.tradableQty > 0) || it.supply) continue;
-    if (!names.has('i:' + it.key) && !cats.has(it.kind)) continue;
+    if (!names.has('i:' + it.key) && !cats.has(itemKind(it))) continue;
     const qty = it.tradableQty - keep;
     if (qty > 0) items.push({ key: it.key, name: it.name, qty });
   }

@@ -942,7 +942,7 @@
     </div>
     </div>
     <div class="g-tools">
-      <div class="seg" id="gwTabs"><button data-gwtab="gear">裝備</button><button data-gwtab="scroll">卷軸</button><button data-gwtab="use">消耗</button><button data-gwtab="etc">其他</button></div>
+      <div class="seg" id="gwTabs"><button data-gwtab="gear">裝備</button><button data-gwtab="scroll">卷軸</button><button data-gwtab="use">消耗</button><button data-gwtab="book">技能書</button><button data-gwtab="etc">其他</button></div>
       <input id="gwQ" placeholder="搜尋名稱（兩邊一起篩）" style="width:200px" autocomplete="off">
       <span class="dim sm">點整列選取（Shift＋點選一段）。左邊選好按「存入」，右邊選好按「領取」。</span>
     </div>
@@ -984,12 +984,13 @@
         <button class="btn sm" data-gdpreset="scroll" title="所有卷軸都存，其他不動">只存卷軸</button>
         <button class="btn sm" data-gdpreset="scrollgear" title="所有卷軸＋所有裝備（不挑素質）">卷軸＋全部裝備</button>
         <button class="btn sm" data-gdpreset="good" title="所有卷軸＋浮動達標的裝備（每個部位照「部位設定」看各自的素質；爛的留在背包給自動販售處理）">卷軸＋比標準好的裝備</button>
+        <button class="btn sm" data-gdpreset="addbook" title="在目前的規則上，再加上「所有技能書」（不會改掉其他設定）">＋ 技能書</button>
         <button class="btn sm" data-gdpreset="clear">清空規則</button></div>
       <div class="bar"><span class="gd-lb">哪些角色</span><div class="chips" id="gdChars"></div></div>
       <div class="bar"><span class="gd-lb">整類存入</span><div class="chips" id="gdCats"></div><span class="dim sm">勾整類會包含之後撿到的新東西，自動存入用這個最方便</span></div>
       <details id="gdPickBox"><summary style="cursor:pointer"><span class="gd-lb" style="display:inline-block">個別挑選</span> <span class="dim sm">只想存特定幾種時用（點整列選取）</span>　<span class="dim sm" id="gdPickInfo"></span></summary>
         <div class="bar">
-          <div class="seg" id="gdKinds"><button data-gdkind="all">全部</button><button data-gdkind="gear">裝備</button><button data-gdkind="卷軸">卷軸</button><button data-gdkind="消耗">消耗</button><button data-gdkind="other">其他</button></div>
+          <div class="seg" id="gdKinds"><button data-gdkind="all">全部</button><button data-gdkind="gear">裝備</button><button data-gdkind="卷軸">卷軸</button><button data-gdkind="消耗">消耗</button><button data-gdkind="技能書">技能書</button><button data-gdkind="other">其他</button></div>
           <input id="gdQ" placeholder="搜尋名稱" style="width:160px" autocomplete="off"><button class="btn sm" id="gdPickShown">勾選目前列出的</button><button class="btn sm" id="gdPickNone">清除個別勾選</button>
         </div>
         <div id="gdList" style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:6px"></div>
@@ -1812,7 +1813,7 @@ ui.ff = { collect: null, give: emptyFF(), bag: emptyFF() };
 ui.bagSel = new Set();
 
 const words = s => String(s || '').split(/[,，、\s]+/).map(x => x.trim()).filter(Boolean);
-function allKinds() { const k = new Set(); for (const s of snaps()) for (const i of s.items || []) k.add(i.kind); return [...k].sort(); }
+function allKinds() { const k = new Set(); for (const s of snaps()) for (const i of s.items || []) k.add(i.kind); return [...k].sort((a, b) => kindRank(a) - kindRank(b) || cmp(a, b)); }
 function itemPass(i, f) {
   if (f.kinds.length && !f.kinds.includes(i.kind)) return false;
   if ((f.incKeys || []).length && !f.incKeys.includes(i.key)) return false;
@@ -2032,7 +2033,9 @@ ui.bag = { view: 'item', listLimit: 1000, q: '', kind: '', sellOnly: false, hide
 // ---- 背包的「含公倉」：公會倉庫的東西也列出來，可以選取後「從公倉領取」給某隻角色 ----
 // 道具 key 的類別：先看角色背包裡同一種東西的類別，沒有的話用道具編號判斷（204xxxx 卷軸、2xxxxxx 消耗、3xxxxxx 裝飾、4xxxxxx 其他）
 let _kindCache = { at: 0, m: {} };
+const isBookId = id => typeof WORLD !== 'undefined' && !!WORLD && !!WORLD.names && !!WORLD.names[Number(id)] && WORLD.names[Number(id)][1] === '技能書';
 function itemKindOfKey(key) {
+  if (isBookId(keyId(key))) return '技能書';
   if (_kindCache.at !== DATA.now) { const m = {}; for (const sn of snaps()) for (const it of sn.items || []) if (it.kind && !m[it.key]) m[it.key] = it.kind; _kindCache = { at: DATA.now, m }; }
   if (_kindCache.m[key]) return _kindCache.m[key];
   if (typeof WORLD !== 'undefined' && WORLD && WORLD.scrolls && WORLD.scrolls[key]) return '卷軸';
@@ -2056,7 +2059,10 @@ function bagGuildRows(raw) {
 }
 const guildGearTip = x => `${x.successes ? '+' + x.successes + ' ' : ''}${statLine(x.stats || {}, STAT_ORDER) || '無素質'}　可衝 ${x.slots ?? '?'}${x.locked ? '　🔒' : ''}`;
 try { const v = localStorage.getItem('bagView'); if (v === 'char' || v === 'item' || v === 'list') ui.bag.view = v; } catch (_) {}
-const BAG_KIND_ORDER = ['裝備', '卷軸', '消耗', '其他', '裝飾', '點數']; // 全中控同一個類別順序
+const BAG_KIND_ORDER = ['裝備', '卷軸', '消耗', '技能書', '其他', '裝飾', '點數']; // 全中控同一個類別順序
+// 公倉的分頁（道具）：gwtab ↔ 類別。沒列到的類別都歸「其他」
+const GW_TABS = { scroll: '卷軸', use: '消耗', book: '技能書' };
+const gwTabOfKind = k => Object.keys(GW_TABS).find(t => GW_TABS[t] === k) || 'etc';
 const kindRank = k => { const i = BAG_KIND_ORDER.indexOf(k); return i < 0 ? 99 : i; };
 const bagSid = (charId, rid) => charId + '|' + rid;
 // 有背包資料的角色（依帳號、名稱排序）
@@ -3810,7 +3816,7 @@ function renderSellEditor(cfg, chars) {
   const m = mapOf(id); if (!m) { box.style.display = 'none'; return; }
   const d = ui.board.sellDraft || (ui.board.sellDraft = { enabled: cfg.sell[id] ? cfg.sell[id].enabled : true, sel: new Set(cfg.sell[id] ? cfg.sell[id].itemIds : []) });
   const rows = sellRows(id);
-  const groups = [['gear', '裝備', r => r[1] === 'gear'], ['scroll', '卷軸', r => isScrollId(r[0])], ['other', '其他道具', r => r[1] !== 'gear' && !isScrollId(r[0])]];
+  const groups = [['gear', '裝備', r => r[1] === 'gear'], ['scroll', '卷軸', r => isScrollId(r[0])], ['book', '技能書', r => isBookId(r[0])], ['other', '其他道具', r => r[1] !== 'gear' && !isScrollId(r[0]) && !isBookId(r[0])]];
   const here = chars.filter(c => c.map === id && c.active);
   box.style.display = '';
   box.innerHTML = `<div class="bar"><h3 style="margin:0">${ic('coins')} ${esc(m.name)} 的自動販售</h3><label><input type="checkbox" class="sw" id="bdSellOn" ${d.enabled ? 'checked' : ''}> 開啟</label>
@@ -4922,6 +4928,7 @@ function gdSummary(d) {
   return `<b>會存入：</b>${what.join('、')}<br><b>從誰身上：</b>${who}<br><b>道具：</b>${Number(d.keep) > 0 ? `每隻角色每種留 ${fmt(d.keep)} 個，多的才存` : '全部存入'}`;
 }
 function gdPreset(d, p) {
+  if (p === 'addbook') { d.cats.add('技能書'); return; } // 加上技能書（不動其他規則）
   d.names.clear(); d.conds = []; d.mode = 'all'; d.unknown = false;
   if (p === 'clear') { d.cats = new Set(); return; }
   d.cats = new Set(['卷軸']);
@@ -5000,10 +5007,10 @@ function renderGuildAuto() {
 function renderGuildOut() {
   const g = GUILD && GUILD.data;
   if (ui.gw.tab === 'item') ui.gw.tab = 'scroll';
-  const GW_TAB_KIND = { scroll: k => k === '卷軸', use: k => k === '消耗', etc: k => k !== '卷軸' && k !== '消耗' };
-  { const g0 = GUILD && GUILD.data, cnt = { scroll: 0, use: 0, etc: 0, gear: ((g0 && g0.gear) || []).length };
-    for (const [key, n] of Object.entries((g0 && g0.items) || {})) if (n > 0) { const k = itemKindOfKey(key); cnt[k === '卷軸' ? 'scroll' : k === '消耗' ? 'use' : 'etc']++; }
-    document.querySelectorAll('#gwTabs button').forEach(b => { b.classList.toggle('on', b.dataset.gwtab === ui.gw.tab); b.innerHTML = `${({ scroll: '卷軸', use: '消耗', etc: '其他', gear: '裝備' })[b.dataset.gwtab]}<span class="n">${cnt[b.dataset.gwtab]}</span>`; }); }
+  const GW_TAB_KIND = GW_KIND;
+  { const g0 = GUILD && GUILD.data, cnt = { scroll: 0, use: 0, book: 0, etc: 0, gear: ((g0 && g0.gear) || []).length };
+    for (const [key, n] of Object.entries((g0 && g0.items) || {})) if (n > 0) cnt[gwTabOfKind(itemKindOfKey(key))]++;
+    document.querySelectorAll('#gwTabs button').forEach(b => { b.classList.toggle('on', b.dataset.gwtab === ui.gw.tab); b.innerHTML = `${({ ...GW_TABS, etc: '其他', gear: '裝備' })[b.dataset.gwtab]}<span class="n">${cnt[b.dataset.gwtab]}</span>`; }); }
   const job = (DATA.jobs || []).find(j => j.kind === 'guildView' && ['approved', 'running'].includes(j.status));
   if (!g) {
     $('#gwInfo').innerHTML = job ? `讀取中（${esc(job.fromName)}）…` : '還沒讀過公會倉庫。按「重新整理」，或在任一遊戲分頁打開公會倉庫一次。';
@@ -5063,7 +5070,7 @@ function renderGuildOut() {
 
 // ===== 公倉頁版面：狀態列＋左右兩欄（背包 ⇄ 公倉）＋抽屜（存入規則、楓幣點數）=====
 // 參考遊戲倉庫介面：自己的背包和倉庫並排，中間的按鈕把選取的東西搬過去；規則、金錢這些少用的設定收進抽屜
-const GW_KIND = { scroll: k => k === '卷軸', use: k => k === '消耗', etc: k => k !== '卷軸' && k !== '消耗' };
+const GW_KIND = { scroll: k => k === '卷軸', use: k => k === '消耗', book: k => k === '技能書', etc: k => gwTabOfKind(k) === 'etc' };
 ui.gx = { chars: 'all', sel: new Set(), shown: [] };
 function gxCharList() {
   const all = snaps().slice().sort((a, b) => cmp(accountLabel(a.accountId, a), accountLabel(b.accountId, b)) || cmp(a.char.name, b.char.name));
@@ -5282,7 +5289,7 @@ function gdCandidates() {
 }
 function gdShown(all) {
   const d = gdState(), q = d.q.trim().toLowerCase();
-  return all.filter(x => (d.kind === 'all' || (d.kind === 'gear' ? x.type === 'gear' : d.kind === '卷軸' || d.kind === '消耗' ? x.kind === d.kind : x.type === 'item' && x.kind !== '卷軸' && x.kind !== '消耗')) && (!q || x.name.toLowerCase().includes(q)));
+  return all.filter(x => (d.kind === 'all' || (d.kind === 'gear' ? x.type === 'gear' : d.kind === '卷軸' || d.kind === '消耗' || d.kind === '技能書' ? x.kind === d.kind : x.type === 'item' && gwTabOfKind(x.kind) === 'etc')) && (!q || x.name.toLowerCase().includes(q)));
 }
 const gdCovered = (d, x) => d.cats.has(x.type === 'gear' ? '裝備' : x.kind);
 const gdPicked = (d, x) => d.names.has(x.k) || gdCovered(d, x);
@@ -5781,8 +5788,8 @@ async function poll(force) {
   try {
     const r = await fetch('/api/data');
     DATA = await r.json();
-    // 技能書在遊戲背包裡是「消耗」：舊腳本回報的「技能書」也併進消耗
-    for (const sn of Object.values(DATA.chars || {})) for (const it of sn.items || []) if (it.kind === '技能書') it.kind = '消耗';
+    // 技能書獨立一類：還在跑舊腳本（把技能書算成消耗）的分頁，用遊戲目錄的類別改回技能書
+    for (const sn of Object.values(DATA.chars || {})) for (const it of sn.items || []) if (it.kind === '消耗' && isBookId(it.itemId)) it.kind = '技能書';
     worldFreshCheck();
     S = { accountLabels: {}, mainCharId: null, presets: [], slotStats: {}, ...DATA.settings, ...(typeof boardPending !== 'undefined' && boardPending ? boardPending : {}) };
     const anyNames = snaps().find(s => s.statNames);

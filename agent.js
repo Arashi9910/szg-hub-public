@@ -295,8 +295,8 @@ function agentMain(ctx) {
     function itemInfo(key) {
       const it = catalog.items[key] || catalog.scrolls[key];
       if (!it) return { name: key, kind: '其他', cat: 'etc', sellPrice: 0, itemId: 0 };
-      // 技能書在遊戲背包裡屬於「消耗」分頁，中控也一律算消耗（使用者要求）
-      const kind = it.type === '技能書' ? '消耗' : it.type || (catalog.scrolls[key] ? '卷軸' : '其他');
+      // 技能書：中控獨立一類（v0.63，使用者要求；v0.54.2～0.62 曾併進消耗）。遊戲背包分頁 cat 仍是 consume（賣出、報價照遊戲的分頁）
+      const kind = it.type || (catalog.scrolls[key] ? '卷軸' : '其他');
       return { name: it.name || key, kind, cat: bagCat(it.id, kind), sellPrice: it.sellPrice || 0, itemId: it.id || 0 };
     }
     // 遊戲背包分類：依物品編號開頭（2 消耗、3 裝飾、4 其他、5 點數）
