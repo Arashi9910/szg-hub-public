@@ -305,7 +305,13 @@
   .lb-mem span { font-size: 11px; padding: 0 5px; border: 1px solid var(--line); border-radius: 8px; color: var(--dim); }
   .lb-big { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; } .lb-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .lb-pub { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-  .lb-pub.on { border-color: var(--accent); } .lb-req { display: flex; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px dashed var(--line); flex-wrap: wrap; }
+  .lb-pub.on { border-color: var(--accent); }
+  .lb-ms { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; } .lb-m { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .lb-m img { width: 26px; height: 26px; object-fit: contain; image-rendering: pixelated; flex: none; } .lb-m .nm { font-weight: 500; } .lb-m.away { opacity: .6; }
+  .lb-party { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 8px; } .lb-party.lead { border-color: var(--accent); }
+  .lb-pm { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-top: 1px dashed var(--line); } .lb-pm:first-of-type { border-top: 0; }
+  .lb-pm img { width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; flex: none; }
+  .lb-note { display: flex; gap: 8px; padding: 3px 0; font-size: 13px; } .lb-note .t { color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; } .lb-req { display: flex; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px dashed var(--line); flex-wrap: wrap; }
   .news-drawer { width: min(720px, 96vw); } .news-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--bad); margin-left: 4px; vertical-align: middle; }
   .news-ver { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 10px 0; } .news-ver.cur { border-color: var(--accent); }
   .news-ver h4 { margin: 0 0 6px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; } .news-it { margin: 8px 0 0; padding-left: 10px; border-left: 3px solid var(--line); }
@@ -917,6 +923,9 @@
   </section>
   <section id="lobby">
     <div class="card" id="lbStatus"></div>
+    <div class="card"><h3>👥 我的隊伍 <span class="dim sm">自己的角色目前所在的隊伍</span></h3>
+      <div class="bar"><label title="隊長換圖時，原本跟著隊長在同一張圖、正在掛機的隊員自動換過去並重新開始掛機（打王地圖不跟）"><input type="checkbox" class="sw" id="lbFollow"> 隊長換圖時隊員自動跟著換</label></div>
+      <div id="lbParties"></div></div>
     <div class="card"><h3>📣 我的招募 <span class="dim sm">把自己的隊伍公布到大廳，讓別人申請加入</span></h3>
       <div class="dim help-src">選一隻當隊長公布：會顯示這隻角色的地圖、等級、每小時經驗、隊伍人數。沒有隊伍的話中控會先幫它建立一個。<b>自動同意</b>：符合等級範圍、職業的申請大廳直接放行，對方的中控會自動加入、換到同一張圖、開始掛機；不符合的會列在下面等你決定。對方加入後，中控會用遊戲的隊伍資料核對他回報的等級和職業，謊報的會自動踢出。</div>
       <div class="bar"><select id="lbPubSel"></select><button class="btn primary" id="lbPubAdd">＋ 公布這隻的隊伍</button></div>
@@ -931,6 +940,7 @@
       </div>
       <div id="lbList" class="lb-grid"></div></div>
     <div class="card"><h3>📨 我送出的申請</h3><div id="lbOut"></div></div>
+    <div class="card"><h3>🔔 通知</h3><div id="lbNotes"></div></div>
   </section>
   <section id="accts">
     <div class="card">
@@ -6143,6 +6153,28 @@ document.addEventListener('click', async e => {
 });
 
 // ---------- 組隊大廳（lobbyhub.js ⇄ lobby.js）----------
+// 預設角色圖（原創小人，依職業換顏色和武器）：沒裝中控、還沒有全身照的人用
+const DEF_AVA_C = { '劍士': ['#d9534f', 'sword'], '法師': ['#8e6bd8', 'staff'], '弓箭手': ['#43a05a', 'bow'], '盜賊': ['#5b6170', 'dagger'], '海盜': ['#3b82c4', 'gun'] };
+const DEF_AVA_W = {
+  sword: '<path d="M47 20l3-3 2 2-3 3z" fill="#ddd"/><path d="M46 21l-9 13 2 2 9-13z" fill="#e8e8e8" stroke="#888" stroke-width=".6"/><path d="M36 33l4 4M35 36l3-3" stroke="#8a6a2b" stroke-width="2.2" stroke-linecap="round"/>',
+  staff: '<path d="M47 19l-6 24" stroke="#8a6a2b" stroke-width="2.4" stroke-linecap="round"/><circle cx="47.5" cy="17" r="4" fill="#7fd3ff" stroke="#fff" stroke-width=".8"/>',
+  bow: '<path d="M44 15q10 14 0 28" fill="none" stroke="#8a6a2b" stroke-width="2.4" stroke-linecap="round"/><path d="M44 15v28" stroke="#eee" stroke-width=".8"/>',
+  dagger: '<path d="M46 26l-6 8" stroke="#e8e8e8" stroke-width="2.6" stroke-linecap="round"/><path d="M41 32l3 3" stroke="#555" stroke-width="2"/>',
+  gun: '<rect x="38" y="30" width="12" height="4" rx="1" fill="#555"/><rect x="40" y="33" width="3" height="5" rx="1" fill="#6b4e2a"/>',
+};
+function defAvaSvg(branch) {
+  const [col, w] = DEF_AVA_C[branch] || ['#b08850', ''];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><ellipse cx="32" cy="59" rx="14" ry="3" fill="rgba(0,0,0,.25)"/>`
+    + `<rect x="23" y="40" width="7" height="16" rx="3" fill="#3a3f4b"/><rect x="34" y="40" width="7" height="16" rx="3" fill="#3a3f4b"/>`
+    + `<path d="M20 30q12-6 24 0l2 14q-14 5-28 0z" fill="${col}"/><circle cx="19" cy="37" r="3.5" fill="#f2c9a0"/><circle cx="45" cy="37" r="3.5" fill="#f2c9a0"/>`
+    + (w ? DEF_AVA_W[w] : '')
+    + `<circle cx="32" cy="20" r="12" fill="#f2c9a0"/><path d="M20 19q1-12 12-12t12 12q-5-5-12-5t-12 5z" fill="#5a3b24"/>`
+    + `<circle cx="27.5" cy="21" r="1.8" fill="#222"/><circle cx="36.5" cy="21" r="1.8" fill="#222"/><path d="M29 26q3 2 6 0" stroke="#a0522d" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg>`;
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
+const lbImg = (src, branch, cls = '') => `<img class="${cls}" src="${esc(src || defAvaSvg(branch))}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${defAvaSvg(branch)}'">`;
+
 let LOBBY = null;
 ui.lb = (() => { try { return { char: '', fit: false, room: true, sort: 'exp', q: '', ...JSON.parse(localStorage.getItem('lobbyUi') || '{}') }; } catch (_) { return { char: '', fit: false, room: true, sort: 'exp', q: '' }; } })();
 const lbSaveUi = () => { try { localStorage.setItem('lobbyUi', JSON.stringify({ char: ui.lb.char, fit: ui.lb.fit, room: ui.lb.room, sort: ui.lb.sort })); } catch (_) {} };
@@ -6211,6 +6243,22 @@ function drawLobby() {
       ${pend.map(x => `<div class="lb-req"><b>${esc(x.char.name)}</b>${x.char.web ? '<span class="tag" title="用網頁版大廳申請的（沒裝中控）：通過後他要自己在遊戲輸入代碼加入；加入後一樣會核對等級">網頁</span>' : ''}<span class="dim">Lv${x.char.lv} ${esc(x.char.jobName || x.char.branch || '')}${x.char.dps ? `・DPS ${short(x.char.dps)}` : ''}${x.char.exp ? `・每小時經驗 ${short(x.char.exp)}` : ''}</span>${x.msg ? `<span>「${esc(x.msg)}」</span>` : ''}<span style="flex:1"></span><button class="btn primary sm" data-lbdec="${esc(x.id)}" data-ok="1">同意</button><button class="btn sm" data-lbdec="${esc(x.id)}" data-ok="0">拒絕</button></div>`).join('')}
       ${done.length ? `<div class="dim sm">最近：${done.map(x => `${esc(x.char.name)}（${(LB_ST[x.status] || [x.status])[0]}${x.by === 'auto' && x.status !== 'denied' ? '・自動' : ''}）${chk(x)}`).join('、')}</div>` : ''}</div>`;
   }).join('') || '<div class="dim">還沒有公布任何隊伍。</div>';
+  // 我的隊伍
+  $('#lbFollow').checked = !!L.follow;
+  $('#lbParties').innerHTML = (L.parties || []).map(p => {
+    const lead = p.leader || {};
+    return `<div class="lb-party${p.iLead ? ' lead' : ''}"><div class="lb-row"><b>👑 ${esc(lead.name)} 的隊伍</b><span class="dim sm">${esc(p.mapName || '')}・${p.members.length}/6${p.listed ? '・公布在大廳' : ''}</span></div>
+      ${p.members.map(m => { const away = m.map !== p.map;
+        const btns = m.own && !m.leader ? `<button class="btn sm" data-lbleave="${esc(m.id)}" title="讓 ${esc(m.name)} 退出這個隊伍">退出隊伍</button>` : p.iLead && !m.leader ? `<button class="btn sm" data-lbkick="${esc(lead.id)}|${esc(m.id)}|${esc(m.name)}" title="隊長把 ${esc(m.name)} 踢出隊伍">踢出</button>` : '';
+        const btns2 = m.own && m.leader && p.members.length > 1 ? `<button class="btn sm" data-lbleave="${esc(m.id)}" title="隊長退出後，遊戲會把隊長交給下一位">退出隊伍</button>` : '';
+        return `<div class="lb-pm">${lbImg(m.ava, m.branch)}<div style="flex:1;min-width:0"><div>${m.leader ? '👑 ' : ''}<b>${esc(m.name)}</b> <span class="dim sm">Lv${m.lv} ${esc(m.jobName || m.branch || '')}</span>${m.own ? ' <span class="tag">我的</span>' : ''}</div>
+          <div class="sm ${away ? 'warn' : 'dim'}">${esc(m.mapName || '')}${away ? '（不在隊長的地圖）' : ''}${m.auto ? '' : '・<span class="bad">沒在掛機</span>'}</div></div>${btns}${btns2}</div>`; }).join('')}</div>`;
+  }).join('') || '<div class="dim">自己的角色目前都沒有在隊伍裡（兩人以上）。</div>';
+  // 通知
+  const notes = L.notes || [];
+  if (ui.lbNoteAt && notes[0] && notes[0].at > ui.lbNoteAt) toastMsg('🔔 ' + notes[0].msg);
+  ui.lbNoteAt = notes[0] ? notes[0].at : Date.now();
+  $('#lbNotes').innerHTML = notes.length ? notes.map(n => `<div class="lb-note"><span class="t">${new Date(n.at).toLocaleTimeString().slice(0, -3)}</span><span>${esc(n.msg)}</span></div>`).join('') : '<div class="dim">還沒有通知。隊員加入、離開、跟著隊長換圖時會列在這裡。</div>';
   // 大廳隊伍
   const me = byId[ui.lb.char] && byId[ui.lb.char].char, q = ui.lb.q.trim();
   const out = L.outgoing || [], local = L.local || {};
@@ -6221,11 +6269,12 @@ function drawLobby() {
     const no = lbFits(l, me), myReq = out.find(x => x.listingId === l.id && local[x.id] && local[x.id].charId === ui.lb.char && ['pending', 'approved', 'joined'].includes(x.status));
     const btn = l.mine ? '<span class="tag">我的隊伍</span>' : myReq ? `<span class="${(LB_ST[myReq.status] || ['', ''])[1]}">${(LB_ST[myReq.status] || [myReq.status])[0]}</span>` : l.size >= l.max ? '<span class="dim">已滿</span>'
       : `<button class="btn${no ? '' : ' primary'} sm" data-lbreq="${esc(l.id)}" title="${no ? esc(no + '：會等隊長手動決定') : '符合自動同意的話會直接加入'}">用 ${esc(me ? me.name : '…')} 申請</button>`;
-    return `<div class="lb-card${l.mine ? ' mine' : ''}${no && !l.mine ? ' nofit' : ''}">${l.ava ? `<img class="lbava" src="${esc(l.ava)}" alt="" loading="lazy">` : '<span class="ava ava-none">👤</span>'}
+    const lurl = u => u ? (u.startsWith('/') ? LOBBY.cfg.url + u : u) : '';
+    return `<div class="lb-card${l.mine ? ' mine' : ''}${no && !l.mine ? ' nofit' : ''}">${lbImg(l.ava, l.leader.branch, 'lbava')}
       <div class="lb-body"><div><b>${esc(l.leader.name)}</b> <span class="dim sm">Lv${l.leader.lv} ${esc(l.leader.jobName || l.leader.branch || '')}</span>${l.web ? ' <span class="tag" title="用網頁版大廳公布的，資料是自己填的；通過後你的中控一樣會自動加入">網頁</span>' : ''}</div>
         <div>${esc(l.mapName)} <span class="dim sm">${l.mapLv ? 'Lv' + l.mapLv + '+' : ''}${l.region ? '・' + esc(l.region) : ''}</span></div>
         <div class="lb-row"><span class="lb-big">${short(l.exp)}</span><span class="dim sm">經驗／時</span>${l.dps ? `<span class="dim sm">DPS ${short(l.dps)}</span>` : ''}<span class="dim sm">隊伍 ${l.size}/${l.max}</span></div>
-        <div class="lb-mem">${l.members.map(m => `<span>${esc(m.name)} Lv${m.lv}</span>`).join('')}</div>
+        <div class="lb-ms">${l.members.map(m => `<div class="lb-m${m.sameMap === false ? ' away' : ''}">${lbImg(lurl(m.ava), m.branch)}<span class="nm">${m.leader ? '👑 ' : ''}${esc(m.name)}</span><span class="dim">Lv${m.lv} ${esc(m.jobName || m.branch || '')}</span>${m.sameMap === false ? `<span class="warn" title="${esc(m.mapName || '')}">不在同一張圖</span>` : ''}</div>`).join('')}${l.size > l.members.length ? `<div class="dim sm">＋${l.size - l.members.length} 人（網頁自填人數）</div>` : ''}</div>
         ${l.note ? `<div class="sm">「${esc(l.note)}」</div>` : ''}
         <div class="lb-row"><span class="dim sm">${esc(lbRulesTxt(l.rules))}${no && !l.mine ? `・<span class="warn">${esc(no)}</span>` : ''}</span><span style="flex:1"></span>${btn}</div></div></div>`;
   }).join('');
@@ -6246,6 +6295,7 @@ document.addEventListener('change', async e => {
   const t = e.target; if (!t.closest || !t.closest('#lobby')) return;
   try {
     if (t.id === 'lbOn') { LOBBY = await api('/api/lobby/cfg', { on: t.checked }); drawLobby(); return; }
+    if (t.id === 'lbFollow') { LOBBY = await api('/api/lobby/follow', { on: t.checked }); drawLobby(); return; }
     if (t.id === 'lbHost') { if (t.checked && !confirm('讓這台電腦當組隊大廳主機？\n中控會開起大廳伺服器（只聽本機）；要讓別人連進來，還要在這台電腦執行一次：\ntailscale funnel --bg --https=8443 ' + ((LOBBY.host || {}).port || 8790))) { t.checked = false; return; } LOBBY = await api('/api/lobby/host', { on: t.checked }); drawLobby(); return; }
     if (t.id === 'lbChar') { ui.lb.char = t.value; lbSaveUi(); drawLobby(); return; }
     if (t.id === 'lbFit' || t.id === 'lbRoom') { ui.lb[t.id === 'lbFit' ? 'fit' : 'room'] = t.checked; lbSaveUi(); drawLobby(); return; }
@@ -6257,10 +6307,12 @@ document.addEventListener('change', async e => {
 document.addEventListener('input', e => { if (e.target.id === 'lbQ') { ui.lb.q = e.target.value; clearTimeout(ui.lbQt); ui.lbQt = setTimeout(drawLobby, 250); } });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.closest && e.target.closest('#lobby [data-lbpub]') && e.target.dataset.lbf) e.target.blur(); });
 document.addEventListener('click', async e => {
-  const t = e.target.closest && e.target.closest('#lbPubAdd,[data-lbreq],[data-lbdec],[data-lbcancel],[data-lbdel],#lbUrlSave,#lbUrlReset,#lbAdmin,[data-lbadm]'); if (!t || !t.closest('#lobby')) return;
+  const t = e.target.closest && e.target.closest('#lbPubAdd,[data-lbreq],[data-lbdec],[data-lbcancel],[data-lbdel],#lbUrlSave,#lbUrlReset,#lbAdmin,[data-lbadm],[data-lbleave],[data-lbkick]'); if (!t || !t.closest('#lobby')) return;
   ui.lbBusy = true;
   try {
-    if (t.id === 'lbPubAdd') { const id = $('#lbPubSel').value; if (!id) return; await lbPubSave(id, { on: true, note: '', rules: { auto: true } }); }
+    if (t.dataset.lbleave) { const n = charNameOf(t.dataset.lbleave); if (!confirm(`讓 ${n} 退出隊伍？`)) return; t.disabled = true; LOBBY = await api('/api/lobby/leave', { charId: t.dataset.lbleave }); toastMsg(`${n} 退出隊伍中…`); }
+    else if (t.dataset.lbkick) { const [lead, mid, mname] = t.dataset.lbkick.split('|'); if (!confirm(`把 ${mname} 踢出隊伍？`)) return; t.disabled = true; LOBBY = await api('/api/lobby/kick', { charId: lead, memberId: mid }); toastMsg(`踢出 ${mname} 中…`); }
+    else if (t.id === 'lbPubAdd') { const id = $('#lbPubSel').value; if (!id) return; await lbPubSave(id, { on: true, note: '', rules: { auto: true } }); }
     else if (t.dataset.lbdel) { if (!confirm('不公布這隻的隊伍並移除設定？')) return; await lbPubSave(t.dataset.lbdel, { on: false, note: '', rules: { auto: false } }); }
     else if (t.dataset.lbreq) {
       const me = DATA.chars[ui.lb.char]; if (!me) { alert('先選要用哪隻角色申請'); return; }

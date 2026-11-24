@@ -33,6 +33,9 @@
   dialog { background: var(--panel); color: var(--text); border: 1px solid var(--accent); border-radius: 10px; max-width: 460px; width: 92vw; }
   dialog::backdrop { background: rgba(0,0,0,.6); }
   .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--accent); padding: 8px 14px; border-radius: 8px; display: none; z-index: 9; }
+  .ms { display: flex; flex-direction: column; gap: 2px; margin-top: 3px; } .m { display: flex; align-items: center; gap: 6px; font-size: 12px; } .m img { width: 26px; height: 26px; object-fit: contain; image-rendering: pixelated; }
+  .m.away { opacity: .6; } .notice { border: 1px solid var(--warn); background: rgba(224,176,74,.1); border-radius: 8px; padding: 8px 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .party { border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; } .party .m img { width: 36px; height: 36px; } .party .m { font-size: 13px; }
   @media (max-width: 560px) { .form { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -45,6 +48,7 @@
     <div class="tabs" style="margin-top:8px"><button data-tab="find" class="on">🔎 找隊伍</button><button data-tab="mine">📨 我的申請 <span id="outN"></span></button><button data-tab="recruit">📣 我要招募 <span id="incN"></span></button></div>
   </div>
 
+  <div id="notices"></div>
   <section id="find" class="card">
     <div class="bar" style="margin-bottom:8px">
       <label><input type="checkbox" id="fFit"> 只看我的角色能加入的</label>
@@ -65,6 +69,9 @@
       <label>職業</label><select id="meBranch"><option value="">（選擇）</option><option>劍士</option><option>法師</option><option>弓箭手</option><option>盜賊</option><option>海盜</option><option>初心者</option></select>
       <label>職業名稱</label><input id="meJob" maxlength="20" placeholder="例如：狂戰士（選填）">
     </div>
+    <h2 style="margin-top:12px">我加入的隊伍</h2>
+    <div id="joined" class="dim">還沒有。申請通過、用代碼加入後會顯示在這裡；隊長換地圖時，這頁上方會跳通知（這個網頁要開著）。</div>
+    <div class="dim sm" style="margin-top:4px">要退出隊伍，請在遊戲的隊伍畫面操作。<button id="notifyBtn" style="margin-left:6px">開啟桌面通知</button></div>
     <h2 style="margin-top:12px">我送出的申請</h2>
     <div id="outList"></div>
   </section>
@@ -85,6 +92,7 @@
       <label>只收職業</label><div class="chips" id="rBranches"></div>
     </div>
     <div class="bar"><button class="primary" id="rPub">公布／更新</button><button id="rStop" hidden>停止公布</button><span id="rState" class="dim"></span></div>
+    <div class="dim sm" style="margin-top:6px">踢人、換地圖請在遊戲裡操作；有裝中控的隊員會自動跟著你換圖，用網頁的隊員會收到通知。</div>
     <h2 style="margin-top:14px">別人的申請</h2>
     <div id="incList" class="dim">還沒有。</div>
   </section>
@@ -95,7 +103,29 @@
 <div class="toast" id="toast"></div>
 <script>
 'use strict';
+// 預設角色圖（原創小人，依職業換顏色和武器）：沒裝中控、還沒有全身照的人用
+const DEF_AVA_C = { '劍士': ['#d9534f', 'sword'], '法師': ['#8e6bd8', 'staff'], '弓箭手': ['#43a05a', 'bow'], '盜賊': ['#5b6170', 'dagger'], '海盜': ['#3b82c4', 'gun'] };
+const DEF_AVA_W = {
+  sword: '<path d="M47 20l3-3 2 2-3 3z" fill="#ddd"/><path d="M46 21l-9 13 2 2 9-13z" fill="#e8e8e8" stroke="#888" stroke-width=".6"/><path d="M36 33l4 4M35 36l3-3" stroke="#8a6a2b" stroke-width="2.2" stroke-linecap="round"/>',
+  staff: '<path d="M47 19l-6 24" stroke="#8a6a2b" stroke-width="2.4" stroke-linecap="round"/><circle cx="47.5" cy="17" r="4" fill="#7fd3ff" stroke="#fff" stroke-width=".8"/>',
+  bow: '<path d="M44 15q10 14 0 28" fill="none" stroke="#8a6a2b" stroke-width="2.4" stroke-linecap="round"/><path d="M44 15v28" stroke="#eee" stroke-width=".8"/>',
+  dagger: '<path d="M46 26l-6 8" stroke="#e8e8e8" stroke-width="2.6" stroke-linecap="round"/><path d="M41 32l3 3" stroke="#555" stroke-width="2"/>',
+  gun: '<rect x="38" y="30" width="12" height="4" rx="1" fill="#555"/><rect x="40" y="33" width="3" height="5" rx="1" fill="#6b4e2a"/>',
+};
+function defAvaSvg(branch) {
+  const [col, w] = DEF_AVA_C[branch] || ['#b08850', ''];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><ellipse cx="32" cy="59" rx="14" ry="3" fill="rgba(0,0,0,.25)"/>`
+    + `<rect x="23" y="40" width="7" height="16" rx="3" fill="#3a3f4b"/><rect x="34" y="40" width="7" height="16" rx="3" fill="#3a3f4b"/>`
+    + `<path d="M20 30q12-6 24 0l2 14q-14 5-28 0z" fill="${col}"/><circle cx="19" cy="37" r="3.5" fill="#f2c9a0"/><circle cx="45" cy="37" r="3.5" fill="#f2c9a0"/>`
+    + (w ? DEF_AVA_W[w] : '')
+    + `<circle cx="32" cy="20" r="12" fill="#f2c9a0"/><path d="M20 19q1-12 12-12t12 12q-5-5-12-5t-12 5z" fill="#5a3b24"/>`
+    + `<circle cx="27.5" cy="21" r="1.8" fill="#222"/><circle cx="36.5" cy="21" r="1.8" fill="#222"/><path d="M29 26q3 2 6 0" stroke="#a0522d" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg>`;
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
 const $ = s => document.querySelector(s);
+const img = (src, branch) => `<img src="${esc(src || defAvaSvg(branch))}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${defAvaSvg(branch)}'">`;
+const memRows = l => `<div class="ms">${(l.members || []).map(m => `<div class="m${m.sameMap === false ? ' away' : ''}">${img(m.ava, m.branch)}<b>${m.leader ? '👑 ' : ''}${esc(m.name)}</b><span class="dim">Lv${esc(m.lv)} ${esc(m.jobName || m.branch || '')}</span>${m.sameMap === false ? '<span class="warn">不在同一張圖</span>' : ''}</div>`).join('')}${l.size > (l.members || []).length ? `<div class="dim sm">＋${l.size - l.members.length} 人</div>` : ''}</div>`;
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const short = n => { n = Number(n) || 0; return n >= 1e8 ? (n / 1e8).toFixed(2).replace(/\.?0+$/, '') + ' 億' : n >= 1e4 ? (n / 1e4).toFixed(1).replace(/\.0$/, '') + ' 萬' : String(Math.round(n)); };
 const ago = ms => { const m = Math.floor(ms / 60000); return m < 1 ? '剛剛' : m < 60 ? m + ' 分前' : Math.floor(m / 60) + ' 小時前'; };
@@ -135,15 +165,35 @@ function drawList() {
   $('#list').innerHTML = ls.length ? ls.map(l => {
     const no = fitsMe(l), my = out.find(x => x.listingId === l.id && ['pending', 'approved', 'joined'].includes(x.status));
     const btn = l.mine ? '<span class="tag">我的隊伍</span>' : my ? `<span class="${ST[my.status][1]}">${ST[my.status][0]}</span>` : l.size >= l.max ? '<span class="dim">已滿</span>' : `<button class="${no ? '' : 'primary'}" data-req="${esc(l.id)}">申請加入</button>`;
-    return `<div class="lc${l.mine ? ' mine' : ''}">${l.ava ? `<img src="${esc(l.ava)}" alt="" loading="lazy">` : '<span class="noava">👤</span>'}<div class="body">
+    return `<div class="lc${l.mine ? ' mine' : ''}">${img(l.ava, l.leader.branch)}<div class="body">
       <div><b>${esc(l.leader.name)}</b> <span class="dim sm">Lv${esc(l.leader.lv)} ${esc(l.leader.jobName || l.leader.branch || '')}</span> ${l.web ? '<span class="tag web" title="用網頁公布的，資料是自己填的">網頁</span>' : ''}</div>
       <div>${esc(l.mapName)} <span class="dim sm">${l.mapLv ? 'Lv' + l.mapLv + '+' : ''}</span></div>
       <div class="bar"><span class="big">${l.exp ? short(l.exp) : '—'}</span><span class="dim sm">經驗／時</span><span class="dim sm">隊伍 ${l.size}/${l.max}</span></div>
+      ${memRows(l)}
       ${l.note ? `<div class="sm">「${esc(l.note)}」</div>` : ''}
       <div class="bar"><span class="dim sm">${esc(rulesTxt(l.rules))}${no && !l.mine ? `・<span class="warn">${esc(no)}</span>` : ''}・${ago(Date.now() - l.updatedAt)}更新</span><span style="flex:1"></span>${btn}</div></div></div>`;
   }).join('') : `<div class="dim">${L.length ? '沒有符合篩選的隊伍' : '目前沒有公布中的隊伍。你可以在「📣 我要招募」公布一隊。'}</div>`;
 }
-async function loadList() { try { const j = await api('GET', '/api/listings', null, hasToken()); L = j.listings || []; drawList(); } catch (e) { $('#fInfo').textContent = '讀取失敗：' + e.message; } }
+async function loadList() { try { const j = await api('GET', '/api/listings', null, hasToken()); L = j.listings || []; drawList(); drawJoined(); } catch (e) { $('#fInfo').textContent = '讀取失敗：' + e.message; } }
+// 我加入的隊伍：隊長換地圖時跳通知（網頁沒辦法自己換圖，提醒玩家去遊戲裡換）
+let seenMap = LS.get('seenMap', {}), notices = [];
+function notify(msg) {
+  notices.unshift({ at: Date.now(), msg }); notices = notices.slice(0, 5); drawNotices();
+  try { if (window.Notification && Notification.permission === 'granted') new Notification('上漲谷組隊大廳', { body: msg }); } catch (_) {}
+  let n = 0; clearInterval(window._blink); window._blink = setInterval(() => { document.title = n++ % 2 ? '上漲谷組隊大廳' : '🔔 ' + msg; if (n > 20 || !document.hidden && n > 6) { clearInterval(window._blink); document.title = '上漲谷組隊大廳'; } }, 1000);
+}
+function drawNotices() { $('#notices').innerHTML = notices.map((x, i) => `<div class="notice">🔔 <span>${esc(x.msg)}</span><span class="dim sm">${ago(Date.now() - x.at)}</span><span style="flex:1"></span><button data-dismiss="${i}">知道了</button></div>`).join(''); }
+function drawJoined() {
+  const out = ((MINE && MINE.outgoing) || []).filter(x => x.status === 'joined' || x.status === 'approved');
+  const ls = out.map(x => ({ x, l: L.find(l => l.id === x.listingId) })).filter(o => o.l);
+  for (const { x, l } of ls) {
+    const prev = seenMap[x.id];
+    if (prev && l.map && prev !== l.map) notify(`隊長 ${l.leader.name} 換到「${l.mapName}」了，請在遊戲裡換到同一張地圖`);
+    if (l.map) seenMap[x.id] = l.map;
+  }
+  LS.set('seenMap', seenMap);
+  $('#joined').innerHTML = ls.length ? ls.map(({ l }) => `<div class="party"><div><b>👑 ${esc(l.leader.name)} 的隊伍</b> <span class="dim sm">現在在「${esc(l.mapName)}」・${l.size}/${l.max}</span></div>${memRows(l)}</div>`).join('') : '還沒有。申請通過、用代碼加入後會顯示在這裡；隊長換地圖時，這頁上方會跳通知（這個網頁要開著）。';
+}
 
 // ---------- 申請 ----------
 async function askRequest(id) {
@@ -204,7 +254,7 @@ function drawInc() {
 async function loadMine() {
   if (!hasToken()) { drawOut(); drawInc(); return; }
   try { MINE = await api('GET', '/api/mine'); if (MINE.banned) $('#rState').innerHTML = `<span class="bad">已被封鎖到 ${new Date(MINE.banned.until).toLocaleString()}（${esc(MINE.banned.why)}）</span>`; } catch (_) {}
-  drawOut(); drawInc(); drawList();
+  drawOut(); drawInc(); drawList(); drawJoined();
 }
 
 // ---------- 事件 ----------
@@ -213,6 +263,8 @@ document.addEventListener('click', async e => {
   const t = e.target.closest('button'); if (!t) return;
   try {
     if (t.dataset.tab) return switchTab(t.dataset.tab);
+    if (t.dataset.dismiss !== undefined) { notices.splice(Number(t.dataset.dismiss), 1); return drawNotices(); }
+    if (t.id === 'notifyBtn') { if (!window.Notification) return toast('這個瀏覽器不支援桌面通知'); const r = await Notification.requestPermission(); return toast(r === 'granted' ? '已開啟：隊長換圖時會跳桌面通知' : '沒有開啟通知'); }
     if (t.dataset.req) return askRequest(t.dataset.req);
     if (t.dataset.copy) { try { await navigator.clipboard.writeText(t.dataset.copy); toast('已複製'); } catch (_) { toast('請手動選取代碼複製'); } return; }
     if (t.dataset.joined) { await api('POST', '/api/joined', { requestId: t.dataset.joined }); await loadMine(); return; }

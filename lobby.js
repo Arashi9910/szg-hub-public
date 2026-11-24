@@ -26,7 +26,7 @@ fs.mkdirSync(DIR, { recursive: true });
 let ADMIN = ''; try { ADMIN = fs.readFileSync(path.join(DIR, 'admin.txt'), 'utf8').trim(); } catch (_) {}
 if (!ADMIN) { ADMIN = crypto.randomBytes(16).toString('hex'); fs.writeFileSync(path.join(DIR, 'admin.txt'), ADMIN); }
 
-let db = { clients: {}, listings: {}, requests: {}, log: [] };
+let db = { clients: {}, listings: {}, requests: {}, log: [], avas: {} }; // avas：角色名稱 → 全身照（隊長的中控、申請時送來的）
 try { db = { ...db, ...JSON.parse(fs.readFileSync(FILE, 'utf8')) }; } catch (_) {}
 let saveTimer = null;
 const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { fs.writeFileSync(FILE + '.tmp', JSON.stringify(db)); fs.renameSync(FILE + '.tmp', FILE); } catch (e) { console.error('存檔失敗', e.message); } }, 2000); };
@@ -55,19 +55,25 @@ function sweep() {
     if (r.code && r.status !== 'approved') { r.code = ''; changed = true; }
     if (now - (r.decidedAt || r.createdAt) > 24 * 3600e3) { delete db.requests[id]; changed = true; }
   }
+  for (const [n, a] of Object.entries(db.avas || {})) if (now - a.at > 14 * 24 * 3600e3) { delete db.avas[n]; changed = true; }
   for (const [t, c] of Object.entries(db.clients)) if (now - (c.seenAt || 0) > 30 * 24 * 3600e3 && !(c.bannedUntil > now)) { delete db.clients[t]; changed = true; }
   if (changed) save();
 }
 setInterval(sweep, 15000).unref();
 
 // ---------- 公開的資料（不含代碼、不含通行碼） ----------
-const pubMember = m => ({ name: m.name, lv: m.lv, jobName: m.jobName || '' });
+const avaUrl = name => { const a = db.avas && db.avas[name]; return a ? `/ava/n/${encodeURIComponent(name)}.gif?t=${a.at}` : ''; };
+const pubMember = (m, l) => ({ name: m.name, lv: m.lv, jobName: m.jobName || '', branch: m.branch || '', leader: !!m.leader, sameMap: !m.map || !l.map || m.map === l.map, mapName: m.mapName || '', ava: avaUrl(m.name) });
+function putAva(name, b64) {
+  if (!name || typeof b64 !== 'string' || b64.length > 40000 || !/^[A-Za-z0-9+/=]+$/.test(b64)) return;
+  db.avas = db.avas || {}; db.avas[name] = { b64, at: Date.now() };
+}
 function pubListing(l, viewer) {
   return {
     id: l.id, leader: l.leader, map: l.map, mapName: l.mapName, mapLv: l.mapLv, region: l.region,
-    members: l.members.map(pubMember), size: sizeOf(l), max: MAX_PARTY, web: !!l.web, exp: l.exp, dps: l.dps, note: l.note,
+    members: l.members.map(m => pubMember(m, l)), size: sizeOf(l), max: MAX_PARTY, web: !!l.web, exp: l.exp, dps: l.dps, note: l.note,
     rules: { auto: !!l.rules.auto, lvMin: l.rules.lvMin, lvMax: l.rules.lvMax, branches: l.rules.branches },
-    ava: l.ava ? `/ava/${l.id}.gif?t=${l.avaAt}` : '', updatedAt: l.updatedAt, createdAt: l.createdAt, mine: !!viewer && l.owner === viewer.id,
+    ava: l.ava ? `/ava/${l.id}.gif?t=${l.avaAt}` : avaUrl(l.leader.name), updatedAt: l.updatedAt, createdAt: l.createdAt, mine: !!viewer && l.owner === viewer.id,
   };
 }
 const sizeOf = l => Math.max(l.members.length, l.size || 0);
@@ -85,7 +91,7 @@ const send = (res, code, body, type = 'application/json; charset=utf-8', extra =
   res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...extra });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 };
-function readBody(req, max = 64 * 1024) {
+function readBody(req, max = 320 * 1024) {
   return new Promise((ok, bad) => {
     let n = 0; const chunks = [];
     req.on('data', c => { n += c.length; if (n > max) { bad(Object.assign(new Error('資料太大'), { code: 413 })); req.destroy(); } else chunks.push(c); });
@@ -116,6 +122,11 @@ async function handle(req, res) {
   if (M === 'GET' && (P === '/' || P === '/index.html')) return send(res, 200, fs.readFileSync(PAGE_FILE, 'utf8'), 'text/html; charset=utf-8');
   if (M === 'GET' && P === '/robots.txt') return send(res, 200, 'User-agent: *\nAllow: /\n', 'text/plain; charset=utf-8');
   if (M === 'GET' && P === '/api/ping') return send(res, 200, { ok: true, name: '上漲谷組隊大廳', listings: Object.keys(db.listings).length });
+  if (M === 'GET' && P.startsWith('/ava/n/')) {
+    let name = ''; try { name = decodeURIComponent(P.slice(7).replace(/\.gif$/, '')); } catch (_) {}
+    const a = db.avas && db.avas[name]; if (!a) return send(res, 404, { error: 'no avatar' });
+    return send(res, 200, Buffer.from(a.b64, 'base64'), 'image/gif', { 'Cache-Control': 'max-age=300' });
+  }
   if (M === 'GET' && /^\/ava\/[0-9a-f]{16}\.gif$/.test(P)) {
     const l = db.listings[P.slice(5, 21)]; if (!l || !l.ava) return send(res, 404, { error: 'no avatar' });
     return send(res, 200, Buffer.from(l.ava, 'base64'), 'image/gif', { 'Cache-Control': 'max-age=300' });
@@ -149,7 +160,8 @@ async function handle(req, res) {
     for (const x of (Array.isArray(b.listings) ? b.listings : []).slice(0, 6)) {
       const key = str(x.key, 64); if (!key) continue;
       let l = Object.values(db.listings).find(l => l.owner === c.id && l.key === key);
-      const members = (Array.isArray(x.members) ? x.members : []).slice(0, MAX_PARTY).map(m => ({ name: str(m.name, 24), lv: num(m.lv, 1, 300), job: str(m.job, 40), jobName: str(m.jobName, 20) })).filter(m => m.name);
+      const members = (Array.isArray(x.members) ? x.members : []).slice(0, MAX_PARTY).map(m => ({ name: str(m.name, 24), lv: num(m.lv, 1, 300), job: str(m.job, 40), jobName: str(m.jobName, 20), branch: str(m.branch, 10), map: str(m.map, 40), mapName: str(m.mapName, 40), leader: !!m.leader })).filter(m => m.name);
+      if (x.avas && typeof x.avas === 'object') for (const [n, b64] of Object.entries(x.avas).slice(0, MAX_PARTY)) if (members.some(m => m.name === n)) putAva(str(n, 24), b64);
       if (!members.length) continue;
       const rules = x.rules || {};
       const data = {
@@ -194,6 +206,7 @@ async function handle(req, res) {
     if (!char.name) return send(res, 400, { error: '缺角色資料' });
     if (live.some(r => r.listingId === l.id && r.char.name === char.name)) return send(res, 400, { error: '這隻角色已經申請過這個隊伍了' });
     char.web = !!c.web;
+    if (ch.ava) putAva(char.name, ch.ava);
     const r = { id: rid(), listingId: l.id, from: c.id, ref: str(b.ref, 64), char, msg: str(b.msg, 60), status: 'pending', by: '', createdAt: Date.now(), decidedAt: 0, code: '', snap: { map: l.map, mapName: l.mapName, leader: { name: l.leader.name } } };
     const no = fits(l, char);
     if (no && sizeOf(l) >= MAX_PARTY) { r.status = 'denied'; r.why = no; r.by = 'auto'; r.decidedAt = Date.now(); }
@@ -226,6 +239,14 @@ async function handle(req, res) {
     return send(res, 200, { ok: true, status: r.status });
   }
 
+  // 申請者的中控補送全身照（申請時還沒有，或換裝了）
+  if (M === 'POST' && P === '/api/myava') {
+    const b = await readBody(req), r = db.requests[str(b.requestId, 20)];
+    if (!r || r.from !== c.id || !['approved', 'joined'].includes(r.status)) return send(res, 404, { error: '找不到這個申請' });
+    if (limited('ava:' + c.id, 20, 60000)) return send(res, 429, { error: '太頻繁' });
+    putAva(r.char.name, b.ava); save();
+    return send(res, 200, { ok: true });
+  }
   // 隊長的中控核對後發現謊報（等級、職業跟遊戲隊伍資料不符）→ 已經踢出，記一次
   if (M === 'POST' && P === '/api/mismatch') {
     const b = await readBody(req), r = db.requests[str(b.requestId, 20)], l = r && db.listings[r.listingId];

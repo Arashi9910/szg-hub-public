@@ -1130,7 +1130,7 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, await lobby.adminCall('POST', '/api/admin/' + op, JSON.parse((await readBody(req)) || '{}')));
       }
       const act = url.pathname.slice('/api/lobby/'.length);
-      if (req.method === 'POST' && /^(cfg|pub|request|decide|cancel|host)$/.test(act)) {
+      if (req.method === 'POST' && /^(cfg|pub|request|decide|cancel|host|follow|leave|kick)$/.test(act)) {
         if (act === 'host' && !isLocal(req)) return send(res, 403, { error: '只能在這台電腦上設定' });
         return send(res, 200, await lobby.action(act, JSON.parse((await readBody(req)) || '{}')));
       }

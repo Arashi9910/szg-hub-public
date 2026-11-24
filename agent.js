@@ -442,7 +442,9 @@ function agentMain(ctx) {
         // 4 人隊＋聊天紀錄一定超過 → 中控以為大家都是單人，打王只有勾的那隻去（v0.54.1 修正）
         party: (() => { try {
           const p = state.party;
-          const mem = m => m && { id: m.id, name: m.name, lv: m.lv, job: m.job, map: m.map, auto: m.auto, hp: m.hp, maxhp: m.maxhp, leader: !!m.leader, self: !!m.self };
+          const jn = k => { try { return (catalog && catalog.jobs && catalog.jobs[k] && catalog.jobs[k].name) || ''; } catch (_) { return ''; } };
+          const br = k => { try { return catalog && catalog.jobs ? jobBranch(k) : ''; } catch (_) { return ''; } };
+          const mem = m => m && { id: m.id, name: m.name, lv: m.lv, job: m.job, jobName: jn(m.job), branch: br(m.job), map: m.map, auto: m.auto, hp: m.hp, maxhp: m.maxhp, leader: !!m.leader, self: !!m.self };
           return { party: p ? { code: p.code || null, leader: p.leader || null, members: (Array.isArray(p.members) ? p.members : []).slice(0, 12).map(mem).filter(Boolean) } : null,
             invites: Array.isArray(state.partyInvites) ? state.partyInvites.length : 0, accountParty: state.accountParty || null };
         } catch (_) { return undefined; } })(),
@@ -1430,6 +1432,12 @@ function agentMain(ctx) {
       const partyCode = j => (j && j.party && j.party.code) || '';
       try {
         // 組隊大廳：踢出謊報資料的隊員（隊長自己的頁面執行）
+        if (p.role === 'leave') { // 組隊大廳：退出隊伍
+          setBadge(null, '組隊：退出隊伍…');
+          await gameRetry({ type: 'partyLeave', characterId: id });
+          await log('已退出隊伍'); lastHash = '';
+          return report(job, { event: 'batchDone' });
+        }
         if (p.role === 'kick') {
           setBadge(null, `組隊：踢出 ${p.memberName || ''}…`);
           await gameRetry({ type: 'partyKick', memberId: p.memberId, characterId: id });
