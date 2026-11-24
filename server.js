@@ -11,6 +11,7 @@ const updater = require('./update');
 const makeMarket = require('./market');
 const makeExtDb = require('./extdb');
 const makeBg = require('./bg');
+const makeLobby = require('./lobbyhub');
 
 const PORT = Number(process.env.PORT) || 8787;
 // 只接受本機連線
@@ -313,7 +314,7 @@ const BAG_KINDS = new Set(['sell', 'lock', 'unlock', 'idle', 'forge']);
 const KIND_MIN_AGENT = { forge: '0.27.0' };
 const verLt = (a, b) => { const x = String(a || '0').split('.').map(Number), y = String(b || '0').split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); } return false; };
 function agentTooOld(job, code, charId) {
-  const need = KIND_MIN_AGENT[job.kind]; if (!need) return false;
+  const k = KIND_MIN_AGENT[job.kind], need = job.minAgent && (!k || verLt(k, job.minAgent)) ? job.minAgent : k; if (!need) return false; // 工作可以自己要求更新的腳本（例如組隊大廳的加入／踢人）
   const snap = (charId && db.chars[charId]) || Object.values(db.chars).filter(s => s.playerCode === code).sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0))[0];
   return !snap || verLt(snap.scriptVersion, need) ? (snap ? snap.scriptVersion || '?' : '?') : false;
 }
@@ -1059,6 +1060,21 @@ async function mobileApi(req, url) {
   }
   return null;
 }
+// 組隊大廳：單一角色的組隊工作（建隊伍、用代碼加入、踢人），跟「組隊」分頁的 applyParties 同一種工作
+function createPartyJob(charId, party, label) {
+  const snap = db.chars[charId]; if (!snap) throw new Error('沒有這隻角色的資料');
+  const job = {
+    id: crypto.randomBytes(6).toString('hex'), kind: 'party', status: 'approved', createdAt: Date.now(), approvedAt: Date.now(), minAgent: '0.64.0',
+    fromCharId: charId, fromName: snap.char.name, fromCode: snap.playerCode, toCharId: charId, toName: snap.char.name, toCode: snap.playerCode,
+    batches: [{ items: [], gear: [], money: 0, party: { runId: '', ...party } }], batchIndex: 0, log: [], lastMsg: '',
+  };
+  jobLog(job, label); db.jobs.push(job); save();
+  return job;
+}
+const lobby = makeLobby({
+  getDb: () => db, save, charName, charDps, expLive: () => expLive(), worldFile: WORLD_FILE, avatarDir: AVATAR_DIR, dataDir: DATA_DIR,
+  createPartyJob, isActiveJob: fn => db.jobs.some(j => ACTIVE.has(j.status) && fn(j)),
+});
 const bg = makeBg({
   dataDir: DATA_DIR, hubUrl: `http://127.0.0.1:${PORT}`,
   getCfg: () => db.settings.bg || {}, setCfg: c => { db.settings.bg = c; save(); },
@@ -1100,6 +1116,23 @@ const server = http.createServer(async (req, res) => {
       const act = url.pathname.slice('/api/bg/'.length);
       if (req.method === 'POST' && /^(config|add|rename|edit|remove|start|stop|login|login-done|login-batch|login-skip|login-cancel|reload|pages|order|all|import|show|hide)$/.test(act)) {
         return send(res, 200, await bg.action(act, JSON.parse((await readBody(req)) || '{}')));
+      }
+      return send(res, 404, { error: 'not found' });
+    }
+    // 組隊大廳
+    if (url.pathname === '/api/lobby' || url.pathname.startsWith('/api/lobby/')) {
+      if (req.method === 'GET' && url.pathname === '/api/lobby') return send(res, 200, await lobby.view());
+      if (url.pathname.startsWith('/api/lobby/admin')) { // 大廳主人管理（只限這台電腦）
+        if (!isLocal(req)) return send(res, 403, { error: '只能在大廳主機上操作' });
+        if (req.method === 'GET') return send(res, 200, await lobby.adminCall('GET', '/api/admin/state'));
+        const op = url.pathname.split('/').pop();
+        if (!/^(delist|ban|unban)$/.test(op)) return send(res, 404, { error: 'not found' });
+        return send(res, 200, await lobby.adminCall('POST', '/api/admin/' + op, JSON.parse((await readBody(req)) || '{}')));
+      }
+      const act = url.pathname.slice('/api/lobby/'.length);
+      if (req.method === 'POST' && /^(cfg|pub|request|decide|cancel|host)$/.test(act)) {
+        if (act === 'host' && !isLocal(req)) return send(res, 403, { error: '只能在這台電腦上設定' });
+        return send(res, 200, await lobby.action(act, JSON.parse((await readBody(req)) || '{}')));
       }
       return send(res, 404, { error: 'not found' });
     }
@@ -1514,9 +1547,9 @@ const server = http.createServer(async (req, res) => {
       if (!job) return send(res, 200, { job: null });
       const old = agentTooOld(job, code, pollChar);
       if (old) {
-        const msg = `等待 ${job.fromName} 的遊戲分頁換上新腳本（目前 v${old}，需要 v${KIND_MIN_AGENT[job.kind]} 以上；太久沒換請手動重新整理那個分頁）`;
+        const msg = `等待 ${job.fromName} 的遊戲分頁換上新腳本（目前 v${old}，需要 v${job.minAgent || KIND_MIN_AGENT[job.kind]} 以上；太久沒換請手動重新整理那個分頁）`;
         if (job.lastMsg !== msg) { jobLog(job, msg); job.lastMsg = msg; save(); }
-        return send(res, 200, { job: null, needUpdate: KIND_MIN_AGENT[job.kind] });
+        return send(res, 200, { job: null, needUpdate: job.minAgent || KIND_MIN_AGENT[job.kind] });
       }
       if (BAG_KINDS.has(job.kind)) return send(res, 200, { job, role: 'owner', peerReady: true });
       const role = job.fromCode === code ? 'giver' : 'receiver';
@@ -1585,6 +1618,7 @@ server.listen(PORT, HOST, () => {
   checkUpdate();
   setInterval(checkUpdate, 2 * 60 * 1000);
   bg.boot();
+  lobby.boot();
 });
 // 正常關閉中控（Ctrl+C、關掉視窗）時一起關掉背景 Chrome；自動更新重新啟動（exit 3）不會經過這裡，背景 Chrome 會繼續跑、中控起來後接回去
 let shuttingDown = false;
