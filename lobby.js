@@ -65,14 +65,15 @@ const pubMember = m => ({ name: m.name, lv: m.lv, jobName: m.jobName || '' });
 function pubListing(l, viewer) {
   return {
     id: l.id, leader: l.leader, map: l.map, mapName: l.mapName, mapLv: l.mapLv, region: l.region,
-    members: l.members.map(pubMember), size: l.members.length, max: MAX_PARTY, exp: l.exp, dps: l.dps, note: l.note,
+    members: l.members.map(pubMember), size: sizeOf(l), max: MAX_PARTY, web: !!l.web, exp: l.exp, dps: l.dps, note: l.note,
     rules: { auto: !!l.rules.auto, lvMin: l.rules.lvMin, lvMax: l.rules.lvMax, branches: l.rules.branches },
     ava: l.ava ? `/ava/${l.id}.gif?t=${l.avaAt}` : '', updatedAt: l.updatedAt, createdAt: l.createdAt, mine: !!viewer && l.owner === viewer.id,
   };
 }
+const sizeOf = l => Math.max(l.members.length, l.size || 0);
 function fits(l, ch) {
   const r = l.rules || {};
-  if (l.members.length >= MAX_PARTY) return '隊伍已滿';
+  if (sizeOf(l) >= MAX_PARTY) return '隊伍已滿';
   if (r.lvMin && ch.lv < r.lvMin) return `等級要 ${r.lvMin} 以上`;
   if (r.lvMax && ch.lv > r.lvMax) return `等級要 ${r.lvMax} 以下`;
   if ((r.branches || []).length && !r.branches.includes(ch.branch)) return `只收 ${r.branches.join('、')}`;
@@ -112,7 +113,8 @@ async function handle(req, res) {
   const url = new URL(req.url, 'http://x');
   const P = url.pathname, M = req.method;
   if (M === 'OPTIONS') return send(res, 204, '');
-  if (M === 'GET' && P === '/') return send(res, 200, PAGE, 'text/html; charset=utf-8');
+  if (M === 'GET' && (P === '/' || P === '/index.html')) return send(res, 200, fs.readFileSync(PAGE_FILE, 'utf8'), 'text/html; charset=utf-8');
+  if (M === 'GET' && P === '/robots.txt') return send(res, 200, 'User-agent: *\nAllow: /\n', 'text/plain; charset=utf-8');
   if (M === 'GET' && P === '/api/ping') return send(res, 200, { ok: true, name: '上漲谷組隊大廳', listings: Object.keys(db.listings).length });
   if (M === 'GET' && /^\/ava\/[0-9a-f]{16}\.gif$/.test(P)) {
     const l = db.listings[P.slice(5, 21)]; if (!l || !l.ava) return send(res, 404, { error: 'no avatar' });
@@ -123,7 +125,8 @@ async function handle(req, res) {
 
   if (M === 'POST' && P === '/api/register') {
     if (limited('reg:' + ip, 10, 3600e3)) return send(res, 429, { error: '註冊太頻繁' });
-    const token = crypto.randomBytes(24).toString('hex'), c = { id: rid(), createdAt: Date.now(), seenAt: Date.now(), strikes: [], bannedUntil: 0 };
+    const b = await readBody(req).catch(() => ({}));
+    const token = crypto.randomBytes(24).toString('hex'), c = { id: rid(), createdAt: Date.now(), seenAt: Date.now(), strikes: [], bannedUntil: 0, web: !!b.web };
     db.clients[hashTok(token)] = c; save();
     return send(res, 200, { token, id: c.id });
   }
@@ -154,7 +157,8 @@ async function handle(req, res) {
         map: str(x.map, 40), mapName: str(x.mapName, 40), mapLv: num(x.mapLv, 0, 300), region: str(x.region, 30),
         members, exp: num(x.exp, 0, 1e12), dps: num(x.dps, 0, 1e9), note: str(x.note, 60),
         rules: { auto: !!rules.auto, lvMin: num(rules.lvMin, 0, 300), lvMax: num(rules.lvMax, 0, 300), branches: (Array.isArray(rules.branches) ? rules.branches : []).map(s => str(s, 10)).filter(Boolean).slice(0, 6) },
-        code: str(x.code, 40), updatedAt: now,
+        code: str(x.code, 40), updatedAt: now, web: !!c.web,
+        size: c.web ? num(x.size, 1, MAX_PARTY) : 0, // 網頁版自己填人數（沒有遊戲資料）
       };
       if (!l) { l = { id: rid(), owner: c.id, key, createdAt: now, ava: '', avaAt: 0 }; db.listings[l.id] = l; log(`公布：${data.leader.name}＠${data.mapName}`); }
       Object.assign(l, data);
@@ -175,7 +179,7 @@ async function handle(req, res) {
       const l = db.listings[r.listingId] || r.snap || {};
       return { id: r.id, listingId: r.listingId, ref: r.ref, status: r.status, why: r.why || '', code: r.status === 'approved' ? r.code : '', map: l.map, mapName: l.mapName, leaderName: (l.leader || {}).name || '', createdAt: r.createdAt, decidedAt: r.decidedAt || 0 };
     });
-    return send(res, 200, { now: Date.now(), banned: banned(c) ? { until: c.bannedUntil, why: c.banWhy || '' } : null, listings: mine.map(l => ({ id: l.id, key: l.key })), incoming, outgoing });
+    return send(res, 200, { now: Date.now(), banned: banned(c) ? { until: c.bannedUntil, why: c.banWhy || '' } : null, listings: mine.map(l => ({ id: l.id, key: l.key, ...(c.web ? { ...pubListing(l, c), code: l.code, rules: l.rules } : {}) })), incoming, outgoing });
   }
 
   if (M === 'POST' && P === '/api/request') {
@@ -189,9 +193,10 @@ async function handle(req, res) {
     const char = { name: str(ch.name, 24), lv: num(ch.lv, 1, 300), job: str(ch.job, 40), jobName: str(ch.jobName, 20), branch: str(ch.branch, 10), dps: num(ch.dps, 0, 1e9), exp: num(ch.exp, 0, 1e12) };
     if (!char.name) return send(res, 400, { error: '缺角色資料' });
     if (live.some(r => r.listingId === l.id && r.char.name === char.name)) return send(res, 400, { error: '這隻角色已經申請過這個隊伍了' });
+    char.web = !!c.web;
     const r = { id: rid(), listingId: l.id, from: c.id, ref: str(b.ref, 64), char, msg: str(b.msg, 60), status: 'pending', by: '', createdAt: Date.now(), decidedAt: 0, code: '', snap: { map: l.map, mapName: l.mapName, leader: { name: l.leader.name } } };
     const no = fits(l, char);
-    if (no && l.members.length >= MAX_PARTY) { r.status = 'denied'; r.why = no; r.by = 'auto'; r.decidedAt = Date.now(); }
+    if (no && sizeOf(l) >= MAX_PARTY) { r.status = 'denied'; r.why = no; r.by = 'auto'; r.decidedAt = Date.now(); }
     else if (l.rules.auto && !no && l.code) { r.status = 'approved'; r.by = 'auto'; r.decidedAt = Date.now(); r.code = l.code; }
     db.requests[r.id] = r; save();
     log(`申請：${char.name} → ${l.leader.name}＠${l.mapName}（${r.status === 'approved' ? '自動同意' : r.status === 'denied' ? '拒絕：' + no : '等隊長'}）`);
@@ -203,7 +208,7 @@ async function handle(req, res) {
     if (!r || !l || l.owner !== c.id) return send(res, 404, { error: '找不到這個申請' });
     if (r.status !== 'pending') return send(res, 400, { error: '這個申請已經處理過了' });
     if (b.approve) {
-      if (l.members.length >= MAX_PARTY) return send(res, 400, { error: '隊伍已滿' });
+      if (sizeOf(l) >= MAX_PARTY) return send(res, 400, { error: '隊伍已滿' });
       if (!l.code) return send(res, 400, { error: '還沒有隊伍代碼（隊長的遊戲分頁要開著）' });
       r.status = 'approved'; r.code = l.code;
     } else { r.status = 'denied'; r.why = str(b.why, 40) || '隊長拒絕'; }
@@ -259,18 +264,8 @@ async function admin(req, res, P, M) {
   return send(res, 404, { error: 'not found' });
 }
 
-// ---------- 公開的唯讀頁面（沒裝中控的人也能看有哪些隊伍） ----------
-const PAGE = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>上漲谷組隊大廳</title>
-<style>body{margin:0;background:#16181d;color:#e6e6e6;font:14px system-ui,"Microsoft JhengHei",sans-serif}main{max-width:1100px;margin:0 auto;padding:16px}h1{font-size:20px}.dim{color:#8b9099}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}.card{background:#1f2229;border:1px solid #2c3039;border-radius:10px;padding:10px;display:flex;gap:10px}
-.card img{width:56px;height:56px;image-rendering:pixelated;object-fit:contain}.n{font-variant-numeric:tabular-nums}b{color:#fff}</style></head><body><main>
-<h1>🍁 上漲谷組隊大廳</h1><p class="dim">這裡列出用「上漲谷中控」公布的隊伍。要申請加入，請在中控面板的「組隊大廳」分頁操作（<a style="color:#7fb4ff" href="https://github.com/Arashi9910/szg-hub-public">安裝中控</a>）。數字都是各隊長的中控自行回報的。</p>
-<div id="out" class="grid"></div></main><script>
-const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const short=n=>n>=1e8?(n/1e8).toFixed(1)+'億':n>=1e4?(n/1e4).toFixed(1)+'萬':String(Math.round(n||0));
-async function load(){const j=await (await fetch('/api/listings')).json();const L=j.listings||[];
-document.getElementById('out').innerHTML=L.length?L.map(l=>'<div class="card">'+(l.ava?'<img src="'+esc(l.ava)+'" alt="">':'')+'<div><b>'+esc(l.leader.name)+'</b> <span class="dim">Lv'+esc(l.leader.lv)+' '+esc(l.leader.jobName)+'</span><div>'+esc(l.mapName)+'</div><div class="dim n">隊伍 '+l.size+'/'+l.max+'・每小時經驗 '+short(l.exp)+'</div>'+(l.note?'<div>'+esc(l.note)+'</div>':'')+'</div></div>').join(''):'<p class="dim">目前沒有公布中的隊伍</p>';}
-load();setInterval(load,15000);</script></body></html>`;
+// ---------- 網頁版大廳（沒裝中控的人也能看、申請、公布；資料自己填，通過後自己在遊戲輸入隊伍代碼）----------
+const PAGE_FILE = path.join(__dirname, 'lobby.html'); // 每次讀檔：中控更新 lobby.html 後不用重開大廳
 
 const server = http.createServer((req, res) => {
   handle(req, res).catch(e => { try { send(res, e.code || 400, { error: e.message || String(e) }); } catch (_) {} });

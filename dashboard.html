@@ -6208,7 +6208,7 @@ function drawLobby() {
       <div class="lb-row"><label><input type="checkbox" class="sw" data-lbf="auto"${r.auto ? ' checked' : ''}> 自動同意</label>
         <span>等級</span><input type="number" data-lbf="lvMin" value="${r.lvMin || ''}" placeholder="不限" min="0" max="300" style="width:64px"><span>～</span><input type="number" data-lbf="lvMax" value="${r.lvMax || ''}" placeholder="不限" min="0" max="300" style="width:64px">
         <span>職業</span>${LB_BRANCHES.map(b => `<label class="sm"><input type="checkbox" data-lbf="br" value="${b}"${(r.branches || []).includes(b) ? ' checked' : ''}>${b}</label>`).join('')}<span class="dim sm">（沒勾＝都收）</span></div>
-      ${pend.map(x => `<div class="lb-req"><b>${esc(x.char.name)}</b><span class="dim">Lv${x.char.lv} ${esc(x.char.jobName || '')}${x.char.dps ? `・DPS ${short(x.char.dps)}` : ''}${x.char.exp ? `・每小時經驗 ${short(x.char.exp)}` : ''}</span>${x.msg ? `<span>「${esc(x.msg)}」</span>` : ''}<span style="flex:1"></span><button class="btn primary sm" data-lbdec="${esc(x.id)}" data-ok="1">同意</button><button class="btn sm" data-lbdec="${esc(x.id)}" data-ok="0">拒絕</button></div>`).join('')}
+      ${pend.map(x => `<div class="lb-req"><b>${esc(x.char.name)}</b>${x.char.web ? '<span class="tag" title="用網頁版大廳申請的（沒裝中控）：通過後他要自己在遊戲輸入代碼加入；加入後一樣會核對等級">網頁</span>' : ''}<span class="dim">Lv${x.char.lv} ${esc(x.char.jobName || x.char.branch || '')}${x.char.dps ? `・DPS ${short(x.char.dps)}` : ''}${x.char.exp ? `・每小時經驗 ${short(x.char.exp)}` : ''}</span>${x.msg ? `<span>「${esc(x.msg)}」</span>` : ''}<span style="flex:1"></span><button class="btn primary sm" data-lbdec="${esc(x.id)}" data-ok="1">同意</button><button class="btn sm" data-lbdec="${esc(x.id)}" data-ok="0">拒絕</button></div>`).join('')}
       ${done.length ? `<div class="dim sm">最近：${done.map(x => `${esc(x.char.name)}（${(LB_ST[x.status] || [x.status])[0]}${x.by === 'auto' && x.status !== 'denied' ? '・自動' : ''}）${chk(x)}`).join('、')}</div>` : ''}</div>`;
   }).join('') || '<div class="dim">還沒有公布任何隊伍。</div>';
   // 大廳隊伍
@@ -6222,7 +6222,7 @@ function drawLobby() {
     const btn = l.mine ? '<span class="tag">我的隊伍</span>' : myReq ? `<span class="${(LB_ST[myReq.status] || ['', ''])[1]}">${(LB_ST[myReq.status] || [myReq.status])[0]}</span>` : l.size >= l.max ? '<span class="dim">已滿</span>'
       : `<button class="btn${no ? '' : ' primary'} sm" data-lbreq="${esc(l.id)}" title="${no ? esc(no + '：會等隊長手動決定') : '符合自動同意的話會直接加入'}">用 ${esc(me ? me.name : '…')} 申請</button>`;
     return `<div class="lb-card${l.mine ? ' mine' : ''}${no && !l.mine ? ' nofit' : ''}">${l.ava ? `<img class="lbava" src="${esc(l.ava)}" alt="" loading="lazy">` : '<span class="ava ava-none">👤</span>'}
-      <div class="lb-body"><div><b>${esc(l.leader.name)}</b> <span class="dim sm">Lv${l.leader.lv} ${esc(l.leader.jobName)}</span></div>
+      <div class="lb-body"><div><b>${esc(l.leader.name)}</b> <span class="dim sm">Lv${l.leader.lv} ${esc(l.leader.jobName || l.leader.branch || '')}</span>${l.web ? ' <span class="tag" title="用網頁版大廳公布的，資料是自己填的；通過後你的中控一樣會自動加入">網頁</span>' : ''}</div>
         <div>${esc(l.mapName)} <span class="dim sm">${l.mapLv ? 'Lv' + l.mapLv + '+' : ''}${l.region ? '・' + esc(l.region) : ''}</span></div>
         <div class="lb-row"><span class="lb-big">${short(l.exp)}</span><span class="dim sm">經驗／時</span>${l.dps ? `<span class="dim sm">DPS ${short(l.dps)}</span>` : ''}<span class="dim sm">隊伍 ${l.size}/${l.max}</span></div>
         <div class="lb-mem">${l.members.map(m => `<span>${esc(m.name)} Lv${m.lv}</span>`).join('')}</div>
