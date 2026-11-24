@@ -86,7 +86,7 @@ module.exports = function makeBg(opt) {
   const { dataDir, hubUrl, getCfg, setCfg, userscript, agent } = opt;
   const log = opt.log || (m => console.log('[背景] ' + m));
   const run = {}; // 設定檔 id -> 執行狀態
-  const cfg = () => { const c = getCfg() || {}; return { chromePath: c.chromePath || '', lite: c.lite !== false, reloadHours: c.reloadHours === undefined ? 6 : Math.max(0, Number(c.reloadHours) || 0), profiles: Array.isArray(c.profiles) ? c.profiles : [] }; };
+  const cfg = () => { const c = getCfg() || {}; return { chromePath: c.chromePath || '', lite: c.lite !== false, trimMin: c.trimMin === undefined ? 10 : Math.max(0, Number(c.trimMin) || 0), reloadHours: c.reloadHours === undefined ? 6 : Math.max(0, Number(c.reloadHours) || 0), profiles: Array.isArray(c.profiles) ? c.profiles : [] }; };
   const prof = id => cfg().profiles.find(p => p.id === id);
   const dirOf = id => path.join(dataDir, 'bg', String(id).replace(/[^\w-]/g, ''));
   const R = id => run[id] || (run[id] = { id, state: 'off', msg: '', pages: {}, fails: [], busy: false, needLogin: false, cdp: null, login: null });
@@ -367,6 +367,7 @@ ${fixed}
       const v = await r.cdp.send('Runtime.evaluate', { expression: probeExpr(withAcct), awaitPromise: true, returnByValue: true }, pg.sessionId, 15000);
       const o = (v.result && v.result.value) || {};
       pg.info = { ...(pg.info || {}), ...o, at: now }; pg.fail = 0;
+      try { const h = await r.cdp.send('Runtime.getHeapUsage', {}, pg.sessionId, 5000); pg.heap = Math.round((h.usedSize || 0) / 1048576); pg.heapTotal = Math.round((h.totalSize || 0) / 1048576); } catch (_) {}
       if (o.hasState) pg.stateOk = true;
       // 省資源模式的保險：遊戲頁載入 2 分鐘還沒有遊戲資料 → 這個帳號改回完整模式（可能遊戲有地方需要圖片才會啟動）
       if (o.bg && o.bg.lite && !o.hasState && onGameUrl(o.url) && !r.needLogin && o.loadedAt && now - o.loadedAt > 120000 && !r.noLite) {
@@ -399,7 +400,17 @@ ${fixed}
     }
   }
 
-  let ticking = false, lastReloadAt = 0;
+  let ticking = false, lastReloadAt = 0, lastTrimAt = 0;
+  // 記憶體整理：通知 Chrome「記憶體吃緊」（丟掉快取、壓縮）＋整理每頁的 JS 記憶體。不影響遊戲運作
+  async function trimProfile(r) {
+    if (!r.cdp || r.cdp.closed) return;
+    await r.cdp.send('Memory.simulatePressureNotification', { level: 'critical' }).catch(() => {});
+    for (const pg of Object.values(r.pages)) {
+      if (pg.info && pg.info.busy) continue;
+      await r.cdp.send('HeapProfiler.collectGarbage', {}, pg.sessionId, 20000).catch(() => {});
+    }
+    r.trimAt = Date.now();
+  }
   async function tick() {
     if (ticking) return; ticking = true;
     try {
@@ -417,6 +428,12 @@ ${fixed}
         for (const k of Object.keys(r.pages)) if (!want.includes(k)) await closePage(r, k);
         for (const k of want) if (!r.pages[k]) await openPage(r, k).catch(e => { r.msg = e.message; });
         for (const [k, pg] of Object.entries(r.pages)) await probe(r, k, pg);
+      }
+      // 定時記憶體整理：一輪只整理一個帳號，輪流
+      const TM = cfg().trimMin;
+      if (TM > 0 && Date.now() - lastTrimAt > 20000) {
+        const due = cfg().profiles.map(p => run[p.id]).filter(r => r && r.cdp && r.state === 'running' && !r.busy && Date.now() - (r.trimAt || r.startedAt || 0) > TM * 60000).sort((a, b) => (a.trimAt || 0) - (b.trimAt || 0))[0];
+        if (due) { lastTrimAt = Date.now(); await trimProfile(due); }
       }
       // 定時重新整理：掛久了頁面記憶體會越長越大。一輪只重整一頁、錯開；有工作／打王（isBusy）、讓位中、看得到的視窗不重整
       const H = cfg().reloadHours;
@@ -475,15 +492,15 @@ ${fixed}
     return {
       all: allJob && (!allJob.end || Date.now() - allJob.end < 15000) ? { ...allJob } : null,
       batch: { cur: batch.cur, queue: [...batch.queue], done: batch.done.length, skipped: batch.skipped.length, total: batch.done.length + batch.skipped.length + batch.queue.length + (batch.cur ? 1 : 0) },
-      lite: c.lite, reloadHours: c.reloadHours, mem: { total: mem.total, page: mem.page || 0, base: mem.base || 0, at: mem.at, err: mem.err },
+      lite: c.lite, reloadHours: c.reloadHours, trimMin: c.trimMin, mem: { total: mem.total, page: mem.page || 0, base: mem.base || 0, at: mem.at, err: mem.err },
       chrome: findChrome(c.chromePath), chromePath: c.chromePath, nodeOk: typeof WebSocket === 'function', node: process.version, game: GAME,
       profiles: c.profiles.map(p => {
         const r = run[p.id] || {};
         return {
           id: p.id, name: p.name, email: p.email || '', note: p.note || '', on: !!p.on, visible: (run[p.id] || {}).visible || '', pages: p.pages || [''], code: p.code || '', charIds: p.charIds || [],
-          mem: mem.by[p.id] || null, noLite: !!r.noLite, reloads: r.reloads || 0,
+          mem: mem.by[p.id] || null, noLite: !!r.noLite, reloads: r.reloads || 0, trimAt: r.trimAt || 0,
           state: r.state || 'off', msg: r.msg || '', logs: (r.logs || []).slice(-10), needLogin: !!r.needLogin, startedAt: r.startedAt || 0, dir: dirOf(p.id),
-          live: Object.entries(r.pages || {}).map(([k, pg]) => ({ key: k, char: (pg.info && pg.info.char) || pg.char, url: pg.info && pg.info.url, standby: !!(pg.info && pg.info.bg && pg.info.bg.standby), injected: !!(pg.info && pg.info.bg), badge: pg.info && pg.info.badge, at: (pg.info && pg.info.at) || 0, fail: pg.fail })),
+          live: Object.entries(r.pages || {}).map(([k, pg]) => ({ heap: pg.heap || 0, heapTotal: pg.heapTotal || 0, key: k, char: (pg.info && pg.info.char) || pg.char, url: pg.info && pg.info.url, standby: !!(pg.info && pg.info.bg && pg.info.bg.standby), injected: !!(pg.info && pg.info.bg), badge: pg.info && pg.info.badge, at: (pg.info && pg.info.at) || 0, fail: pg.fail })),
         };
       }),
     };
@@ -495,6 +512,7 @@ ${fixed}
     if (name === 'config') {
       const patch = {};
       if (b.chromePath !== undefined) patch.chromePath = String(b.chromePath || '').trim();
+      if (b.trimMin !== undefined) patch.trimMin = Math.max(0, Math.min(1440, Number(b.trimMin) || 0));
       if (b.reloadHours !== undefined) patch.reloadHours = Math.max(0, Math.min(168, Number(b.reloadHours) || 0));
       const liteChanged = b.lite !== undefined && (b.lite !== false) !== (c.lite !== false);
       if (b.lite !== undefined) patch.lite = b.lite !== false;
@@ -538,6 +556,10 @@ ${fixed}
         job.cur = ''; job.end = Date.now();
       })();
       return status();
+    }
+    if (name === 'trim') { // 立刻整理全部（測試、比較前後用）
+      for (const p of list) { const r = run[p.id]; if (r && r.state === 'running') await trimProfile(r); }
+      mem.at = 0; return status();
     }
     if (name === 'login-batch') {
       const ids = (Array.isArray(b.ids) ? b.ids : []).filter(id => list.find(x => x.id === id) && id !== batch.cur && !batch.queue.includes(id));

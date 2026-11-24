@@ -1123,7 +1123,7 @@ const server = http.createServer(async (req, res) => {
         return res.end(bg.exportCsv(id => charName(id)));
       }
       const act = url.pathname.slice('/api/bg/'.length);
-      if (req.method === 'POST' && /^(config|add|rename|edit|remove|start|stop|login|login-done|login-batch|login-skip|login-cancel|reload|pages|order|all|import|show|hide)$/.test(act)) {
+      if (req.method === 'POST' && /^(config|add|rename|edit|remove|start|stop|login|login-done|login-batch|login-skip|login-cancel|reload|pages|order|all|import|show|hide|trim)$/.test(act)) {
         return send(res, 200, await bg.action(act, JSON.parse((await readBody(req)) || '{}')));
       }
       return send(res, 404, { error: 'not found' });

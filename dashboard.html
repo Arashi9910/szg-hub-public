@@ -5995,6 +5995,7 @@ function drawAccts() {
   const ps = s.profiles || [];
   const memTxt = mb => mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : mb + ' MB';
   if (!(ae && ae.closest && ae.closest('#acPerf'))) $('#acPerf').innerHTML = `<label title="背景（看不到的）分頁不下載遊戲圖片、音效，動畫每 0.5 秒才畫一格；遊戲資料照常同步。點角色名字叫出的視窗照常顯示。某個帳號遊戲載入不完整時會自動改回完整模式"><input type="checkbox" class="sw" id="acLite"${s.lite ? ' checked' : ''}> 省資源模式</label>
+    <label title="每隔幾分鐘請背景 Chrome 釋放快取、整理 JS 記憶體（一次一個帳號、輪流；不影響遊戲）。0＝不要">每 <input type="number" id="acTrim" min="0" max="1440" step="1" value="${s.trimMin}" style="width:56px"> 分鐘整理記憶體</label><button class="btn sm" data-acact="trim" title="現在就整理全部背景 Chrome 的記憶體">🧹 立刻整理</button>
     <label title="掛久了頁面記憶體會越長越大：每隔幾小時重新整理一次背景分頁（一次一頁、錯開；有工作或打王中不會重整）。0＝不要">每 <input type="number" id="acReload" min="0" max="168" step="1" value="${s.reloadHours}" style="width:56px"> 小時重新整理分頁</label>
     <span class="dim">背景 Chrome 記憶體：<b>${s.mem && s.mem.at ? memTxt(s.mem.total) : '計算中…'}</b>${s.mem && s.mem.total ? `（遊戲分頁 ${memTxt(s.mem.page)}、<span title="每個 Chrome 自己的主程式、網路、儲存等程序。合併成一個 Chrome 時省的就是這部分">Chrome 本身 ${memTxt(s.mem.base)}</span>）` : ''}${s.mem && s.mem.err ? `（${esc(s.mem.err)}）` : ''}</span><span class="dim sm">（Windows 工作管理員的「記憶體」數字，約略值，30 秒更新）</span>`;
   for (const id of [...ui.acSel]) if (!ps.find(p => p.id === id)) ui.acSel.delete(id);
@@ -6040,6 +6041,7 @@ document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset && t.dataset.acpick) { if (t.checked) ui.acSel.add(t.dataset.acpick); else ui.acSel.delete(t.dataset.acpick); t.closest('tr').classList.toggle('picked', t.checked); $('#acSelInfo').textContent = ui.acSel.size ? `已勾選 ${ui.acSel.size} 個帳號` : `沒勾選＝全部 ${((bgLast || {}).profiles || []).length} 個`; return; }
   if (t.id === 'acAll') { const ps = (bgLast && bgLast.profiles) || []; ui.acSel = new Set(t.checked ? ps.map(p => p.id) : []); drawAccts(); return; }
+  if (t.id === 'acTrim') { try { await api('/api/bg/config', { trimMin: Number(t.value) || 0 }); t.blur(); await loadBg(); drawAccts(); } catch (err) { alert('失敗：' + err.message); } return; }
   if (t.id === 'acLite' || t.id === 'acReload') {
     try {
       if (t.id === 'acLite' && !confirm(`${t.checked ? '開啟' : '關閉'}省資源模式？執行中的背景分頁會重新整理一次。`)) { t.checked = !t.checked; return; }
@@ -6075,6 +6077,7 @@ document.addEventListener('click', async e => {
     const tg = acTargets();
     if (act === 'add') { await api('/api/bg/add', { name: $('#acNewName').value.trim(), email: $('#acNewEmail').value.trim() }); $('#acNewName').value = ''; $('#acNewEmail').value = ''; }
     else if (act === 'config') await api('/api/bg/config', { chromePath: $('#bgChrome').value.trim() });
+    else if (act === 'trim') { t.disabled = true; await api('/api/bg/trim', {}); toastMsg('已整理全部背景 Chrome 的記憶體，約 30 秒後上方數字會更新'); }
     else if (act === 'export') { location.href = '/api/bg/export.csv'; return; }
     else if (act === 'start-all' || act === 'stop-all') {
       if (!tg.length) return;
