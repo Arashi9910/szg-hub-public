@@ -121,7 +121,7 @@ async function handle(req, res) {
   if (M === 'OPTIONS') return send(res, 204, '');
   if (M === 'GET' && (P === '/' || P === '/index.html')) return send(res, 200, fs.readFileSync(PAGE_FILE, 'utf8'), 'text/html; charset=utf-8');
   if (M === 'GET' && P === '/robots.txt') return send(res, 200, 'User-agent: *\nAllow: /\n', 'text/plain; charset=utf-8');
-  if (M === 'GET' && P === '/api/ping') return send(res, 200, { ok: true, name: '上漲谷組隊大廳', listings: Object.keys(db.listings).length });
+  if (M === 'GET' && P === '/api/ping') { const m = process.memoryUsage(); return send(res, 200, { ok: true, name: '上漲谷組隊大廳', listings: Object.keys(db.listings).length, mem: { rss: Math.round(m.rss / 1048576), heapUsed: Math.round(m.heapUsed / 1048576) } }); }
   if (M === 'GET' && P.startsWith('/ava/n/')) {
     let name = ''; try { name = decodeURIComponent(P.slice(7).replace(/\.gif$/, '')); } catch (_) {}
     const a = db.avas && db.avas[name]; if (!a) return send(res, 404, { error: 'no avatar' });

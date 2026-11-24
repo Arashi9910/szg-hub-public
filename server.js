@@ -1094,6 +1094,15 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/agent.js') {
       return send(res, 200, agentSource(), 'text/javascript; charset=utf-8');
     }
+    // 記憶體診斷（中控本身、組隊大廳伺服器）
+    if (req.method === 'GET' && url.pathname === '/api/sys') {
+      const mb = n => Math.round(n / 1048576);
+      const m = process.memoryUsage(); let lobbyMem = null;
+      try { const h = (db.settings.lobbyHost || {}); if (h.on) { const j = await (await fetch(`http://127.0.0.1:${Number(h.port) || 8790}/api/ping`, { signal: AbortSignal.timeout(2000) })).json(); lobbyMem = j.mem || null; } } catch (_) {}
+      let stateKB = 0; try { stateKB = Math.round(fs.statSync(STATE_FILE).size / 1024); } catch (_) {}
+      return send(res, 200, { node: process.version, uptimeMin: Math.round(process.uptime() / 60), rss: mb(m.rss), heapUsed: mb(m.heapUsed), heapTotal: mb(m.heapTotal), external: mb(m.external), arrayBuffers: mb(m.arrayBuffers), stateKB, execArgv: process.execArgv, lobby: lobbyMem,
+        counts: { chars: Object.keys(db.chars).length, jobs: db.jobs.length, tabs: Object.values(tabs).reduce((a, t) => a + Object.keys(t).length, 0) } });
+    }
     // 更新公告（version.json 的 changelog，最近 5 次）
     if (req.method === 'GET' && url.pathname === '/api/changelog') {
       let v = {}; try { v = JSON.parse(fs.readFileSync(path.join(__dirname, 'version.json'), 'utf8')); } catch (_) {}
