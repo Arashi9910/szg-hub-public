@@ -250,7 +250,11 @@ ${fixed}
       let ws = opt.visible ? '' : await wsFromDir(dir, 0), reattach = !!ws;
       r.visible = opt.visible ? String(opt.visible) : '';
       if (!ws) {
-        try { fs.unlinkSync(path.join(dir, 'DevToolsActivePort')); } catch (_) {}
+        // 先清掉殘留：還佔著這個資料夾的 Chrome（登入視窗關了但程式沒結束）、上次沒清乾淨的鎖定檔
+        const killed = await killStale(id);
+        for (const f of ['DevToolsActivePort', 'SingletonLock', 'SingletonSocket', 'SingletonCookie', 'lockfile']) { try { fs.rmSync(path.join(dir, f), { force: true }); } catch (_) {} }
+        const logFile = path.join(dir, 'chrome-start.log');
+        let logFd = 'ignore'; try { logFd = fs.openSync(logFile, 'w'); } catch (_) {}
         const args = [...(opt.visible ? ['--new-window'] : ['--headless=new']), '--remote-debugging-port=0', `--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check',
           '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
           '--mute-audio', '--window-size=1280,800',
@@ -258,11 +262,30 @@ ${fixed}
           '--process-per-site', '--disable-extensions', '--disable-component-update', '--disable-default-apps', '--disable-sync', '--disable-background-networking',
           '--disable-breakpad', '--no-pings', '--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication,CalculateNativeWinOcclusion,HeavyAdIntervention,BackForwardCache',
           ...(opt.visible ? [] : ['--disable-gpu', '--disable-gpu-compositing']), ...sandboxArgs(), 'about:blank'];
-        const proc = spawn(chrome, args, { detached: true, stdio: 'ignore', windowsHide: true });
-        proc.on('error', e => { r.msg = '開不了 Chrome：' + e.message; });
+        const t0 = Date.now();
+        const proc = spawn(chrome, args, { detached: true, stdio: ['ignore', logFd, logFd], windowsHide: true });
+        if (typeof logFd === 'number') try { fs.closeSync(logFd); } catch (_) {}
+        let exited = null, spawnErr = '';
+        proc.on('error', e => { spawnErr = e.message; });
+        proc.on('exit', (code, sig) => { exited = { code, sig, at: Date.now() }; });
         proc.unref();
-        ws = await wsFromDir(dir, 25000);
-        if (!ws) throw new Error('背景 Chrome 沒有啟動（這個資料夾可能正被另一個 Chrome 使用，例如登入視窗還沒關）');
+        // 電腦忙的時候（一次開很多帳號）Chrome 可能要好一陣子才準備好：最多等 60 秒；Chrome 自己先結束就不用等
+        const end = Date.now() + 60000;
+        while (!ws && Date.now() < end && !spawnErr) {
+          ws = await wsFromDir(dir, 0);
+          if (ws) break;
+          // 一啟動就結束：Windows 上常是「交給另一個正在用這個資料夾的 Chrome」然後自己退出；多給 3 秒看看檔案是否出現
+          if (exited && Date.now() - exited.at > 3000) break;
+          await sleep(400);
+        }
+        if (!ws) {
+          const tail = (() => { try { return fs.readFileSync(logFile, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(l => l && !/^\[\d+:\d+:\d+\/\d+\.\d+:(INFO|VERBOSE)/.test(l)).slice(-3).join(' ｜ ').slice(0, 300); } catch (_) { return ''; } })();
+          const sec = Math.round((Date.now() - t0) / 1000), extra = (killed ? `（啟動前已結束 ${killed} 個殘留的 Chrome）` : '') + (tail ? `　Chrome 訊息：${tail}` : '');
+          if (spawnErr) throw new Error('開不了 Chrome：' + spawnErr);
+          if (exited) throw new Error(`背景 Chrome 一啟動就結束了（結束碼 ${exited.code ?? exited.sig}）。可能是這個帳號的資料夾正被別的 Chrome 使用，或資料夾損壞：可以按「刪除」後重新加入這個帳號${extra}`);
+          try { process.kill(proc.pid); } catch (_) {}
+          throw new Error(`背景 Chrome 等了 ${sec} 秒還沒準備好：電腦可能太忙（同時開太多帳號），可以晚點再按開始，或少開幾個${extra}`);
+        }
       }
       const cdp = new Cdp(ws); await cdp.ready;
       r.cdp = cdp; r.pages = {};
@@ -458,24 +481,45 @@ ${fixed}
   // ---------- 記憶體：每個背景帳號的 Chrome（主程式＋所有子程序）用了多少 ----------
   let mem = { at: 0, by: {}, total: 0, err: '' }, memBusy = false;
   function runCmd(cmd, args) { return new Promise(res => execFile(cmd, args, { timeout: 20000, windowsHide: true, maxBuffer: 32 * 1024 * 1024 }, (e, out) => res(e ? '' : String(out)))); }
+  // 列出所有 chrome 程序（含命令列）；Windows 輸出強制 UTF-8（路徑有中文時，預設的 Big5 會變亂碼）
+  async function listChrome() {
+    if (process.platform === 'win32') {
+      const out = await runCmd('powershell', ['-NoProfile', '-NonInteractive', '-Command', "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Select-Object ProcessId,ParentProcessId,WorkingSetSize,CommandLine | ConvertTo-Json -Compress"]);
+      let j = []; try { j = JSON.parse(out || '[]'); } catch (_) {}
+      return (Array.isArray(j) ? j : [j]).filter(Boolean).map(x => ({ pid: x.ProcessId, ppid: x.ParentProcessId, bytes: Number(x.WorkingSetSize) || 0, cmd: x.CommandLine || '' }));
+    }
+    const out = await runCmd('ps', ['-eo', 'pid=,ppid=,rss=,args=']);
+    return out.split('\n').map(l => l.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)).filter(Boolean).map(m => ({ pid: +m[1], ppid: +m[2], bytes: +m[3] * 1024, cmd: m[4] }));
+  }
+  // 只用「data\bg\<帳號編號>」比對（編號是英數字），不受資料夾路徑的中文、大小寫影響
+  const dirRe = id => new RegExp('[\\\\/]bg[\\\\/]' + String(id).replace(/[^\w-]/g, '') + '(["\\s\\\\/]|$)', 'i');
+  // 找出還佔著這個帳號資料夾的 Chrome（例如登入視窗關了但程式沒結束），全部結束掉
+  async function killStale(id) {
+    const re = dirRe(id), find = async () => (await listChrome()).filter(x => !/--type=/.test(x.cmd) && re.test(x.cmd));
+    let hit = await find(); const n = hit.length;
+    if (!n) return 0;
+    // 先好好關（讓登入 cookie 寫回硬碟），5 秒內沒結束才強制結束
+    for (const x of hit) {
+      if (process.platform === 'win32') await runCmd('taskkill', ['/PID', String(x.pid)]);
+      else { try { process.kill(x.pid, 'SIGTERM'); } catch (_) {} }
+    }
+    for (let i = 0; i < 10 && (hit = await find()).length; i++) await sleep(500);
+    for (const x of hit) {
+      if (process.platform === 'win32') await runCmd('taskkill', ['/PID', String(x.pid), '/T', '/F']);
+      else { try { process.kill(x.pid, 'SIGKILL'); } catch (_) {} }
+    }
+    await sleep(1000);
+    return n;
+  }
   async function refreshMem() {
     if (memBusy || Date.now() - mem.at < 30000) return; memBusy = true;
     try {
-      let procs = [];
-      if (process.platform === 'win32') {
-        // 輸出強制 UTF-8（路徑有中文時，預設的 Big5 會變亂碼）
-        const out = await runCmd('powershell', ['-NoProfile', '-NonInteractive', '-Command', "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Select-Object ProcessId,ParentProcessId,WorkingSetSize,CommandLine | ConvertTo-Json -Compress"]);
-        let j = []; try { j = JSON.parse(out || '[]'); } catch (_) {}
-        procs = (Array.isArray(j) ? j : [j]).filter(Boolean).map(x => ({ pid: x.ProcessId, ppid: x.ParentProcessId, bytes: Number(x.WorkingSetSize) || 0, cmd: x.CommandLine || '' }));
-      } else {
-        const out = await runCmd('ps', ['-eo', 'pid=,ppid=,rss=,args=']);
-        procs = out.split('\n').map(l => l.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)).filter(Boolean).map(m => ({ pid: +m[1], ppid: +m[2], bytes: +m[3] * 1024, cmd: m[4] }));
-      }
+      const procs = await listChrome();
       const kids = new Map(); for (const p of procs) (kids.get(p.ppid) || kids.set(p.ppid, []).get(p.ppid)).push(p);
       const by = {}; let total = 0, totalPage = 0;
       for (const p of cfg().profiles) {
         // 只用「data\bg\<帳號編號>」比對（編號是英數字），不受資料夾路徑的中文、大小寫影響
-        const id = String(p.id).replace(/[^\w-]/g, ''), re = new RegExp('[\\\\/]bg[\\\\/]' + id + '(["\\s\\\\/]|$)', 'i'), roots = procs.filter(x => !/--type=/.test(x.cmd) && re.test(x.cmd));
+        const re = dirRe(p.id), roots = procs.filter(x => !/--type=/.test(x.cmd) && re.test(x.cmd));
         let sum = 0, page = 0, n = 0; const seen = new Set();
         const walk = x => { if (seen.has(x.pid)) return; seen.add(x.pid); sum += x.bytes; if (/--type=renderer/.test(x.cmd) && !/--extension-process/.test(x.cmd)) page += x.bytes; n++; for (const c of kids.get(x.pid) || []) walk(c); };
         roots.forEach(walk);
