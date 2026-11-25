@@ -775,17 +775,19 @@ function bossBusy(charId) { return db.jobs.some(j => ACTIVE.has(j.status) && (j.
 // 隊伍：每隻角色回報時帶著遊戲的 party（{code, members:[{id, name, …}]}）。同隊伍共用同一份野王，
 // 所以排程以「隊伍」為單位：勾了其中一隻，同隊的一起挑同一隻王出發（預估用隊員 DPS 加總），各自打完回自己原本的地圖
 function partyMap() {
-  const of = {}, at = {}, members = {};
+  const of = {}, at = {}, members = {}, leader = {}; // leader[隊伍代碼]＝遊戲裡的隊長（隊員資料的 leader 旗標）
   for (const snap of Object.values(db.chars)) {
     const p = snap.party && snap.party.party; if (!p || !p.code || !Array.isArray(p.members) || p.members.length < 2) continue;
     if (Date.now() - (snap.receivedAt || 0) > 30 * 60 * 1000) continue;
     for (const m of p.members) {
       if (!m || !m.id) continue;
       if (!at[m.id] || snap.receivedAt > at[m.id]) { at[m.id] = snap.receivedAt; of[m.id] = p.code; }
+      if (m.leader === true) leader[p.code] = m.id;
     }
   }
   for (const [id, code] of Object.entries(of)) (members[code] || (members[code] = [])).push(id);
-  return { of, members };
+  for (const code of Object.keys(leader)) if (of[leader[code]] !== code) delete leader[code]; // 隊長已經在別隊了（資料舊）
+  return { of, members, leader };
 }
 function bossUnitOf(charId, pm) {
   const code = pm.of[charId];
@@ -935,20 +937,40 @@ function applyParties(list) {
     for (const id of members) if (db.jobs.some(j => ACTIVE.has(j.status) && j.kind === 'party' && j.fromCharId === id)) throw new Error(`${charName(id)} 還有組隊工作在進行，等它做完再套用`);
     const codes = members.map(id => pm.of[id] || '');
     const same = members.length === 1 ? !codes[0] : !!(codes[0] && codes.every(c => c === codes[0]) && (pm.members[codes[0]] || []).length === members.length);
-    const runId = crypto.randomBytes(6).toString('hex'), leader = members[0];
+    // 沿用現有的隊伍：遊戲裡的隊長是這次的隊員之一 → 不解散，隊長留著、踢掉不要的、其他人用隊伍代碼加入
+    // （有好幾隊可以沿用時，挑已經在裡面的人最多的那隊）
+    let keep = null;
+    if (!same && members.length > 1) {
+      for (const code of new Set(codes.filter(Boolean))) {
+        const L = pm.leader[code]; if (!L || !members.includes(L)) continue;
+        const inside = members.filter(id => pm.of[id] === code);
+        const others = (pm.members[code] || []).filter(id => !members.includes(id));
+        const extra = others.filter(id => db.chars[id]), strangers = others.length - extra.length; // 不是這台中控的角色（例如大廳來的玩家）不踢
+        if (members.length + strangers > 6) continue;
+        if (!keep || inside.length > keep.inside.length) keep = { code, leader: L, inside, extra };
+      }
+    }
+    const runId = crypto.randomBytes(6).toString('hex'), leader = keep ? keep.leader : members[0];
     const mapName = (worldMapNames || {})[p.map] || p.mapName || p.map || '';
-    runs[runId] = { at: Date.now(), partyId: p.id || '', name: p.name || '', leader, members, code: same && codes[0] ? codes[0] : null, map: p.map || '', mapName };
+    runs[runId] = { at: Date.now(), partyId: p.id || '', name: p.name || '', leader, members, code: keep ? keep.code : same && codes[0] ? codes[0] : null, map: p.map || '', mapName };
     for (const id of members) {
       const snap = db.chars[id];
       if (!tabOf(snap.playerCode, id)) warn.push(`${snap.char.name} 沒有自己的遊戲分頁（開了才會執行）`);
       const role = members.length === 1 ? 'solo' : id === leader ? 'leader' : 'member';
+      const pj = { runId, role, ops: !same, map: p.map || '', mapName, leaderName: charName(leader), name: p.name || '', sell: p.map ? cleanSell(p.sell) : undefined };
+      let note;
+      if (same) note = '（隊伍不變）';
+      else if (keep && id === leader) { pj.ops = false; pj.kick = keep.extra.map(x => ({ id: x, name: charName(x) })); note = `（沿用隊伍，不解散${pj.kick.length ? `；踢出 ${pj.kick.map(x => x.name).join('、')}` : ''}）`; }
+      else if (keep && keep.inside.includes(id)) { pj.ops = false; note = `（已經在 ${charName(leader)} 的隊伍裡）`; }
+      else if (keep) { pj.code = keep.code; note = `（用隊伍代碼加入 ${charName(leader)} 的隊伍）`; }
+      else note = role === 'leader' ? '（隊長，建立隊伍）' : role === 'member' ? `（加入 ${charName(leader)} 的隊伍）` : '（單人）';
       const job = {
         id: crypto.randomBytes(6).toString('hex'), kind: 'party', status: 'approved', createdAt: Date.now(), approvedAt: Date.now(),
         fromCharId: id, fromName: snap.char.name, fromCode: snap.playerCode, toCharId: id, toName: snap.char.name, toCode: snap.playerCode,
-        batches: [{ items: [], gear: [], money: 0, party: { runId, role, ops: !same, map: p.map || '', mapName, leaderName: charName(leader), name: p.name || '', sell: p.map ? cleanSell(p.sell) : undefined } }],
-        batchIndex: 0, log: [], lastMsg: '',
+        batches: [{ items: [], gear: [], money: 0, party: pj }],
+        batchIndex: 0, log: [], lastMsg: '', ...(pj.kick && pj.kick.length ? { minAgent: '0.68.4' } : {}), // 舊腳本不會踢人
       };
-      jobLog(job, `組隊：${p.name || ''}${same ? '（隊伍不變）' : role === 'leader' ? '（隊長，建立隊伍）' : role === 'member' ? `（加入 ${charName(leader)} 的隊伍）` : '（單人）'}${p.map ? `，前往 ${mapName}` : ''}`);
+      jobLog(job, `組隊：${p.name || ''}${note}${p.map ? `，前往 ${mapName}` : ''}`);
       db.jobs.push(job); jobs.push(job);
     }
   }

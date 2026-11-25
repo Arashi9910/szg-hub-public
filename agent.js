@@ -1524,6 +1524,12 @@ function agentMain(ctx) {
             await log(`已加入 ${p.leaderName} 的隊伍`);
           }
         }
+        // 沿用隊伍的隊長：踢掉這次不在名單裡的隊員（自己的角色才踢）
+        for (const k of Array.isArray(p.kick) ? p.kick : []) {
+          setBadge(null, `組隊：踢出 ${k.name || k.id}…`);
+          try { await gameRetry({ type: 'partyKick', memberId: k.id, characterId: id }); await log(`已把 ${k.name || k.id} 踢出隊伍`); }
+          catch (e) { if (e.gameUpdated) throw e; await log(`踢出 ${k.name || k.id} 失敗（${e.message}）`); }
+        }
         if (p.noStart) { lastHash = ''; return report(job, { event: 'batchDone' }); } // 組隊大廳：只建隊伍，不換圖、不重新開始
         const s1 = await gameRetry({ type: 'sync', characterId: id });
         const here = s1 && s1.character && s1.character.map;
