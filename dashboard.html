@@ -598,6 +598,10 @@
       </details>
       <div id="ovTable"></div>
     </div>
+    <details class="card" id="deathCard"><summary><b>💀 死亡與復活</b>　<span id="deathSum" class="dim"></span></summary>
+      <div class="dim help-src">中控從遊戲分頁的同步資料判斷角色死亡，記下死在哪、被什麼打倒（打到角色的怪、遊戲紀錄、HP 藥水是否用完、是不是在打王），以及每次是誰復活的（中控自動、遊戲自己的自動復活、其他＝你手動）。需要那個帳號有遊戲分頁或背景 Chrome 在跑才記得到。</div>
+      <div id="deathOut" style="margin-top:6px"></div>
+    </details>
     <div id="ovBar" class="action-bar"></div>
   </section>
 
@@ -764,6 +768,7 @@
         <span style="flex:1"></span>
         <span class="dim sm" id="bossMsg"></span><button class="btn sm" id="bossRun">立即檢查</button>
       </div>
+      <div id="bossNew"></div>
       <div id="bossLive"></div>
       <div id="bossGrid"></div>
       <details id="bossWhoBox" open><summary id="bossWhoSum">誰打哪些王</summary>
@@ -1403,8 +1408,47 @@ document.addEventListener('click', e => {
   if (g === 'gear') { const b = document.querySelector('#gViewSeg button[data-gv="auto"]'); if (b) b.click(); }
   if (g === 'guild') setTimeout(() => openGDrawer('gRulesDrawer'), 50);
 });
+// ================= 死亡與復活 =================
+let DEATHS = null, deathsAt = 0;
+const RV_LABEL = { hub: '中控', game: '遊戲自動', other: '其他／手動' };
+async function loadDeaths(force) {
+  if (!force && Date.now() - deathsAt < 15000) return;
+  deathsAt = Date.now();
+  try { DEATHS = await (await fetch('/api/deaths')).json(); } catch (_) { return; }
+  renderDeaths();
+}
+function renderDeaths() {
+  const D = DEATHS; if (!D) return;
+  const n24 = D.chars.reduce((a, c) => a + c.d24, 0), nAll = D.chars.reduce((a, c) => a + c.deaths, 0), rvAll = D.chars.reduce((a, c) => a + c.revives, 0);
+  $('#deathSum').textContent = nAll ? `24 小時內死亡 ${n24} 次・累計死亡 ${nAll} 次、復活 ${rvAll} 次` : '還沒有紀錄';
+  if (!$('#deathCard').open) return;
+  if (!D.chars.length) { $('#deathOut').innerHTML = '<span class="dim">還沒有死亡紀錄</span>'; return; }
+  const tbl = `<table><thead><tr><th>角色</th><th title="最近 1 小時">1 小時</th><th>24 小時</th><th>累計死亡</th><th>復活次數</th><th>最常見的原因</th><th>最近一次</th><th></th></tr></thead><tbody>` +
+    D.chars.map(c => `<tr><td>${esc(c.name)}</td><td>${c.d1 || ''}</td><td>${c.d24 || ''}</td><td>${c.deaths}</td>
+      <td>${c.revives}<span class="dim sm">${Object.entries(c.rv).filter(x => x[1]).map(([k, v]) => `　${RV_LABEL[k]} ${v}`).join('')}</span></td>
+      <td>${c.topCause ? `${esc(c.topCause[0])} <span class="dim sm">×${c.topCause[1]}</span>` : ''}</td>
+      <td class="sm">${c.last ? `${ago(Date.now() - c.last.at)}・${esc(c.last.mapName || '')}` : ''}</td>
+      <td><button class="btn sm" data-dreset="${esc(c.charId)}" title="把這隻的紀錄清掉重新計算">歸零</button></td></tr>`).join('') + '</tbody></table>';
+  const log = D.log.slice(0, 60).map(x => {
+    const top = (x.top || []).filter(t => t.dmg > 0).map(t => `${esc(t.name)} ${fmt(t.dmg)}`).join('、');
+    const rv = x.revivedAt ? `<span class="tag">已復活：${RV_LABEL[x.revivedBy] || x.revivedBy}</span>` : '<span class="tag warn">還沒復活</span>';
+    return `<div class="sm" style="padding:3px 0;border-bottom:1px solid var(--line)"><span class="dim">${clock(x.at)}</span> <b>${esc(x.name)}</b>${x.lv ? ` Lv${x.lv}` : ''}・${esc(x.mapName || x.map || '')}：${esc(x.cause)} ${rv}
+      ${top ? `<div class="dim">死前 20 秒受到的傷害：${top}</div>` : ''}${x.gameLine ? `<div class="dim">遊戲紀錄：${esc(x.gameLine)}</div>` : ''}${x.hpQty != null ? `<div class="dim">HP 藥水${x.hpItem ? `（${esc(x.hpItem)}）` : ''}剩 ${fmt(x.hpQty)} 個${x.xpLoss ? `・扣經驗 ${fmt(x.xpLoss)}` : ''}</div>` : ''}</div>`;
+  }).join('');
+  $('#deathOut').innerHTML = tbl + `<div class="bar" style="margin-top:8px"><b>最近的死亡</b><button class="btn sm" data-dreset="*">全部歸零</button></div>` + log;
+}
+document.addEventListener('toggle', e => { if (e.target && e.target.id === 'deathCard' && e.target.open) loadDeaths(true); }, true);
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('[data-dreset]'); if (!t) return;
+  const all = t.dataset.dreset === '*';
+  if (!confirm(all ? '清掉所有角色的死亡紀錄，重新計算？' : '清掉這隻角色的死亡紀錄，重新計算？')) return;
+  DEATHS = await (await fetch('/api/deaths/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(all ? {} : { charId: t.dataset.dreset }) })).json();
+  renderDeaths();
+});
+
 function renderOverview() {
   const rows = ovRows();
+  loadDeaths();
   renderAttention(rows);
   renderOvAuto();
 
@@ -3303,8 +3347,28 @@ const BOSS_RES = { killed: '打死了', timeout: '時間到', dead: '倒下', ab
 const mmss = sec => { sec = Math.max(0, Math.round(sec)); const m = Math.floor(sec / 60); return m >= 60 ? hm(sec * 1000) : `${m}:${String(sec % 60).padStart(2, '0')}`; };
 // 名字共同的前綴（例如「佐藤」）在表頭省略，滑鼠移上去看全名
 function namePrefix(names) { if (names.length < 2) return ''; let p = names[0]; for (const n of names) while (p && !n.startsWith(p)) p = p.slice(0, -1); return names.every(n => n.length > p.length) ? p : ''; }
+function renderBossNew() {
+  const box = $('#bossNew'); if (!box) return;
+  const nb = (BOSS && BOSS.newBosses) || [];
+  if (!nb.length) { box.innerHTML = ''; return; }
+  const cm = bossCfg().charMobs, cand = mapCandidates();
+  const fit = nb.map(b => ({ ...b, n: Object.entries(cm).filter(([id, m]) => m.length && !m.includes('*') && !m.includes(b.mob) && ((cand.find(x => x.id === id) || {}).lv || 0) >= (b.lv || 0)).length }));
+  box.innerHTML = `<div class="card attn" style="margin:6px 0;padding:8px 10px">🆕 遊戲新增了 ${fit.map(b => `<b>${esc(b.name)}</b> <span class="dim sm">Lv${b.lv || '?'}</span>`).join('、')}。已經逐一挑選王的角色不會自動打新的王（選「全部」的會）。
+    <div class="bar" style="margin-top:6px"><button class="btn sm" id="bossNewAdd">加到等級夠的角色（${fit.map(b => `${esc(b.name)} ${b.n} 隻`).join('、')}）</button><button class="btn sm" id="bossNewAck">我自己挑，不用提醒</button><span class="dim sm">等級夠＝角色等級不低於王的等級；之後可以在下面「誰打哪些王」再調整</span></div></div>`;
+}
+document.addEventListener('click', async e => {
+  if (e.target.id !== 'bossNewAdd' && e.target.id !== 'bossNewAck') return;
+  try {
+    const r = await api('/api/boss/new', { add: e.target.id === 'bossNewAdd' });
+    BOSS = r; bossLoadAt = Date.now();
+    if (r.added) $('#bossMsg').textContent = r.added.length ? `已加到 ${r.added.length} 隻角色` : '沒有等級夠、還沒勾的角色';
+    if (typeof S !== 'undefined' && r.cfg) S.boss = { ...(S.boss || {}), charMobs: r.cfg.charMobs };
+    renderBoss(true);
+  } catch (err) { alert('失敗：' + err.message); }
+});
 function renderBoss(force) {
   const card = $('#bossCard'); if (!card) return;
+  renderBossNew();
   const c = bossCfg();
   const editing = card.contains(document.activeElement) && document.activeElement.tagName === 'INPUT' && document.activeElement.type === 'number';
   if (force || !editing) {

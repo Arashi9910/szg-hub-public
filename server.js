@@ -552,6 +552,43 @@ function idleLog(entry) {
   if (db.idleLog.length > 200) db.idleLog.splice(0, db.idleLog.length - 200);
   save();
 }
+// ===== 死亡原因與復活次數 =====
+// agent 從遊戲同步回應判斷死亡（hp<=0、deaths 增加、deathAt 改變）並 POST /api/death {ev:'death'|'revive'}。
+// db.deaths = { log: [{at, charId, name, map, mapName, cause, killer, boss, top, lastHit, gameLine, hpQty, xpLoss, revivedAt, revivedBy}], since: {角色: 開始計算時間} }
+function deathDb() { const d = db.deaths || (db.deaths = {}); d.log = d.log || []; d.since = d.since || {}; return d; }
+function deathEvent(e) {
+  const d = deathDb(), now = Date.now(), id = String(e.charId || '');
+  if (!id) return;
+  if (!d.since[id]) d.since[id] = now;
+  if (e.ev === 'death') {
+    const at = Number(e.at) || now;
+    // 同一次死亡可能從兩個分頁回報（同帳號）：遊戲死亡時間一樣、或 30 秒內的算同一次
+    const key = Number(e.key) || 0;
+    if (d.log.some(x => x.charId === id && (x.key && key ? x.key === key : Math.abs(x.at - at) < 30000))) return;
+    const str = (v, n) => String(v == null ? '' : v).slice(0, n);
+    d.log.push({ at, key, charId: id, name: charName(id), lv: Number(e.lv) || 0, map: str(e.map, 40), mapName: str(e.mapName, 40), cause: str(e.cause, 120), killer: str(e.killer, 40), boss: str(e.boss, 40),
+      top: (Array.isArray(e.top) ? e.top : []).slice(0, 4).map(x => ({ name: str(x.name, 40), dmg: Number(x.dmg) || 0, n: Number(x.n) || 0 })), lastHit: e.lastHit ? { name: str(e.lastHit.name, 40), dmg: Number(e.lastHit.dmg) || 0, kind: str(e.lastHit.kind, 20) } : null,
+      gameLine: str(e.gameLine, 120), hpQty: e.hpQty == null ? null : Number(e.hpQty), hpItem: str(e.hpItem, 40), xpLoss: Number(e.xpLoss) || 0, gameDeaths: e.gameDeaths == null ? null : Number(e.gameDeaths), kinds: (Array.isArray(e.kinds) ? e.kinds : []).slice(0, 12).map(k => str(k, 20)) });
+    if (d.log.length > 1000) d.log.splice(0, d.log.length - 1000);
+  } else if (e.ev === 'revive') {
+    const x = [...d.log].reverse().find(l => l.charId === id);
+    if (!x || x.revivedAt || now - x.at > 6 * 3600e3) return; // 一次死亡只算一次復活
+    x.revivedAt = now; x.revivedBy = ['hub', 'game'].includes(e.by) ? e.by : 'other';
+  }
+  save();
+}
+function deathSummary() {
+  const d = deathDb(), now = Date.now(), by = {};
+  for (const x of d.log) {
+    const s = by[x.charId] || (by[x.charId] = { charId: x.charId, name: charName(x.charId), deaths: 0, d24: 0, d1: 0, revives: 0, rv: { hub: 0, game: 0, other: 0 }, causes: {}, last: null });
+    s.deaths++; if (now - x.at < 24 * 3600e3) s.d24++; if (now - x.at < 3600e3) s.d1++;
+    if (x.revivedAt) { s.revives++; s.rv[x.revivedBy || 'other']++; }
+    const k = x.boss ? `打王：${x.boss}` : x.killer ? x.killer : x.cause; s.causes[k] = (s.causes[k] || 0) + 1;
+    s.last = x;
+  }
+  const chars = Object.values(by).map(s => ({ ...s, since: d.since[s.charId] || 0, topCause: Object.entries(s.causes).sort((a, b) => b[1] - a[1])[0] || null })).sort((a, b) => b.d24 - a.d24 || b.deaths - a.deaths);
+  return { chars, log: d.log.slice(-200).reverse(), since: d.since };
+}
 function createBagJob(body) {
   const owner = db.chars[body.fromCharId];
   if (!owner) throw new Error('找不到角色資料');
@@ -666,6 +703,25 @@ function bossDb() {
   for (const k of ['state', 'hp', 'last', 'home', 'seen']) b[k] = b[k] || {};
   b.log = b.log || [];
   return b;
+}
+// 新出現的王：b.known = {mob: {at, name, ack}}。第一次建立時，目前有的王都算舊的，只有 BOSS_ADDED 裡的
+// （2026-11-25 遊戲新增：海怒斯、噴火龍、格瑞芬多）算新的；之後角色回報裡第一次出現的王都算新的
+const BOSS_ADDED = ['gms8510000', 'gms8180000', 'gms8180001'];
+function bossKnow(list) {
+  const b = bossDb(), first = !b.known, now = Date.now();
+  if (first) b.known = {};
+  let changed = false;
+  for (const r of list) {
+    if (!r.mob || b.known[r.mob]) continue;
+    b.known[r.mob] = { at: first && !BOSS_ADDED.includes(r.mob) ? 0 : now, name: r.name || '' }; changed = true;
+  }
+  return changed || first;
+}
+function bossNewList() {
+  loadWorldIndex();
+  const k = bossDb().known || {}, now = Date.now();
+  return Object.entries(k).filter(([, v]) => v.at && !v.ack && now - v.at < 14 * 24 * 3600e3)
+    .map(([mob, v]) => ({ mob, name: (worldMobs[mob] || {}).name || v.name || mob, lv: (worldMobs[mob] || {}).lv || 0, at: v.at })).sort((a, b) => a.lv - b.lv);
 }
 function bossLog(charId, msg) {
   const b = bossDb();
@@ -931,7 +987,7 @@ function bossSummary() {
       at: (b.state[id] || {}).at || 0, dps: charDps(id), rows: bossRows(id, c.partyMode === 'split' ? null : pdps, bossAllow(u2, c)),
       job: (db.jobs.filter(j => j.kind === 'boss' && j.fromCharId === id).slice(-1)[0]) || null };
   });
-  return { cfg: c, chars, live: bossLive(), log: b.log.slice(-100) };
+  return { cfg: c, chars, live: bossLive(), log: b.log.slice(-100), newBosses: bossNewList() };
 }
 
 // ===== 即時經驗速度 =====
@@ -1391,11 +1447,30 @@ const server = http.createServer(async (req, res) => {
       const c = bossCfg(), id = url.searchParams.get('charId') || '';
       return send(res, 200, { need: c.mode !== 'off' && !!c.chars[id] });
     }
+    // 新的王：add＝加到等級夠的角色（有勾王、不是「全部」、等級 >= 王的等級）；之後標成已處理
+    if (req.method === 'POST' && url.pathname === '/api/boss/new') {
+      const e = JSON.parse(await readBody(req) || '{}'), b = bossDb(), list = bossNewList(), want = new Set(Array.isArray(e.mobs) ? e.mobs : list.map(x => x.mob));
+      const added = [];
+      if (e.add) {
+        const cm = { ...bossCharMobs(db.settings.boss || {}) };
+        for (const [id, mobs] of Object.entries(cm)) {
+          if (!mobs.length || mobs.includes('*') || !db.chars[id]) continue;
+          const lv = Number(db.chars[id].char.lv) || 0, add = list.filter(x => want.has(x.mob) && !mobs.includes(x.mob) && (!x.lv || lv >= x.lv));
+          if (add.length) { cm[id] = [...mobs, ...add.map(x => x.mob)]; added.push(`${charName(id)}：${add.map(x => x.name).join('、')}`); }
+        }
+        db.settings.boss = { ...(db.settings.boss || {}), charMobs: cm };
+        if (added.length) bossLog('', `新的王加到 ${added.length} 隻角色：${added.join('；')}`);
+      }
+      for (const m of want) if (b.known && b.known[m]) b.known[m].ack = Date.now();
+      save();
+      return send(res, 200, { ok: true, added, ...bossSummary() });
+    }
     if (req.method === 'POST' && url.pathname === '/api/boss/state') {
       const e = JSON.parse(await readBody(req));
       if (!e || !e.charId || !Array.isArray(e.list)) return send(res, 400, { error: 'bad boss state' });
       bossDb().state[e.charId] = { at: Date.now(), offset: Number(e.serverTime) > 0 ? Number(e.serverTime) - Date.now() : 0,
         list: e.list.slice(0, 60).map(r => ({ map: String(r.map || ''), mapName: String(r.mapName || ''), mob: String(r.mob || ''), name: String(r.name || ''), instanceId: String(r.instanceId || ''), deadline: Number(r.deadline) || 0, spawned: !!r.spawned, available: !!r.available })) };
+      bossKnow(bossDb().state[e.charId].list);
       save();
       return send(res, 200, { ok: true });
     }
@@ -1544,6 +1619,19 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { policy: { autoRenew: !!p.autoRenew, renewBeforeMin: Number(p.renewBeforeMin) || 30, stopAfterHours: Number(p.stopAfterHours) || 0, wakeHours: Number(p.wakeHours) || 0,
         autoRevive: p.autoRevive !== false, reviveMaxPerHour: Number(p.reviveMaxPerHour) || 6 }, // 死掉自動原地復活：預設開
         excluded: db.settings.idleExcluded || {}, last: db.settings.idleLast || {} });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/death') {
+      const e = JSON.parse(await readBody(req));
+      if (e && (e.ev === 'death' || e.ev === 'revive')) deathEvent(e);
+      return send(res, 200, { ok: true });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/deaths') return send(res, 200, deathSummary());
+    // 歸零：{charId} 只清那隻，沒給就全部
+    if (req.method === 'POST' && url.pathname === '/api/deaths/reset') {
+      const b = JSON.parse(await readBody(req) || '{}'), d = deathDb(), now = Date.now();
+      if (b.charId) { d.log = d.log.filter(x => x.charId !== b.charId); d.since[b.charId] = now; }
+      else { d.log = []; d.since = {}; }
+      save(); return send(res, 200, deathSummary());
     }
     if (req.method === 'POST' && url.pathname === '/api/idle-log') {
       const e = JSON.parse(await readBody(req));
