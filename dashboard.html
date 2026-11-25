@@ -481,6 +481,37 @@
   .hpbar i { display: block; height: 100%; background: var(--bad); }
   table.boss-t td { padding-top: 3px; padding-bottom: 3px; }
   .boss-hd { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 8px; }
+  .boss-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 8px; } .boss-top .bt-title { font-size: 15px; }
+  .boss-how { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; } .boss-how:empty { display: none; }
+  .boss-how .st { flex: 1 1 200px; border: 1px dashed var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12px; color: var(--dim); }
+  .boss-how .st b { color: var(--text); } .boss-how .st.done { border-style: solid; border-color: var(--good); } .boss-how .st.done b::before { content: '✓ '; color: var(--good); }
+  .boss-viewbar { margin: 6px 0; }
+  .boss-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px; }
+  .bb { border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; border-top: 3px solid var(--line); }
+  .bb.st-live { border-top-color: var(--bad); } .bb.st-ready { border-top-color: var(--good); } .bb.st-cd { border-top-color: var(--accent); } .bb.st-none { opacity: .6; }
+  .bb-hd { display: flex; align-items: center; gap: 8px; } .bb-hd .mico { width: 40px; height: 40px; object-fit: contain; }
+  .bb-hd .nm { font-weight: 700; font-size: 14px; } .bb-hd .sub { font-size: 11px; color: var(--dim); }
+  .bb-st { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; } .bb-st .big { font-size: 15px; font-weight: 700; display: block; }
+  .bb-st.ready .big { color: var(--good); } .bb-st.live .big { color: var(--bad); } .bb-st.cd .big { color: var(--text); } .bb-st .sm { color: var(--dim); }
+  .bb-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--dim); }
+  .bb-meta .long { color: var(--warn); }
+  .bb-who { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .bb-c { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px 2px 2px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); font-size: 12px; cursor: pointer; user-select: none; }
+  .bb-c .ava.sm { width: 22px; height: 22px; } .bb-c .s { font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .bb-c .s.ok { color: var(--good); } .bb-c .s.busy { color: var(--bad); font-weight: 600; } .bb-c .s.skip { color: var(--warn); }
+  .bb-c.off { opacity: .55; } .bb-c:hover { border-color: var(--bad); } .bb-c.grp { border-style: dashed; }
+  .bb-add { font-size: 12px; padding: 2px 9px; border: 1px dashed var(--accent); color: var(--accent); border-radius: 14px; cursor: pointer; background: none; }
+  .bb-pick { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; border: 1px dashed var(--accent); border-radius: 8px; }
+  .bb-pick .bb-c:hover { border-color: var(--good); }
+  .bb-ft { display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 5px; }
+  .bb-ft .btn { margin-left: auto; }
+  .bset { display: flex; flex-direction: column; gap: 2px; }
+  .bset-row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--line); align-items: start; }
+  .bset-k { font-weight: 600; padding-top: 3px; }
+  .bsell-rule { display: grid; grid-template-columns: 160px auto; gap: 6px 12px; align-items: center; margin: 6px 0 10px; }
+  .bsell-maps { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; }
+  .bsell-m { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--panel2); display: flex; flex-direction: column; gap: 4px; }
+  .bsell-m.over { border-color: var(--warn); } .bsell-m .hd { display: flex; gap: 6px; align-items: center; } .bsell-m .hd .btn { margin-left: auto; }
   .boss-live { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 8px 10px; margin: 0 0 8px; border: 1px solid var(--line); border-left: 3px solid var(--bad); border-radius: 6px; background: var(--panel2); }
   .boss-live .bl-name { min-width: 180px; } .boss-live .bl-pct { font-variant-numeric: tabular-nums; min-width: 52px; }
   .hpbar.big { width: 240px; height: 10px; } .hpbar i { transition: width .6s; }
@@ -545,7 +576,7 @@
     <button data-tab="board">派工</button>
     <button data-tab="party">組隊</button>
     <button data-tab="lobby">組隊大廳</button>
-    <button data-tab="maps">地圖</button>
+    <button data-tab="maps">野王</button>
     <button data-tab="market">市場</button>
     <button data-tab="quiz">知識王</button>
     <button data-tab="forge">強化</button>
@@ -608,7 +639,22 @@
   <!-- 裝備 -->
   <!-- 裝備圖鑑 -->
   <section id="dex">
-    <div class="card">
+    <div class="bar" style="margin:0 0 8px"><div class="seg" id="dexView"><button data-dexview="equip">裝備圖鑑</button><button data-dexview="maps">地圖查詢</button><button data-dexview="items">掉落物查詢</button></div></div>
+    <div id="dexWorld" style="display:none">
+      <div class="card" id="dexMapsCard">
+        <h3>地圖查詢</h3>
+        <div class="bar"><select id="wRegion"><option value="">全部區域</option></select>
+          <span>角色等級</span><input type="number" id="wLv" placeholder="例如 45" style="width:80px">
+          <input id="wSearch" placeholder="搜尋地圖或怪物" style="width:160px"><label><input type="checkbox" id="wBoss"> 只看有王的</label></div>
+        <div id="wMaps"></div>
+      </div>
+      <div class="card" id="dexItemsCard">
+        <h3>掉落物查詢</h3>
+        <div class="bar"><input id="wItem" placeholder="輸入道具名稱，例如：藍色藥水、攻擊卷軸" style="width:280px"></div>
+        <div id="wItemOut"></div>
+      </div>
+    </div>
+    <div class="card" id="dexEquipCard">
       <div class="bar" style="margin:0"><b>裝備圖鑑</b><span class="dim sm" id="dexCount"></span><span style="flex:1"></span><input id="dexQ" placeholder="搜尋名稱" style="width:160px" autocomplete="off"></div>
       <div class="bar"><span class="dim sm" style="width:36px">職業</span><div class="seg" id="dexJob"></div></div>
       <div class="bar"><span class="dim sm" style="width:36px">等級</span><div class="seg" id="dexLv"></div><span class="dim sm">或</span><input type="number" id="dexLvMin" placeholder="最低" style="width:64px" min="0" max="200"><span>～</span><input type="number" id="dexLvMax" placeholder="最高" style="width:64px" min="0" max="200"></div>
@@ -732,7 +778,7 @@
   <section id="party">
     <div class="card">
       <div class="pt-hd"><b>組隊</b><span class="dim sm" id="ptSum"></span><span style="flex:1"></span>
-        <button class="btn" id="ptAdd">＋ 新隊伍</button><button class="btn" id="ptImport" title="照遊戲裡目前的隊伍和所在地圖建立卡片">⤓ 從目前隊伍匯入</button><button class="btn" id="ptSuggest" title="用地圖頁「組隊效率試算」同一套估算，替有分頁的角色排一版分組和地圖">✦ 自動排一版</button><button class="btn primary" id="ptApplyAll">▶ 套用全部</button><span class="dim sm" id="ptMsg"></span></div>
+        <button class="btn" id="ptAdd">＋ 新隊伍</button><button class="btn" id="ptImport" title="照遊戲裡目前的隊伍和所在地圖建立卡片">⤓ 從目前隊伍匯入</button><button class="btn" id="ptSuggest" title="用中控的經驗估算，替有分頁的角色排一版分組和地圖">✦ 自動排一版</button><button class="btn primary" id="ptApplyAll">▶ 套用全部</button><span class="dim sm" id="ptMsg"></span></div>
       <div class="dim sm">把角色拖進隊伍卡片（或點一下角色再點卡片），選地圖，按「套用」：中控會讓隊員離開原本的隊伍、由第一位（👑 隊長）建隊、其他人加入，再一起換到地圖並開始掛機；隊伍已經是這幾個人就只換圖。每隊最多 6 人，角色要有自己的遊戲分頁。
         卡片上的經驗是<b>最近 3 分鐘實際量到的每小時經驗</b>（換圖或換隊後重新量，約 1 分鐘開始有數字），並和出發前 10 分鐘比較。</div>
     </div>
@@ -744,7 +790,7 @@
   <section id="board">
     <div class="card">
       <h3>派工看板</h3>
-      <div class="dim help-src">把角色拖到地圖上決定去哪裡（也可以點一下角色再點地圖）。地圖分成「練功、打卷軸、打裝備」三條路線，每張圖可以設定：🎯 要打的目標道具（看板會估計派去的角色每小時大約打到幾個）、💰 自動販售（撿到就賣給商店的道具，遊戲伺服器處理，分頁沒開也有效）。排好後按「套用派工」：要移動的角色換過去，並套用那張圖的自動販售。遊戲只能設定「目前所在地圖」的自動販售，所以換圖和設定是一起做的。估計值和地圖分頁的組隊試算用同一套方法，只是參考。</div>
+      <div class="dim help-src">把角色拖到地圖上決定去哪裡（也可以點一下角色再點地圖）。地圖分成「練功、打卷軸、打裝備」三條路線，每張圖可以設定：🎯 要打的目標道具（看板會估計派去的角色每小時大約打到幾個）、💰 自動販售（撿到就賣給商店的道具，遊戲伺服器處理，分頁沒開也有效）。排好後按「套用派工」：要移動的角色換過去，並套用那張圖的自動販售。遊戲只能設定「目前所在地圖」的自動販售，所以換圖和設定是一起做的。估計值和組隊分頁「自動排一版」用同一套方法，只是參考。</div>
       <div class="bar"><div class="seg" id="bdViewSeg"><button data-bview2="factory"><span data-ic="factory"></span> 工廠圖</button><button data-bview2="list"><span data-ic="list"></span> 清單</button></div>
         <span id="bdGroupBox"></span><button class="btn" id="bdApply">▶ 套用派工</button><button class="btn" id="bdImport" title="把角色目前所在的地圖放上看板，並用你在遊戲裡設好的自動販售當範本">⤓ 匯入目前設定</button><button class="btn" id="bdClear">清除派工</button><span id="bdSyncBox"></span>
         <select id="bdAddMap" style="max-width:260px"><option value="">＋ 加入地圖…</option></select><span class="dim" id="bdMsg"></span></div>
@@ -761,74 +807,51 @@
   <section id="maps">
     <div class="card" id="wMissing" style="display:none"><span class="warn">還沒有地圖資料：打開任一個遊戲分頁（腳本 v0.14 以上），約 10 秒後會自動上傳。</span></div>
     <div class="card" id="bossCard">
-      <div class="boss-hd">
-        <b>輪流打野王</b>
-        <select id="bossMode" data-seg><option value="off" data-short="關">關閉</option><option value="preview" data-short="試跑">試跑（只記錄會去打哪隻）</option><option value="auto" data-short="自動出發">自動出發</option></select>
+      <div class="boss-top">
+        <b class="bt-title">⚔ 輪流打野王</b>
+        <select id="bossMode" data-seg><option value="off" data-short="關閉">關閉</option><option value="preview" data-short="試跑">試跑（只記錄會去打哪隻）</option><option value="auto" data-short="自動出發">自動出發</option></select>
         <span class="dim sm" id="bossSum"></span>
         <span style="flex:1"></span>
-        <span class="dim sm" id="bossMsg"></span><button class="btn sm" id="bossRun">立即檢查</button>
+        <span class="dim sm" id="bossMsg"></span>
+        <button class="btn sm" id="bossRun" title="馬上檢查一次有沒有王可以打（平常每分鐘自動檢查）">立即檢查</button>
+        <button class="btn sm" id="bossSellOpen" title="到王的地圖時自動套用的販售：王的掉落保留、小怪雜物賣掉">💰 掉落篩選 <span class="dim" id="bossSellSum"></span></button>
+        <button class="btn sm" id="bossSetOpen" title="隊伍怎麼打、連續打、打多久、掛機設定">⚙ 設定</button>
       </div>
+      <div id="bossHow" class="boss-how"></div>
       <div id="bossNew"></div>
       <div id="bossLive"></div>
-      <div id="bossGrid"></div>
-      <details id="bossWhoBox" open><summary id="bossWhoSum">誰打哪些王</summary>
-        <div class="bar" style="margin-top:6px"><input id="bossCardQ" placeholder="搜尋角色" style="width:120px" autocomplete="off"><label class="sm"><input type="checkbox" id="bossCardOnly"> 只看有勾的</label>
-          <span class="dim sm">每隻角色各自點選要打的王（亮的＝會打）。同隊伍的會一起出發，打的王＝隊友勾的合起來。</span></div>
-        <div id="bossCards" class="boss-cards"></div>
-      </details>
-      <details id="bossSetBox"><summary id="bossSetSum">設定</summary>
-        <div class="bar" style="margin-top:8px"><span>預估超過</span><input type="number" id="bossEst" min="1" max="240" style="width:60px"><span>分鐘打不死的不去</span>
-          <span style="margin-left:12px">每次最多打</span><input type="number" id="bossVisit" min="1" max="240" style="width:60px"><span>分鐘</span></div>
-        <div class="bar"><span>掛機設定</span><span>打王用</span><select id="bossPresetBoss"><option value="0">不切換</option><option value="1">設定 1</option><option value="2">設定 2</option><option value="3">設定 3</option></select>
-          <span style="margin-left:8px">回練功圖用</span><select id="bossPresetTrain"><option value="0">出發前用的那套</option><option value="1">設定 1</option><option value="2">設定 2</option><option value="3">設定 3</option></select>
-          <span class="dim sm">遊戲的掛機設定 1／2／3 各自獨立，第一次切到沒用過的那套是空白的，請先在遊戲裡設好</span></div>
-        <div class="bar"><span>隊伍打王</span><select id="bossPartyMode"><option value="together">整隊一起打同一隻</option><option value="split">保留隊伍，各自分開打（同一隻王不會同時去）</option><option value="mixed">依王決定：勾的王整隊一起打，其他各自分開打</option></select>
-          <label style="margin-left:12px" title="打完一隻直接去下一隻已重生的王，全部打完才回練功圖；關掉＝每打完一隻就先回練功圖"><input type="checkbox" class="sw" id="bossChain"> 連續打，全部打完才回練功圖</label></div>
-        <div class="bar" id="bossTogBox" style="display:none"><span>整隊一起打的王</span><span class="chips" id="bossTogMobs"></span>
-          <span class="dim sm">快速設定：</span><input type="number" id="bossTogLv" min="1" max="250" placeholder="等級" style="width:64px"><button class="btn sm" id="bossTogLvBtn" title="等級大於等於這個數字的王一起打，其他分開打">以上的王一起打</button>
-          <div class="dim sm" style="flex-basis:100%">沒勾的王：隊友各自分開打（同一隻不會同時去）。勾的王：等隊友都把分開打的王打完、空下來之後，才整隊一起去。</div></div>
-        <div class="dim sm">每分鐘檢查一次：有勾王的角色<b>在掛機、有自己的遊戲分頁</b>時，從它勾的王裡挑一隻已經重生的（預估最快打死的先去），換過去開始掛機打王，看血條打死後換回原本的地圖並重新開始掛機。
-          時間到、倒下、或 3 分鐘血量都沒降也會先回去；王的血量遊戲會保留，30 分鐘後再去。同隊伍的角色共用一份王：選「整隊一起打」時<b>隊伍裡有人勾就整隊一起去</b>，可以打的王是隊員勾的合起來（預估用隊員 DPS 加總）；選「各自分開打」時每隻照自己勾的王各打各的，隊友正在打的那隻不會同時去；選「依王決定」時，勾為「一起打」的王整隊去，其他的各自分開打（先分開打完、全隊空下來才一起打）。開「連續打」時，打完一隻直接去下一隻已重生的王，沒有了才回練功圖。不會使用付費重生。</div>
-      </details>
-      <details><summary>紀錄</summary><div id="bossLog"></div></details>
+      <div class="bar boss-viewbar">
+        <div class="seg" id="bossView"><button data-bview="boss" title="一張卡片一隻王：誰會打、多久重生">依王看</button><button data-bview="char" title="一張卡片一隻角色：勾這隻要打哪些王">依角色看</button></div>
+        <input id="bossCardQ" placeholder="搜尋王或角色" style="width:140px" autocomplete="off">
+        <label class="sm"><input type="checkbox" id="bossCardOnly"> 只看有人打的</label>
+        <span class="dim sm" id="bossViewHelp"></span>
+      </div>
+      <div id="bossBoard" class="boss-board"></div>
+      <div id="bossCards" class="boss-cards"></div>
+      <details id="bossLogBox"><summary>紀錄</summary><div id="bossLog"></div></details>
     </div>
-    <div class="card">
-      <h3>選角色</h3>
-      <div class="bar"><button class="btn" id="mpAll">全選</button><button class="btn" id="mpNone">清除</button><button class="btn" id="mpActive">只選有分頁的</button><span class="dim" id="mpSelInfo"></span></div>
-      <div id="mpChars"></div>
-    </div>
-    <div class="card">
-      <h3>批次換圖</h3>
-      <div class="bar"><span>把勾選的角色送到</span><select id="mpTarget" style="min-width:260px"></select><button class="btn primary" id="mpGo">換圖</button><span class="dim" id="mpMsg"></span></div>
-      <details><summary class="dim">目前的隊伍</summary><div id="ptNow"></div></details>
-      <details id="ptJobsBox" open><summary class="dim">最近的換圖進度</summary><div id="ptJobs"></div></details>
-      <div class="dim">換圖交給那隻角色自己的遊戲分頁做；沒有分頁的，由同帳號的分頁直接指定（遊戲標示「換圖只移動目前角色」，被拒絕時紀錄會顯示失敗，請先開它的分頁或「⇄ 切換」再換）。等級低於地圖最低等級的會略過。</div>
-    </div>
-    <div class="card" id="effCard" style="display:none">
-      <h3>練功效率提示</h3>
-      <div class="dim help-src">根據「實戰 DPS」：有效傷害占總傷害比例低，代表大部分傷害打在快死的怪身上（溢傷），通常是怪物太弱，換到怪物血量較高的圖每小時經驗會更多。建議地圖是用下面「組隊效率試算」同一套估算，只算這隻角色單人，實際請以換圖後的每小時經驗為準。</div>
-      <div id="effHints"></div>
-    </div>
-    <div class="card">
-      <h3>組隊效率試算（經驗）</h3>
-      <div class="bar"><span>每隊最多</span><input type="number" id="ppSize" min="1" max="6" value="6" style="width:56px"><span>人</span>
-        <label><input type="checkbox" id="ppKeepMap"> 只考慮角色目前所在的地圖</label>
-        <button class="btn primary" id="ppRun">計算勾選角色的建議分組</button></div>
-      <div class="dim">分組方式：依等級由高到低，每組最多設定人數，和組內最高等級差 15 級以上的另成一組，祭司盡量平均分到各組。估算方式：先取每隻角色的輸出能力（每小時傷害）：有「實戰 DPS」（統計滿 5 分鐘）就直接用實際傷害，沒有的才用面板上的「每小時經驗」反推，再依遊戲規則估算新組合：怪物太弱時會被出手速度卡住（假設每隻每小時最多約 2,400 隻，實測更高的用實測值），同圖每多 1 位合格隊友經驗 +10%（6 人 +50%）、隊伍增益技能（祭司「神聖祈禱」加經驗，激勵／精神強力／楓葉祝福加輸出）、怪物比角色高太多時命中下降、等級低於怪物 5 級以上而且打不太到的不算經驗。經驗按傷害 60%、等級 40% 分配。<b>這是估算，實際請以換圖後的每小時經驗為準。</b>沒有「每小時經驗」的角色（打開過主控台一次就會有）會用同等級的角色推估。</div>
-      <div id="ppOut"></div>
-    </div>
-    <div class="card">
-      <h3>地圖查詢</h3>
-      <div class="bar"><select id="wRegion"><option value="">全部區域</option></select>
-        <span>角色等級</span><input type="number" id="wLv" placeholder="例如 45" style="width:80px">
-        <input id="wSearch" placeholder="搜尋地圖或怪物" style="width:160px"><label><input type="checkbox" id="wBoss"> 只看有王的</label></div>
-      <div id="wMaps"></div>
-    </div>
-    <div class="card">
-      <h3>掉落物查詢</h3>
-      <div class="bar"><input id="wItem" placeholder="輸入道具名稱，例如：藍色藥水、攻擊卷軸" style="width:280px"></div>
-      <div id="wItemOut"></div>
-    </div>
+    <aside id="bossSetDrawer" class="drawer boss-drawer" style="display:none">
+      <div class="dhd"><h3 style="margin:0">⚙ 打王設定</h3><span style="flex:1"></span><button class="btn" data-bossclose="bossSetDrawer">關閉（Esc）</button></div>
+      <div class="bset">
+        <div class="bset-row"><div class="bset-k">隊伍打王</div><div><select id="bossPartyMode"><option value="together">整隊一起打同一隻</option><option value="split">保留隊伍，各自分開打（同一隻王不會同時去）</option><option value="mixed">依王決定：勾的王整隊一起打，其他各自分開打</option></select>
+          <div class="bar" id="bossTogBox" style="display:none;margin-top:6px"><span>整隊一起打的王</span><span class="chips" id="bossTogMobs"></span>
+            <span class="dim sm">快速設定：</span><input type="number" id="bossTogLv" min="1" max="250" placeholder="等級" style="width:64px"><button class="btn sm" id="bossTogLvBtn" title="等級大於等於這個數字的王一起打，其他分開打">以上的王一起打</button>
+            <div class="dim sm" style="flex-basis:100%">沒勾的王：隊友各自分開打（同一隻不會同時去）。勾的王：等隊友都把分開打的王打完、空下來之後，才整隊一起去。</div></div></div></div>
+        <div class="bset-row"><div class="bset-k">連續打</div><div><label><input type="checkbox" class="sw" id="bossChain"> 打完一隻直接去下一隻已重生的王，全部打完才回練功圖</label><div class="dim sm">關掉＝每打完一隻就先回練功圖。</div></div></div>
+        <div class="bset-row"><div class="bset-k">要不要去</div><div>預估超過 <input type="number" id="bossEst" min="1" max="600" style="width:64px"> 分鐘才打得死的王不去
+          <div class="dim sm">預估＝王剩下的血量 ÷ 角色（隊伍）的實戰 DPS。海怒斯、噴火龍、格瑞芬多這種血多的王，想打就把這個數字調大，卡片上會顯示每隻王預估要打多久。</div></div></div>
+        <div class="bset-row"><div class="bset-k">打到什麼時候</div><div><b>血量有在掉就打到死</b>，中途不會被拉去別的王。王的血量 <input type="number" id="bossStuck" min="1" max="30" style="width:56px"> 分鐘完全沒下降才先離開（血量遊戲會保留，30 分鐘後再來）。
+          <div style="margin-top:4px">安全上限：同一隻最多打 <input type="number" id="bossMaxMin" min="10" max="600" style="width:64px"> 分鐘</div></div></div>
+        <div class="bset-row"><div class="bset-k">掛機設定</div><div>打王用 <select id="bossPresetBoss"><option value="0">不切換</option><option value="1">設定 1</option><option value="2">設定 2</option><option value="3">設定 3</option></select>
+          回練功圖用 <select id="bossPresetTrain"><option value="0">出發前用的那套</option><option value="1">設定 1</option><option value="2">設定 2</option><option value="3">設定 3</option></select>
+          <div class="dim sm">遊戲的掛機設定 1／2／3 各自獨立，第一次切到沒用過的那套是空白的，請先在遊戲裡設好。</div></div></div>
+        <div class="bset-row"><div class="bset-k">怎麼運作</div><div class="dim sm">每分鐘檢查一次：有勾王的角色<b>在掛機、有自己的遊戲分頁（或背景執行）</b>時，從它勾的王裡挑一隻已經重生的（預估最快打死的先去），換過去開始掛機打王，看血條打死後換回原本的地圖並重新開始掛機。倒下、或血量太久沒降會先回去。同隊伍的角色共用一份王。不會使用付費重生。</div></div>
+      </div>
+    </aside>
+    <aside id="bossSellDrawer" class="drawer boss-drawer" style="display:none">
+      <div class="dhd"><h3 style="margin:0">💰 野王地圖的掉落篩選</h3><span style="flex:1"></span><button class="btn" data-bossclose="bossSellDrawer">關閉（Esc）</button></div>
+      <div id="bossSellOut"></div>
+    </aside>
   </section>
 
   <!-- 自由市場 -->
@@ -3243,7 +3266,7 @@ function renderParty(force) {
       <div class="pt-live"><span class="dim sm">全隊每小時經驗</span><span class="big">${lv.n ? short(lv.sum) : '—'}</span>
         <span class="sm">${measuring ? `<span class="dim">測量中（已量 ${Math.floor(lv.span / 60000)}:${String(Math.floor(lv.span / 1000) % 60).padStart(2, '0')}）</span>` : lv.n ? '<span class="dim">最近 3 分鐘</span>' : '<span class="dim">等資料（換圖後約 1 分鐘）</span>'}</span>
         ${pct != null ? `<span class="${pct >= 0 ? 'good' : 'bad'}">${pct >= 0 ? '▲' : '▼'}${Math.abs(pct * 100).toFixed(0)}%</span><span class="dim sm">出發前 ${short(lv.base)}</span>` : ''}
-        ${est ? `<span class="dim sm" style="margin-left:auto" title="地圖頁組隊效率試算的估計值，只是參考">試算 ${short(est)}</span>` : ''}</div>
+        ${est ? `<span class="dim sm" style="margin-left:auto" title="中控經驗估算的估計值，只是參考">試算 ${short(est)}</span>` : ''}</div>
       <div class="pt-mems">${mem || '<div class="dim sm" style="padding:10px">把角色拖進來（最多 6 人）</div>'}</div>
     </div>`;
   }).join('') || '<div class="card dim">還沒有隊伍：按「＋ 新隊伍」、「⤓ 從目前隊伍匯入」或「✦ 自動排一版」。</div>';
@@ -3315,7 +3338,7 @@ document.addEventListener('change', e => {
 
 // ================= 輪流打野王 =================
 let BOSS = null, bossLoadAt = 0;
-const bossCfg = () => { const c = { mode: 'off', chars: {}, mobs: null, estMax: 15, visitMax: 20, presetBoss: 0, presetTrain: 0, partyMode: 'together', chain: true, togetherMobs: [], ...(S.boss || {}) }; c.charMobs = bossCharMobs(c); return c; };
+const bossCfg = () => { const c = { mode: 'off', chars: {}, mobs: null, estMax: 15, stuckMin: 3, maxMin: 180, presetBoss: 0, presetTrain: 0, partyMode: 'together', chain: true, togetherMobs: [], ...(S.boss || {}) }; c.charMobs = bossCharMobs(c); return c; };
 // 每隻角色各自要打的王（{角色: ['*'] 或 [王…]}）；舊設定（chars＋共用 mobs）自動換算，和伺服器同一套規則
 function bossCharMobs(b) {
   const cm = {};
@@ -3360,30 +3383,42 @@ document.addEventListener('click', async e => {
     renderBoss(true);
   } catch (err) { alert('失敗：' + err.message); }
 });
+// 狀態文字（卡片、清單共用）
+function bossCellState(r, g) {
+  if (g) return { k: 'busy', t: `打王中${g.hp != null && g.maxHp ? ' ' + Math.round(g.hp / g.maxHp * 100) + '%' : ''}` };
+  if (!r) return { k: 'skip', t: '—' };
+  if (r.cooling) return { k: 'cd', t: hm(r.remainMs) };
+  if (r.skip) return { k: 'skip', t: /預估/.test(r.skip) ? '太久' : '稍後' };
+  return { k: 'ok', t: '可打' };
+}
+ui.bossView = (() => { try { return localStorage.getItem('bossView') || 'boss'; } catch (_) { return 'boss'; } })();
+ui.bossAdd = null; ui.bossSellEdit = null; ui.bossSellDraft = null;
 function renderBoss(force) {
   const card = $('#bossCard'); if (!card) return;
   renderBossNew();
   const c = bossCfg();
-  const editing = card.contains(document.activeElement) && document.activeElement.tagName === 'INPUT' && document.activeElement.type === 'number';
+  const editing = document.activeElement && document.activeElement.tagName === 'INPUT' && document.activeElement.type === 'number' && document.activeElement.closest('#maps');
   if (force || !editing) {
-    $('#bossMode').value = c.mode; $('#bossEst').value = c.estMax; $('#bossVisit').value = c.visitMax;
-    if (!$('#bossSetBox').contains(document.activeElement) || document.activeElement.tagName !== 'SELECT') { $('#bossPresetBoss').value = String(c.presetBoss || 0); $('#bossPresetTrain').value = String(c.presetTrain || 0); $('#bossPartyMode').value = ['split', 'mixed'].includes(c.partyMode) ? c.partyMode : 'together'; }
+    $('#bossMode').value = c.mode; $('#bossEst').value = c.estMax; $('#bossStuck').value = c.stuckMin || 3; $('#bossMaxMin').value = c.maxMin || 180;
+    if (!$('#bossSetDrawer').contains(document.activeElement) || document.activeElement.tagName !== 'SELECT') { $('#bossPresetBoss').value = String(c.presetBoss || 0); $('#bossPresetTrain').value = String(c.presetTrain || 0); $('#bossPartyMode').value = ['split', 'mixed'].includes(c.partyMode) ? c.partyMode : 'together'; }
     $('#bossTogBox').style.display = c.partyMode === 'mixed' ? '' : 'none';
     if (c.partyMode === 'mixed') { const tg = new Set(c.togetherMobs || []); $('#bossTogMobs').innerHTML = bossList().map(x => `<label title="${esc(x.mapName)}"><input type="checkbox" data-bosstog="${esc(x.mob)}" ${tg.has(x.mob) ? 'checked' : ''}>${esc(x.name)} <span class="dim sm">Lv${x.lv || '?'}</span></label>`).join('') || '<span class="dim">還沒有野王資料</span>'; }
     $('#bossChain').checked = c.chain !== false;
-    if (force || !$('#bossSetBox').contains(document.activeElement)) {
-    }
-    if (force || !$('#bossWhoBox').contains(document.activeElement) || document.activeElement.id !== 'bossCardQ') renderBossCards();
     enhanceSegs(card);
   }
-  const chars = ((BOSS && BOSS.chars) || []).filter(x => x.on);
-  // 出發單位：同隊伍一組，其他一隻一組
-  const units = [], byCode = {};
-  for (const x of chars) { if (x.party && c.partyMode !== 'split') { if (!byCode[x.party.code]) units.push(byCode[x.party.code] = []); byCode[x.party.code].push(x); } else units.push([x]); }
+  document.querySelectorAll('#bossView button').forEach(b => b.classList.toggle('on', b.dataset.bview === ui.bossView));
+  $('#bossBoard').style.display = ui.bossView === 'boss' ? '' : 'none';
+  $('#bossCards').style.display = ui.bossView === 'char' ? '' : 'none';
+  $('#bossViewHelp').textContent = ui.bossView === 'boss' ? '點角色＝不讓它打這隻王；「＋ 加角色」讓更多角色打。同隊伍的會一起出發。' : '每隻角色各自點選要打的王（亮的＝會打）。同隊伍的會一起出發，打的王＝隊友勾的合起來。';
   const live = (BOSS && BOSS.live) || [];
-  const nChars = Object.values(c.chars).filter(Boolean).length;
-  $('#bossSetSum').textContent = `設定：${c.partyMode === 'split' ? '隊伍各自分開打' : c.partyMode === 'mixed' ? `隊伍依王決定（${(c.togetherMobs || []).length} 隻一起打）` : '隊伍一起打'}・${c.chain !== false ? '連續打完才回練功圖' : '每隻打完先回練功圖'}・預估超過 ${c.estMax} 分不去・每次最多 ${c.visitMax} 分${Number(c.presetBoss) ? `・打王用掛機設定 ${c.presetBoss}、練功用${Number(c.presetTrain) ? '設定 ' + c.presetTrain : '出發前那套'}` : ''}`;
-  // ── 正在打 ──
+  // 上方三步驟（還沒設好時引導）
+  const nOn = Object.keys(c.charMobs).length, sellOn = !!(c.sell && c.sell.on);
+  $('#bossHow').innerHTML = c.mode === 'auto' && nOn ? '' : [
+    [nOn > 0, '① 選誰打哪隻王', nOn ? `${nOn} 隻角色有勾王` : '在下面的王卡片按「＋ 加角色」，或切到「依角色看」勾王'],
+    [sellOn, '② 掉落篩選（可略過）', sellOn ? '到王的地圖會自動套用販售' : '按右上「💰 掉落篩選」：王的掉落保留、小怪雜物賣掉'],
+    [c.mode !== 'off', '③ 先試跑、再自動出發', c.mode === 'preview' ? '試跑中：看下面「紀錄」確認會去打哪幾隻，再切「自動出發」' : c.mode === 'auto' ? '自動出發中' : '上方切「試跑」看會怎麼跑'],
+  ].map(([ok, h, d]) => `<div class="st ${ok ? 'done' : ''}"><b>${h}</b><div>${d}</div></div>`).join('');
+  // 正在打
   $('#bossLive').innerHTML = live.map(g => {
     const p = g.hp != null && g.maxHp ? Math.max(0, Math.min(100, g.hp / g.maxHp * 100)) : null;
     const el = (Date.now() - g.startedAt) / 1000;
@@ -3392,40 +3427,197 @@ function renderBoss(force) {
       <span class="sm">${g.names.map(esc).join('＋')}</span>
       <span class="dim sm">已打 ${mmss(el)}${g.etaSec != null ? `・預估還要 ${mmss(g.etaSec)}` : p == null ? '・' + esc(g.msg || '前往中') : ''}${g.hpAt ? `・${Math.max(0, Math.round((Date.now() - g.hpAt) / 1000))} 秒前` : ''}</span></div>`;
   }).join('');
-  // ── 總表：王 × 出發單位 ──
-  const allNames = units.flat().map(x => x.name), pre = namePrefix(allNames);
-  const shortName = n => pre && n.startsWith(pre) ? n.slice(pre.length) : n;
-  const mobs = new Map();
-  for (const u of units) for (const x of u) for (const r of x.rows) if (r.selected && !mobs.has(r.mob)) mobs.set(r.mob, r);
-  const mobList = [...mobs.values()].sort((a, b) => (a.lv || 0) - (b.lv || 0));
-  let nReady = 0;
-  const cell = (u, mob) => {
-    const x0 = u.slice().sort((a, b) => (b.at || 0) - (a.at || 0))[0];
-    const r = x0.rows.find(o => o.mob === mob); if (!r) return '<td class="bcell"><span class="dim">—</span></td>';
-    const g = live.find(l => l.mob === mob && u.some(x => l.names.includes(x.name)));
-    const left = r.hpKnown && r.maxHp && r.hp < r.maxHp * 0.995 ? `<span class="dim sm">剩${Math.round(r.hp / r.maxHp * 100)}%</span>` : '';
-    const tip = [r.skip, r.estSec != null ? `預估 ${Math.max(1, Math.ceil(r.estSec / 60))} 分鐘打死` : '', r.last ? `上次 ${clock(r.last.at)} ${BOSS_RES[r.last.result] || r.last.result}` : ''].filter(Boolean).join('\n');
-    let h;
-    if (g) h = `<span class="bc busy">打王中 ${g.hp != null && g.maxHp ? Math.round(g.hp / g.maxHp * 100) + '%' : ''}</span>`;
-    else if (r.cooling) h = `<span class="bc cd">${hm(r.remainMs)}</span>`;
-    else if (r.skip) h = `<span class="bc skip">${/預估/.test(r.skip) ? '太久' : '稍後'}</span>`;
-    else { h = '<span class="bc ok">可打</span>'; nReady++; }
-    return `<td class="bcell" title="${esc(tip)}">${h}${left}</td>`;
-  };
-  const head = u => {
-    const warn = u.filter(x => !x.tab || !x.auto).map(x => `${x.name}：${!x.tab ? '沒有自己的遊戲分頁' : '沒在掛機'}，不會出發`);
-    const nm = u.map(x => `${esc(shortName(x.name))}${u.length > 1 && !x.picked ? '<span class="dim">*</span>' : ''}`).join('＋');
-    return `<th class="nosort bhd" title="${esc(u.map(x => `${x.name} Lv${x.lv}・${x.mapName || ''}・DPS ${x.dps ? Math.round(x.dps) : '—'}・目前掛機設定 ${x.slot || 1}`).concat(warn).join('\n'))}">${nm}${warn.length ? ' <span class="warn">!</span>' : ''}${u.length > 1 ? '<div class="dim sm">隊伍</div>' : ''}</th>`;
-  };
-  if (!units.length) $('#bossGrid').innerHTML = '<div class="dim" style="margin:8px 0">還沒有勾選角色：打開下面的「設定」選角色和要打的王。</div>';
-  else if (!mobList.length) $('#bossGrid').innerHTML = '<div class="dim" style="margin:8px 0">等遊戲分頁回報王的狀態（約 1 分鐘）…</div>';
-  else $('#bossGrid').innerHTML = `<div class="boss-grid-wrap"><table class="boss-grid"><thead><tr><th class="nosort">王</th>${units.map(head).join('')}</tr></thead><tbody>${mobList.map(r =>
-    `<tr><td class="bname"><b>${esc(r.name)}</b> <span class="dim sm">Lv${r.lv || '?'}・${esc(r.mapName)}</span></td>${units.map(u => cell(u, r.mob)).join('')}</tr>`).join('')}</tbody></table></div>
-    <div class="dim sm" style="margin-top:4px">可打＝已重生、等下一輪檢查出發；時間＝還要多久重生；太久＝預估打太久不去；稍後＝上次沒打成功，30 分鐘後再試。滑鼠移到格子上看詳細。${units.some(u => u.length > 1) ? '　* 沒勾，跟著隊友一起去' : ''}</div>`;
-  $('#bossSum').textContent = units.length ? `${units.length} 組・${mobList.length} 隻王・${live.length ? `打王中 ${live.length} 場・` : ''}可打 ${nReady}` : '';
+  const sum = renderBossBoard(c, live);
+  if (ui.bossView === 'char' && (force || document.activeElement !== $('#bossCardQ'))) renderBossCards();
+  $('#bossSum').textContent = sum;
+  $('#bossSellSum').textContent = sellOn ? '開' : '關';
+  if ($('#bossSellDrawer').style.display !== 'none') renderBossSell();
   const logs = ((BOSS && BOSS.log) || []).slice().reverse().slice(0, 80);
   $('#bossLog').innerHTML = logs.length ? logs.map(l => `<div><span class="dim">${clock(l.at)}</span> ${esc(l.name)}：${esc(l.msg)}</div>`).join('') : '<span class="dim">還沒有紀錄</span>';
 }
+// 依王看：每隻王一張卡片（誰會打、各自多久重生、預估打多久、掉落篩選）
+function renderBossBoard(c, live) {
+  const box = $('#bossBoard'); if (!box) return '';
+  const mobs = bossList(), cm = c.charMobs, info = Object.fromEntries(((BOSS && BOSS.chars) || []).map(x => [x.charId, x]));
+  const cand = mapCandidates(), byId = Object.fromEntries(cand.map(x => [x.id, x]));
+  const q = (ui.bossCard.q || '').trim();
+  if (!mobs.length) { box.innerHTML = '<div class="dim">還沒有野王資料：打開遊戲分頁約 1 分鐘後會有。</div>'; return ''; }
+  const picks = mob => Object.keys(cm).filter(id => (cm[id] || []).includes('*') || (cm[id] || []).includes(mob));
+  let nReady = 0;
+  const cards = mobs.map(b => {
+    const ids = picks(b.mob);
+    const wm = WORLD && WORLD.mobIdx ? WORLD.mobIdx[b.mob] : null;
+    const rows = ids.map(id => { const i = info[id]; return { id, i, r: i && (i.rows || []).find(o => o.mob === b.mob) }; });
+    const g = live.find(l => l.mob === b.mob);
+    const st = rows.map(x => ({ ...x, s: bossCellState(x.r, live.find(l => l.mob === b.mob && x.i && l.names.includes(x.i.name))) }));
+    const ready = st.filter(x => x.s.k === 'ok'), cds = st.filter(x => x.s.k === 'cd').sort((p, q2) => p.r.remainMs - q2.r.remainMs);
+    if (ready.length) nReady++;
+    let cls, big, small;
+    if (g) { const p = g.hp != null && g.maxHp ? Math.round(g.hp / g.maxHp * 100) : null; cls = 'live'; big = `打王中${p != null ? ' ' + p + '%' : ''}`; small = g.names.join('＋'); }
+    else if (!ids.length) { cls = 'none'; big = '沒人打'; small = ''; }
+    else if (ready.length) { cls = 'ready'; big = '已重生'; small = c.mode === 'auto' ? '下一輪檢查就出發' : c.mode === 'preview' ? '試跑：只記錄' : '打王是關閉的'; }
+    else if (cds.length) { cls = 'cd'; big = hm(cds[0].r.remainMs); small = '後重生'; }
+    else { const sk = (st.find(x => x.r && x.r.skip) || {}).r; cls = 'skip'; big = '暫不去'; small = !sk ? '等角色回報' : /預估/.test(sk.skip) ? '預估打太久' : /再試/.test(sk.skip) ? '上次沒打成功，稍後再試' : sk.skip; }
+    const any = st.find(x => x.r) || {};
+    const r0 = any.r || {};
+    const est = st.map(x => x.r && x.r.estSec).filter(v => v != null).sort((p, q2) => p - q2)[0];
+    const hpLeft = r0.hpKnown && r0.maxHp && r0.hp < r0.maxHp * 0.995 ? Math.round(r0.hp / r0.maxHp * 100) : null;
+    const long = est != null && est > 20 * 60;
+    const sell = bossSellCalc(r0.map || bossMapOf(b.mob));
+    const who = st.map(x => {
+      const ch = byId[x.id] || { name: charNameOf(x.id), lv: 0 };
+      const off = !hasTab(x.id) || (x.i && !x.i.auto);
+      const tip = [`${ch.name} Lv${ch.lv || '?'}`, off ? (!hasTab(x.id) ? '沒有自己的遊戲分頁，不會出發' : '沒在掛機，不會出發') : '', x.r && x.r.skip && x.r.skip !== '冷卻中' ? x.r.skip : '', x.r && x.r.estSec != null ? `預估 ${Math.max(1, Math.ceil(x.r.estSec / 60))} 分鐘打死` : '', x.r && x.r.last ? `上次 ${clock(x.r.last.at)} ${BOSS_RES[x.r.last.result] || x.r.last.result}` : '', (cm[x.id] || []).includes('*') ? '（這隻設定成打全部的王）' : '', '點一下：不讓它打這隻王'].filter(Boolean).join('\n');
+      return `<span class="bb-c ${off ? 'off' : ''}" data-bbdel="${esc(x.id)}|${esc(b.mob)}" title="${esc(tip)}">${avatarImg(x.id, 'sm')}${esc(ch.name)}<span class="s ${x.s.k}">${esc(x.s.t)}</span></span>`;
+    }).join('');
+    // 同隊伍、沒勾這隻的隊友：整隊一起打時會跟著去（虛線）
+    const mates = c.partyMode === 'split' ? [] : [...new Set(ids.flatMap(id => ((info[id] || {}).party || {}).ids || []))].filter(id => !ids.includes(id) && !(c.partyMode === 'mixed' && !(c.togetherMobs || []).includes(b.mob)));
+    const mateHtml = mates.map(id => { const ch = byId[id] || { name: charNameOf(id) }; return `<span class="bb-c grp" data-bbadd="${esc(id)}|${esc(b.mob)}" title="${esc(`${ch.name}：同隊伍，隊友勾了這隻王就會跟著一起去\n點一下：讓它自己也勾這隻`)}">${avatarImg(id, 'sm')}${esc(ch.name)}<span class="s">隊友</span></span>`; }).join('');
+    const addOpen = ui.bossAdd === b.mob;
+    const others = cand.filter(x => !ids.includes(x.id)).sort((p, q2) => hasTab(q2.id) - hasTab(p.id) || (q2.lv || 0) - (p.lv || 0));
+    const pick = addOpen ? `<div class="bb-pick">${others.map(x => `<span class="bb-c ${hasTab(x.id) ? '' : 'off'}" data-bbadd="${esc(x.id)}|${esc(b.mob)}" title="${esc(`${x.name} Lv${x.lv}${(x.lv || 0) < (b.lv || 0) ? '\n等級比王低' : ''}${hasTab(x.id) ? '' : '\n沒有自己的遊戲分頁'}`)}">${avatarImg(x.id, 'sm')}${esc(x.name)}<span class="s ${(x.lv || 0) < (b.lv || 0) ? 'skip' : ''}">Lv${x.lv}</span></span>`).join('') || '<span class="dim sm">全部角色都在打這隻了</span>'}
+      <button class="btn sm" data-bbfit="${esc(b.mob)}" title="把等級不低於王的角色全部加進來">加入等級夠的</button><button class="btn sm" data-bbaddclose="1">完成</button></div>` : '';
+    const text = `${b.name} ${b.mapName} ${st.map(x => (byId[x.id] || {}).name || '').join(' ')}`;
+    const hide = (q && !text.includes(q)) || (ui.bossCard.only && !ids.length);
+    const order = g ? 0 : ready.length ? 1 : cds.length ? 2 + cds[0].r.remainMs / 1e9 : ids.length ? 3 : 4;
+    return { order, lv: b.lv || 0, hide, html: `<div class="bb st-${cls === 'skip' ? 'cd' : cls}" data-bbmob="${esc(b.mob)}">
+      <div class="bb-hd">${wm ? mobImg(wm) : ''}<div><div class="nm">${esc(b.name)}</div><div class="sub">Lv${b.lv || '?'}・${esc(b.mapName || '')}</div></div>
+        <div class="bb-st ${cls}"><span class="big">${esc(big)}</span><span class="sm">${esc(small)}</span></div></div>
+      ${g && g.hp != null && g.maxHp ? `<span class="hpbar" style="width:100%"><i style="width:${(g.hp / g.maxHp * 100).toFixed(1)}%"></i></span>` : ''}
+      <div class="bb-meta">${r0.maxHp ? `<span>HP ${short(r0.maxHp)}</span>` : wm ? `<span>HP ${short(wm.hp)}</span>` : ''}${hpLeft != null ? `<span class="warn">上次打到剩 ${hpLeft}%</span>` : ''}${est != null ? `<span class="${long ? 'long' : ''}">${long ? '⏳ ' : ''}預估 ${estTxt(est)}打死${est > c.estMax * 60 ? `（超過 ${c.estMax} 分不去，⚙ 設定可調）` : ''}</span>` : ids.length ? '<span>還沒有實戰 DPS，無法預估</span>' : ''}</div>
+      <div class="bb-who">${who || '<span class="dim sm">還沒有角色打這隻</span>'}${mateHtml}${addOpen ? '' : `<button class="bb-add" data-bbaddopen="${esc(b.mob)}">＋ 加角色</button>`}</div>
+      ${pick}
+      <div class="bb-ft">💰 ${sell ? (sell.over ? '<span class="warn">個別調整</span>' : '共用規則') + `：賣 ${sell.ids.length} 項、保留 ${sell.keep} 項` : '沒有掉落資料'}<button class="btn sm" data-bbsell="${esc(r0.map || bossMapOf(b.mob) || '')}">掉落</button></div></div>` };
+  });
+  cards.sort((p, q2) => p.order - q2.order || p.lv - q2.lv);
+  box.innerHTML = cards.filter(x => !x.hide).map(x => x.html).join('') || '<div class="dim">沒有符合的王</div>';
+  const nPick = mobs.filter(b => picks(b.mob).length).length;
+  return `${Object.keys(cm).length} 隻角色・${nPick} 隻王有人打${live.length ? `・打王中 ${live.length} 場` : ''}${nReady ? `・已重生 ${nReady}` : ''}`;
+}
+const estTxt = sec => { const m = Math.max(1, Math.ceil(sec / 60)); return m >= 120 ? `約 ${m >= 6000 ? fmt(Math.round(m / 60)) : (m / 60).toFixed(1)} 小時` : `${m} 分鐘`; };
+function bossMapOf(mob) { if (!WORLD) return ''; const m = WORLD.maps.find(x => (x.boss || []).includes(mob)); return m ? m.id : ''; }
+// 把某隻王加給／從某隻角色拿掉（'*'＝全部的王：拿掉時改成逐一挑選）
+async function bossToggle(id, mob, on) {
+  const cm = bossCfg().charMobs, all = bossList().map(b => b.mob);
+  let list = [...(cm[id] || [])];
+  if (list.includes('*')) list = all.slice();
+  if (on && !list.includes(mob)) list.push(mob);
+  if (!on) list = list.filter(x => x !== mob);
+  await saveCharMobs(id, list);
+}
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('[data-bbdel],[data-bbadd],[data-bbaddopen],[data-bbaddclose],[data-bbfit],[data-bbsell],[data-bview],#bossSetOpen,#bossSellOpen,[data-bossclose]');
+  if (!t || !t.closest('#maps')) return;
+  const d = t.dataset;
+  if (d.bview) { ui.bossView = d.bview; try { localStorage.setItem('bossView', d.bview); } catch (_) {} renderBoss(true); return; }
+  if (t.id === 'bossSetOpen') { $('#bossSellDrawer').style.display = 'none'; $('#bossSetDrawer').style.display = ''; renderBoss(true); return; }
+  if (t.id === 'bossSellOpen') { $('#bossSetDrawer').style.display = 'none'; $('#bossSellDrawer').style.display = ''; ui.bossSellEdit = null; renderBossSell(); return; }
+  if (d.bossclose) { $('#' + d.bossclose).style.display = 'none'; return; }
+  if (d.bbaddopen) { ui.bossAdd = d.bbaddopen; renderBoss(); return; }
+  if (d.bbaddclose) { ui.bossAdd = null; renderBoss(); return; }
+  if (d.bbsell !== undefined) { if (!d.bbsell) { alert('還沒有這張圖的資料'); return; } $('#bossSetDrawer').style.display = 'none'; $('#bossSellDrawer').style.display = ''; ui.bossSellEdit = d.bbsell; ui.bossSellDraft = null; renderBossSell(); return; }
+  try {
+    if (d.bbdel) { const [id, mob] = d.bbdel.split('|'); await bossToggle(id, mob, false); }
+    if (d.bbadd) { const [id, mob] = d.bbadd.split('|'); await bossToggle(id, mob, true); }
+    if (d.bbfit) {
+      const b = bossList().find(x => x.mob === d.bbfit), cm = bossCfg().charMobs, all = bossList().map(x => x.mob), next = { ...cm };
+      const fit = mapCandidates().filter(x => (x.lv || 0) >= ((b && b.lv) || 0));
+      for (const x of fit) { let l = [...(next[x.id] || [])]; if (l.includes('*')) continue; if (!l.includes(d.bbfit)) l.push(d.bbfit); next[x.id] = l; }
+      if (!fit.length) { alert('沒有等級夠的角色'); return; }
+      await saveBoss({ charMobs: next });
+    }
+  } catch (err) { alert('失敗：' + err.message); return; }
+  await loadBoss(true); renderBoss(true);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.boss-drawer').forEach(x => { x.style.display = 'none'; }); });
+
+// ── 野王地圖的掉落篩選：共用規則＋個別調整 ──
+// settings.boss.sell = { on, rule: {gear, scroll, book, other: 'sell'|'keep', boss: 'keep'|'rule'}, over: {地圖: {itemIds}} }
+// settings.boss.sellMaps = {地圖: {enabled, itemIds}}：依規則算好的結果，中控派打王工作時帶給遊戲分頁，到了王的地圖就套用
+const SELL_RULE_DEF = { gear: 'sell', scroll: 'keep', book: 'keep', other: 'sell', boss: 'keep' };
+const bossSellCfg = () => { const x = bossCfg().sell || {}; return { on: !!x.on, rule: { ...SELL_RULE_DEF, ...(x.rule || {}) }, over: x.over && typeof x.over === 'object' ? x.over : {} }; };
+const sellCat = r => r[1] === 'gear' ? 'gear' : isScrollId(r[0]) ? 'scroll' : isBookId(r[0]) ? 'book' : 'other';
+function bossMapsAll() { return WORLD ? WORLD.maps.filter(m => (m.boss || []).length && !/_noboss$/.test(String(m.id))) : []; }
+function bossDropIds(m) { const set = new Set(); for (const id of m.boss || []) { const mob = WORLD.mobIdx[id]; if (mob) for (const r of dropsFor(m, mob)) if (Number(r[0])) set.add(Number(r[0])); } return set; }
+function bossSellCalc(mapId, sc) {
+  if (!WORLD || !mapId) return null;
+  const m = mapOf(mapId); if (!m) return null;
+  sc = sc || bossSellCfg();
+  const rows = sellRows(m.id).filter(r => r[4]); if (!rows.length) return null;
+  const bd = bossDropIds(m), ov = sc.over[m.id];
+  const ids = ov && Array.isArray(ov.itemIds) ? ov.itemIds.map(Number).filter(id => rows.some(r => r[0] === id))
+    : rows.filter(r => !(sc.rule.boss === 'keep' && bd.has(r[0])) && sc.rule[sellCat(r)] === 'sell').map(r => r[0]);
+  return { map: m, rows, bd, ids, keep: rows.length - ids.length, over: !!ov };
+}
+let bossSellSyncAt = 0;
+async function saveBossSell(next) {
+  const sc = { ...bossSellCfg(), ...next };
+  const sellMaps = {};
+  for (const m of bossMapsAll()) { const x = bossSellCalc(m.id, sc); if (x) sellMaps[m.id] = { enabled: x.ids.length > 0, itemIds: x.ids }; }
+  bossSellSyncAt = Date.now();
+  await saveBoss({ sell: { on: sc.on, rule: sc.rule, over: sc.over }, sellMaps });
+}
+// 遊戲更新了掉落資料：依規則重算一次存回去（一分鐘最多一次）
+function bossSellResync() {
+  const sc = bossSellCfg(); if (!sc.on || !WORLD || Date.now() - bossSellSyncAt < 60000) return;
+  bossSellSyncAt = Date.now();
+  const cur = bossCfg().sellMaps || {};
+  const diff = bossMapsAll().some(m => { const x = bossSellCalc(m.id, sc); const y = cur[m.id]; return x && (!y || y.itemIds.length !== x.ids.length || x.ids.some(id => !y.itemIds.includes(id))); });
+  if (diff) saveBossSell({}).catch(() => {});
+}
+function renderBossSell() {
+  const box = $('#bossSellOut'); if (!box) return;
+  if (!WORLD) { box.innerHTML = '<div class="dim">還沒有地圖資料</div>'; loadWorld().then(() => WORLD && renderBossSell()); return; }
+  const sc = bossSellCfg(), R = sc.rule;
+  const opt = (k, label) => `<div>${label}</div><div class="seg">${(k === 'boss' ? [['keep', '一律保留'], ['rule', '照上面的規則']] : [['sell', '賣掉'], ['keep', '保留']]).map(([v, n]) => `<button data-bsrule="${k}|${v}" class="${R[k] === v ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+  if (ui.bossSellEdit) {
+    const x = bossSellCalc(ui.bossSellEdit, sc); const m = mapOf(ui.bossSellEdit);
+    if (!x || !m) { box.innerHTML = '<div class="dim">這張圖沒有可以賣的掉落資料（遊戲分頁更新到新版腳本後會上傳）</div><button class="btn" data-bsback="1">← 回到全部的王</button>'; return; }
+    const dr = ui.bossSellDraft || (ui.bossSellDraft = new Set(x.ids));
+    const bossNames = (m.boss || []).map(id => (WORLD.mobIdx[id] || {}).name).filter(Boolean).join('、');
+    const groups = [['gear', '裝備'], ['scroll', '卷軸'], ['book', '技能書'], ['other', '其他道具']];
+    box.innerHTML = `<div class="bar"><button class="btn" data-bsback="1">← 全部的王</button><b>${esc(bossNames)}</b><span class="dim">${esc(m.name)}</span>${x.over ? '<span class="tag warn">個別調整中</span>' : '<span class="tag">目前用共用規則</span>'}</div>
+      <div class="dim sm">點一下切換：<b>💰＝撿到就賣</b>，沒標＝保留。👑＝王會掉的。到這張圖時中控會把這份設定套用到遊戲的自動販售。</div>
+      <div class="bar"><button class="btn sm" data-bsq="rule">照共用規則重選</button><button class="btn sm" data-bsq="allbutboss">王的掉落以外全賣</button><button class="btn sm" data-bsq="none">全部保留</button>
+        <span style="flex:1"></span><span class="dim">賣 <b>${dr.size}</b> 項、保留 ${x.rows.length - dr.size} 項</span><button class="btn primary" data-bssave="1">儲存（個別調整）</button>${x.over ? '<button class="btn" data-bsreset="1">恢復共用規則</button>' : ''}</div>
+      ${groups.map(([k, label]) => { const rs = x.rows.filter(r => sellCat(r) === k); return rs.length ? `<div class="dim sm" style="margin:6px 0 4px">${label}（${rs.length}）</div><div class="grid named">${rs.map(r => { const on = dr.has(r[0]), boss = x.bd.has(r[0]);
+        return `<div class="tile ${on ? 'sel sellx' : ''}" data-bsi="${r[0]}" title="${esc(r[2] + (r[3] ? `\n商店價 ${fmt(r[3])}` : '') + (boss ? '\n👑 王會掉的' : '') + (itemTip(r[0]) ? '\n' + itemTip(r[0]) : ''))}">${itemImg(r[0]) ? `<img src="${esc(itemImg(r[0]))}" loading="lazy" alt="" onerror="this.remove()">` : `<span class="nm">${esc(r[2].slice(0, 6))}</span>`}${on ? '<span class="l">💰</span>' : ''}${boss ? '<span class="p">👑</span>' : ''}<span class="tn">${esc(r[2])}</span></div>`; }).join('')}</div>` : ''; }).join('')}`;
+    return;
+  }
+  const maps = bossMapsAll().map(m => ({ m, x: bossSellCalc(m.id, sc), names: (m.boss || []).map(id => (WORLD.mobIdx[id] || {}).name).filter(Boolean).join('、'), lv: Math.max(0, ...(m.boss || []).map(id => (WORLD.mobIdx[id] || {}).lv || 0)) })).sort((a, b) => a.lv - b.lv);
+  box.innerHTML = `<div class="bar"><label><input type="checkbox" class="sw" id="bossSellOn" ${sc.on ? 'checked' : ''}> <b>到野王地圖時自動套用販售</b></label>
+      <span class="dim sm">開啟後，打王的角色到了王的地圖，中控會把那張圖的自動販售設成下面的結果（撿到就賣給商店；回練功圖時練功圖用它自己原本的設定）。</span></div>
+    <h4 style="margin:10px 0 2px">共用規則（套用到全部的王）</h4>
+    <div class="bsell-rule">${opt('gear', '小怪掉的裝備')}${opt('scroll', '卷軸')}${opt('book', '技能書')}${opt('other', '其他道具（雜物）')}${opt('boss', '👑 王會掉的東西')}</div>
+    <h4 style="margin:10px 0 4px">每隻王的結果 <span class="dim sm">要例外的按「調整」個別勾</span></h4>
+    <div class="bsell-maps">${maps.map(({ m, x, names, lv }) => `<div class="bsell-m ${x && x.over ? 'over' : ''}"><div class="hd"><b>${esc(names)}</b><span class="dim sm">Lv${lv || '?'}・${esc(m.name)}</span><button class="btn sm" data-bsedit="${esc(m.id)}">調整</button></div>
+      <div class="sm">${x ? `${x.over ? '<span class="warn">個別調整</span>' : '<span class="dim">共用規則</span>'}・賣 <b>${x.ids.length}</b> 項、保留 ${x.keep} 項${x.bd.size ? `<span class="dim">（王會掉 ${[...x.bd].filter(id => x.rows.some(r => r[0] === id)).length} 項）</span>` : ''}` : '<span class="dim">沒有可以賣的掉落資料</span>'}</div></div>`).join('') || '<div class="dim">還沒有野王地圖資料</div>'}</div>`;
+}
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('[data-bsrule],[data-bsedit],[data-bsback],[data-bsi],[data-bsq],[data-bssave],[data-bsreset]');
+  if (!t || !t.closest('#bossSellDrawer')) return;
+  const d = t.dataset, sc = bossSellCfg();
+  try {
+    if (d.bsrule) { const [k, v] = d.bsrule.split('|'); await saveBossSell({ rule: { ...sc.rule, [k]: v } }); renderBossSell(); renderBoss(); return; }
+    if (d.bsedit) { ui.bossSellEdit = d.bsedit; ui.bossSellDraft = null; renderBossSell(); return; }
+    if (d.bsback) { ui.bossSellEdit = null; ui.bossSellDraft = null; renderBossSell(); return; }
+    if (d.bsi) { const id = Number(d.bsi), dr = ui.bossSellDraft; if (dr.has(id)) dr.delete(id); else dr.add(id); renderBossSell(); return; }
+    if (d.bsq) {
+      const x = bossSellCalc(ui.bossSellEdit, { ...sc, over: {} }), dr = ui.bossSellDraft; if (!x) return;
+      dr.clear();
+      if (d.bsq === 'rule') x.ids.forEach(id => dr.add(id));
+      if (d.bsq === 'allbutboss') x.rows.filter(r => !x.bd.has(r[0])).forEach(r => dr.add(r[0]));
+      renderBossSell(); return;
+    }
+    if (d.bssave) { await saveBossSell({ over: { ...sc.over, [ui.bossSellEdit]: { itemIds: [...ui.bossSellDraft] } } }); ui.bossSellEdit = null; ui.bossSellDraft = null; renderBossSell(); renderBoss(); return; }
+    if (d.bsreset) { const o = { ...sc.over }; delete o[ui.bossSellEdit]; await saveBossSell({ over: o }); ui.bossSellDraft = null; renderBossSell(); renderBoss(); return; }
+  } catch (err) { alert('失敗：' + err.message); }
+});
+document.addEventListener('change', async e => {
+  if (e.target.id !== 'bossSellOn') return;
+  try { await saveBossSell({ on: e.target.checked }); } catch (err) { alert('失敗：' + err.message); }
+  renderBossSell(); renderBoss();
+});
 // ── 角色卡片：每隻角色各自點選要打的王 ──
 ui.bossCard = { q: '', only: false };
 function renderBossCards() {
@@ -3435,8 +3627,6 @@ function renderBossCards() {
   const q = ui.bossCard.q.trim();
   let cs = mapCandidates().filter(x => (!q || x.name.includes(q)) && (!ui.bossCard.only || (cm[x.id] || []).length));
   cs.sort((a, b) => ((cm[b.id] || []).length > 0) - ((cm[a.id] || []).length > 0) || hasTab(b.id) - hasTab(a.id) || (b.lv || 0) - (a.lv || 0));
-  const nOn = Object.keys(cm).length;
-  $('#bossWhoSum').innerHTML = `誰打哪些王 <span class="dim sm">${nOn ? `${nOn} 隻角色有勾` : '還沒有角色勾王'}</span>`;
   if (!mobs.length) { box.innerHTML = '<div class="dim">還沒有野王資料：打開遊戲分頁約 1 分鐘後會有。</div>'; return; }
   box.innerHTML = cs.map(x => {
     const mine = cm[x.id] || [], all = mine.includes('*'), set = new Set(mine), i = info[x.id], party = i && i.party;
@@ -3474,8 +3664,8 @@ document.addEventListener('click', async e => {
   await loadBoss(true); renderBoss(true);
 });
 document.addEventListener('input', e => {
-  if (e.target.id === 'bossCardQ') { ui.bossCard.q = e.target.value; renderBossCards(); }
-  if (e.target.id === 'bossCardOnly') { ui.bossCard.only = e.target.checked; renderBossCards(); }
+  if (e.target.id === 'bossCardQ') { ui.bossCard.q = e.target.value; renderBoss(); }
+  if (e.target.id === 'bossCardOnly') { ui.bossCard.only = e.target.checked; renderBoss(); }
 });
 
 // 打王中：每 3 秒更新血量
@@ -3484,17 +3674,18 @@ setInterval(async () => {
   await loadBoss(true); renderBoss();
 }, 3000);
 document.addEventListener('change', async e => {
-  const t = e.target; if (!t.closest || !t.closest('#bossCard')) return;
+  const t = e.target; if (!t.closest || !t.closest('#maps')) return;
   if (t.id === 'bossMode') {
-    if (t.value === 'auto' && !confirm('開啟後，勾選的角色會自動換到野王的地圖打王，打完（或時間到）再換回原本的地圖。建議先用「試跑」看紀錄確認會去打哪幾隻。確定開啟？')) { t.value = bossCfg().mode; enhanceSegs($('#bossCard')); return; }
+    if (t.value === 'auto' && !confirm('開啟後，勾選的角色會自動換到野王的地圖打王，打完再換回原本的地圖。建議先用「試跑」看紀錄確認會去打哪幾隻。確定開啟？')) { t.value = bossCfg().mode; enhanceSegs($('#bossCard')); return; }
     await saveBoss({ mode: t.value }); $('#bossMsg').textContent = '已儲存'; return;
   }
   if (t.id === 'bossPartyMode') { await saveBoss({ partyMode: ['split', 'mixed'].includes(t.value) ? t.value : 'together' }); await loadBoss(true); renderBoss(true); return; }
   if (t.dataset.bosstog) { const set = new Set(bossCfg().togetherMobs || []); if (t.checked) set.add(t.dataset.bosstog); else set.delete(t.dataset.bosstog); await saveBoss({ togetherMobs: [...set] }); return; }
   if (t.id === 'bossChain') { await saveBoss({ chain: t.checked }); renderBoss(true); return; }
   if (t.id === 'bossPresetBoss' || t.id === 'bossPresetTrain') { await saveBoss({ [t.id === 'bossPresetBoss' ? 'presetBoss' : 'presetTrain']: Number(t.value) || 0 }); renderBoss(true); return; }
-  if (t.id === 'bossEst') { await saveBoss({ estMax: Math.min(240, Math.max(1, Number(t.value) || 15)) }); return; }
-  if (t.id === 'bossVisit') { await saveBoss({ visitMax: Math.min(240, Math.max(1, Number(t.value) || 20)) }); return; }
+  if (t.id === 'bossEst') { await saveBoss({ estMax: Math.min(600, Math.max(1, Number(t.value) || 15)) }); await loadBoss(true); renderBoss(); return; }
+  if (t.id === 'bossStuck') { await saveBoss({ stuckMin: Math.min(30, Math.max(1, Number(t.value) || 3)) }); return; }
+  if (t.id === 'bossMaxMin') { await saveBoss({ maxMin: Math.min(600, Math.max(10, Number(t.value) || 180)) }); return; }
 });
 document.addEventListener('click', async e => {
   if (e.target.id === 'bossTogLvBtn') { const lv = Number($('#bossTogLv').value); if (!lv) { alert('先填等級'); return; } await saveBoss({ togetherMobs: bossList().filter(x => (x.lv || 0) >= lv).map(x => x.mob) }); renderBoss(true); return; }
@@ -3510,7 +3701,7 @@ ui.mpSel = new Set(); ui.wOpen = new Set(); ui.wSort = { key: 'minLevel', dir: 1
 let worldCheckAt = 0;
 async function worldFreshCheck() {
   if (!WORLD || Date.now() - worldCheckAt < 60000) return; worldCheckAt = Date.now();
-  try { const v = (await (await fetch('/api/world/version')).json()).version; if (v && v !== WORLD.version) { await loadWorld(); ptMapHtml = ''; nameIdx = null; dexDropIdx = null; if ($('#mpTarget')) $('#mpTarget').innerHTML = ''; renderAll(); } } catch (_) {}
+  try { const v = (await (await fetch('/api/world/version')).json()).version; if (v && v !== WORLD.version) { await loadWorld(); ptMapHtml = ''; nameIdx = null; dexDropIdx = null; renderAll(); } } catch (_) {}
 }
 async function loadWorld() { try { const w = await (await fetch('/api/world')).json(); if (w && w.maps) { WORLD = w; indexWorld(); } } catch (_) {} }
 function indexWorld() {
@@ -3547,24 +3738,25 @@ function mapCandidates() {
 function renderMaps() {
   if (!WORLD) { loadWorld().then(() => { $('#wMissing').style.display = WORLD ? 'none' : ''; if (WORLD) renderMaps(); }); return; }
   $('#wMissing').style.display = 'none';
-  // 角色勾選
-  const cs = mapCandidates();
-  $('#mpChars').innerHTML = `<div class="chips">${cs.map(c => { const m = mapOf(c.map); return `<label title="${esc(m ? m.name : '')}"><input type="checkbox" data-mpsel="${c.id}" ${ui.mpSel.has(c.id) ? 'checked' : ''}>${esc(c.name)} <span class="dim">Lv${c.lv}${m ? '・' + esc(m.name) : ''}${hasTab(c.id) ? '' : '（沒分頁）'}</span></label>`; }).join('')}</div>`;
-  $('#mpSelInfo').textContent = `已選 ${ui.mpSel.size} 隻`;
-  renderEffHints();
-  if (!$('#mpTarget').options.length) {
-    const byR = {}; for (const m of WORLD.maps) (byR[m.region || '其他'] || (byR[m.region || '其他'] = [])).push(m);
-    $('#mpTarget').innerHTML = Object.entries(byR).map(([r, ms]) => `<optgroup label="${esc(r)}">${ms.sort((a, b) => a.minLevel - b.minLevel || a.lvMin - b.lvMin).map(m => `<option value="${esc(m.id)}">${esc(m.name)}（Lv${m.minLevel}＋，怪 ${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}）</option>`).join('')}</optgroup>`).join('');
-    $('#wRegion').innerHTML = '<option value="">全部區域</option>' + Object.keys(byR).map(r => `<option>${esc(r)}</option>`).join('');
-  }
-  // 組隊：隊長選單＋目前隊伍
-  const seen = new Set(), parties = [];
-  for (const s of snaps()) { const p = s.party && s.party.party; if (p && p.members && !seen.has(p.code)) { seen.add(p.code); parties.push(p); } }
-  $('#ptNow').innerHTML = parties.length ? parties.map(p => `<div>${p.members.map(m => `${m.leader ? ic('crown') : ''}${esc(m.name)} <span class="dim">Lv${m.lv}・${esc((mapOf(m.map) || {}).name || m.map || '')}${m.auto ? '' : '・未掛機'}</span>`).join('、')}</div>`).join('') : '<span class="dim">目前回報的角色都沒有隊伍（只看得到各帳號目前角色的隊伍）</span>';
-  const ij = (DATA.jobs || []).filter(j => j.kind === 'idle' && !j.partyRun && (j.batches[0].targets || []).some(x => x.action === 'map')).slice(-8).reverse();
-  $('#ptJobs').innerHTML = ij.length ? ij.map(j => { const st = JOB_STATUS[j.status] || [j.status, '']; return `<div style="margin:4px 0"><span class="dim">${clock(j.createdAt)}</span> <span class="${st[1]}">${st[0]}</span> ${esc(j.fromName)}：${(j.log || []).slice(-4).map(l => esc(l.msg)).join(' → ')}</div>`; }).join('') : '<span class="dim">還沒有</span>';
-  renderWorldItem(); renderWorldMaps();
+  bossSellResync();
 }
+// 圖鑑的「地圖查詢」「掉落物查詢」（v0.69 從地圖分頁搬過來）
+function renderDexWorld() {
+  if (!WORLD) { loadWorld().then(() => WORLD && renderDexWorld()); return; }
+  if ($('#wRegion').options.length <= 1) { const rs = [...new Set(WORLD.maps.map(m => m.region || '其他'))]; $('#wRegion').innerHTML = '<option value="">全部區域</option>' + rs.map(r => `<option>${esc(r)}</option>`).join(''); }
+  $('#dexMapsCard').style.display = ui.dexView === 'maps' ? '' : 'none';
+  $('#dexItemsCard').style.display = ui.dexView === 'items' ? '' : 'none';
+  if (ui.dexView === 'maps') renderWorldMaps(); else renderWorldItem();
+}
+ui.dexView = 'equip';
+function setDexView(v) {
+  ui.dexView = v;
+  document.querySelectorAll('#dexView button').forEach(b => b.classList.toggle('on', b.dataset.dexview === v));
+  $('#dexWorld').style.display = v === 'equip' ? 'none' : '';
+  $('#dexEquipCard').style.display = v === 'equip' ? '' : 'none'; $('#dexGrid').style.display = v === 'equip' ? '' : 'none';
+  if (v === 'equip') renderDex(); else renderDexWorld();
+}
+document.addEventListener('click', e => { const t = e.target.closest && e.target.closest('[data-dexview]'); if (t) setDexView(t.dataset.dexview); });
 function renderWorldMaps() {
   const reg = $('#wRegion').value, lv = Number($('#wLv').value) || 0, q = $('#wSearch').value.trim(), boss = $('#wBoss').checked;
   const here = {}; for (const s of snaps()) { const m = mapOf(s.char.map); if (m) (here[m.id] || (here[m.id] = [])).push(s.char.name); }
@@ -3601,27 +3793,6 @@ function renderWorldItem() {
   $('#wItemOut').innerHTML = out.length ? `<table><thead><tr><th class="nosort">道具</th><th class="nosort num">機率</th><th class="nosort">數量</th><th class="nosort">怪物</th><th class="nosort">地圖</th><th class="nosort num">地圖最低等級</th></tr></thead><tbody>${out.slice(0, 200).map(o =>
     `<tr><td>${iname(o.id, o.item)}</td><td class="num"><b>${chancePct(o.r[3])}</b></td><td>${o.r[1]}${o.r[2] > o.r[1] ? '~' + o.r[2] : ''}</td><td>${mobImg(o.mob)}${esc(o.mob.name)} <span class="dim">Lv${o.mob.lv}${o.mob.isBoss ? '・王' : ''}</span></td><td>${esc(o.map.name)} <span class="dim">${esc(o.map.region || '')}</span></td><td class="num">${o.map.minLevel}</td></tr>`).join('')}</tbody></table>${out.length > 200 ? '<div class="dim">只列前 200 筆</div>' : ''}`
     : `<div class="dim">找不到「${esc(q)}」的掉落資料（${ids.length ? '有這個道具，但沒有怪物掉' : '沒有這個名稱的道具'}）</div>`;
-}
-
-// ---- 練功效率提示（依實戰 DPS 的溢傷比例） ----
-function renderEffHints() {
-  const out = [];
-  for (const s of snaps()) {
-    const d = dpsOf(s.char.id), m = mapOf(s.char.map);
-    if (!d || !m || d.w60.span < 5 * 60000 || !d.w60.dmg || !hasTab(s.char.id)) continue;
-    const eff = d.w60.eff / d.w60.dmg;
-    if (eff >= 0.75) continue;
-    const c = { id: s.char.id, name: s.char.name, lv: s.char.lv, job: s.char.job, jobName: s.char.jobName, kcap: 2400, power: d.w60.dps * 3600 / hitFactor(s.char.lv, m) };
-    const kph = d.w60.kills / (d.w60.span / 3600000); if (kph > 0) c.kcap = Math.max(2400, kph * 1.2);
-    const best = WORLD.maps.filter(x => x.xpHp > 0 && x.minLevel <= c.lv && !(x.boss || []).length).map(x => groupEstimate([c], x)).sort((a, b) => b.total - a.total)[0];
-    const here = groupEstimate([c], m);
-    out.push({ s, d, eff, best, here, gain: best && here.total ? best.total / here.total - 1 : 0 });
-  }
-  out.sort((a, b) => a.eff - b.eff);
-  $('#effCard').style.display = out.length ? '' : 'none';
-  $('#effHints').innerHTML = out.map(o => `<div class="attn-row warn"><span class="ic"><span class="lamp warn"></span></span><span class="tx"><b>${esc(o.s.char.name)}</b> 在 ${esc(o.s.char.mapName || '')}：有效傷害只有 <b>${(o.eff * 100).toFixed(0)}%</b>（DPS ${short(o.d.w60.dps)}、每小時擊殺 ${fmt(Math.round(o.d.w60.kills / (o.d.w60.span / 3600000)))}）
-    ${o.best && o.best.map.id !== o.s.char.map && o.gain > 0.05 ? `<span class="dim">→ 建議 <b style="color:var(--text)">${esc(o.best.map.name)}</b>（怪 Lv${o.best.map.lvMin}~${o.best.map.lvMax}，估計經驗 ${o.gain >= 0 ? '+' : ''}${(o.gain * 100).toFixed(0)}%）</span>` : '<span class="dim">→ 目前地圖已經是估算裡最好的選擇</span>'}</span>
-    ${o.best && o.best.map.id !== o.s.char.map && o.gain > 0.05 ? `<span class="act"><button class="btn" data-effgo="${o.s.char.id}|${esc(o.best.map.id)}">換過去</button></span>` : ''}</div>`).join('');
 }
 
 // 角色輸出能力（每小時傷害）與出手上限：有實戰 DPS 用實戰，否則用每小時經驗反推
@@ -3678,13 +3849,6 @@ function groupEstimate(members, map) {
   const per = dmg.map(x => ({ ...x, exp: x.eligible ? totalExp * (0.6 * x.d / eD + 0.4 * x.c.lv / eL) : 0 }));
   return { map, per, total: per.reduce((a, x) => a + x.exp, 0), partyMult, holyMult, buffs: [...new Set(buffs.map(b => b.name))] };
 }
-function runPlanner() {
-  const pick = mapCandidates().filter(c => ui.mpSel.has(c.id));
-  if (!pick.length) { $('#ppOut').innerHTML = '<div class="warn">先在上方勾選角色</div>'; return; }
-  const res = planGroups(pick, Math.min(6, Math.max(1, Number($('#ppSize').value) || 6)), $('#ppKeepMap').checked);
-  ui.ppRes = res;
-  renderPlannerOut(res);
-}
 // 建議分組（地圖頁的組隊效率試算、組隊頁的「自動排一版」共用）：回傳 [{g: 角色們, best: {map, total…}, alt, cur}]
 function planGroups(pick, size, keepMap) {
   // 1) 反推輸出能力：每小時經驗 ÷ 目前地圖的經驗/血量（以單人估）
@@ -3714,48 +3878,14 @@ function planGroups(pick, size, keepMap) {
   });
   return res;
 }
-function renderPlannerOut(res) {
-  $('#ppOut').innerHTML = res.map((r, i) => {
-    if (!r.best) return `<div class="card"><b>第 ${i + 1} 組</b>：找不到所有人都能進的地圖</div>`;
-    const b = r.best, gain = r.cur ? (b.total / r.cur - 1) : null;
-    return `<div class="card" style="margin:8px 0"><div class="bar"><b>第 ${i + 1} 組</b>　建議地圖 <b>${esc(b.map.name)}</b> <span class="dim">${esc(b.map.region || '')}・怪 Lv${b.map.lvMin}~${b.map.lvMax}</span>
-      <span>組隊加成 ×${b.partyMult.toFixed(1)}${b.holyMult > 1 ? `・神聖祈禱 ×${b.holyMult.toFixed(2)}` : ''}</span>
-      <span>估計合計 <b>${short(b.total)}</b>/小時${r.cur ? `（目前合計 ${short(r.cur)}，${gain >= 0 ? '+' : ''}${(gain * 100).toFixed(0)}%）` : ''}</span>
-      <button class="btn primary" data-ppgo="${i}">這組全部換到這張圖</button></div>
-      ${b.buffs.length ? `<div class="dim">隊伍增益：${esc(b.buffs.join('、'))}</div>` : '<div class="dim">隊伍增益：無（加一位祭司可大幅提升經驗）</div>'}
-      <table><thead><tr><th class="nosort">角色</th><th class="nosort">職業</th><th class="nosort num">Lv</th><th class="nosort">目前地圖</th><th class="nosort num">目前每小時</th><th class="nosort num">估計每小時</th><th class="nosort">備註</th></tr></thead><tbody>
-      ${b.per.map(x => `<tr><td>${esc(x.c.name)}</td><td class="dim">${esc(x.c.jobName || x.c.job)}</td><td class="num">${x.c.lv}</td><td class="dim">${esc(x.c.curMap ? x.c.curMap.name : '—')}</td><td class="num">${x.c.cur ? short(x.c.cur) : '—'}</td><td class="num">${short(x.exp)}</td>
-        <td class="dim">${[!x.eligible && '<span class="bad">等級太低，分不到經驗</span>', x.hf < 1 && x.eligible && `命中約 ${(x.hf * 100).toFixed(0)}%`, x.c.guess ? '能力用同等級推估' : x.c.src && `能力依${x.c.src}`, x.c.curParty].filter(Boolean).join('、')}</td></tr>`).join('')}</tbody></table>
-      ${r.alt.length ? `<div class="dim">其他選擇：${r.alt.map(a => `${esc(a.map.name)}（${short(a.total)}/小時）`).join('、')}</div>` : ''}</div>`;
-  }).join('');
-}
-document.addEventListener('click', async e => {
+document.addEventListener('click', e => {
   const t = e.target;
   const row = t.closest && t.closest('[data-wmap]');
   if (row) { const id = row.dataset.wmap; if (ui.wOpen.has(id)) ui.wOpen.delete(id); else ui.wOpen.add(id); renderWorldMaps(); return; }
   if (t.dataset && t.dataset.wsort) { const k = t.dataset.wsort; ui.wSort = { key: k, dir: ui.wSort.key === k ? -ui.wSort.dir : 1 }; renderWorldMaps(); return; }
-  if (t.id === 'mpAll') { mapCandidates().forEach(c => ui.mpSel.add(c.id)); renderMaps(); }
-  if (t.id === 'mpNone') { ui.mpSel.clear(); renderMaps(); }
-  if (t.id === 'mpActive') { ui.mpSel.clear(); mapCandidates().filter(c => hasTab(c.id)).forEach(c => ui.mpSel.add(c.id)); renderMaps(); }
-  if (t.id === 'ppRun') runPlanner();
-  const sendMoves = async (list, map) => {
-    const ok = list.filter(c => c.lv >= map.minLevel), low = list.filter(c => c.lv < map.minLevel);
-    if (!ok.length) { $('#mpMsg').textContent = '勾選的角色等級都不夠'; return; }
-    if (!confirm(`把 ${ok.length} 隻角色送到「${map.name}」？${low.length ? `\n略過等級不足：${low.map(c => c.name).join('、')}` : ''}`)) return;
-    const r = await api('/api/idle', { targets: ok.map(c => ({ charId: c.id, action: 'map', map: map.id, mapName: map.name })) });
-    $('#mpMsg').textContent = `已送出 ${ok.length} 隻（${r.jobs.length} 個帳號），進度看下方「最近的換圖進度」`;
-    await poll(true);
-  };
-  try {
-    if (t.id === 'mpGo') { const map = mapOf($('#mpTarget').value); const list = mapCandidates().filter(c => ui.mpSel.has(c.id)); if (!list.length) { $('#mpMsg').textContent = '先勾選角色'; return; } await sendMoves(list, map); }
-    if (t.dataset && t.dataset.ppgo !== undefined) { const r = ui.ppRes[Number(t.dataset.ppgo)]; await sendMoves(r.g, r.best.map); }
-    if (t.dataset && t.dataset.effgo) { const [cid, mid] = t.dataset.effgo.split('|'); const c = mapCandidates().find(x => x.id === cid), m = WORLD.maps.find(x => String(x.id) === mid); if (c && m) await sendMoves([c], m); }
-  } catch (err) { alert('失敗：' + err.message); }
 });
 document.addEventListener('change', e => {
-  const t = e.target;
-  if (t.dataset && t.dataset.mpsel) { if (t.checked) ui.mpSel.add(t.dataset.mpsel); else ui.mpSel.delete(t.dataset.mpsel); renderMaps(); return; }
-  if (['wRegion', 'wBoss'].includes(t.id)) renderWorldMaps();
+  if (['wRegion', 'wBoss'].includes(e.target.id)) renderWorldMaps();
 });
 document.addEventListener('input', e => {
   if (['wSearch', 'wLv'].includes(e.target.id)) renderWorldMaps();
@@ -4015,7 +4145,7 @@ document.addEventListener('click', async e => {
       // 已送出移動的，派工指定清掉（角色到了之後就會顯示在那張圖）
       for (const tg of targets) if (tg.action === 'map') delete cfg.assign[tg.charId];
       saveBoard(cfg);
-      $('#bdMsg').textContent = `已送出 ${targets.length} 項（${r.jobs.length} 個帳號），進度看地圖分頁的「最近的換圖進度」或稍後重新整理`;
+      $('#bdMsg').textContent = `已送出 ${targets.length} 項（${r.jobs.length} 個帳號），進度看「工作」或稍後重新整理`;
       await poll(true); return;
     }
   } catch (err) { alert('失敗：' + err.message); }
@@ -5756,10 +5886,11 @@ function dexDrops(id) {
   }
   return dexDropIdx[id] || [];
 }
-// 到地圖分頁打開那張圖的明細
+// 到圖鑑的「地圖查詢」打開那張圖的明細
 function dexGotoMap(mapId) {
   const m = mapOf(mapId); if (!m) return;
-  document.querySelector('nav button[data-tab="maps"]').click();
+  if (document.querySelector('nav button.on').dataset.tab !== 'dex') document.querySelector('nav button[data-tab="dex"]').click();
+  setDexView('maps');
   $('#wRegion').value = ''; $('#wLv').value = ''; $('#wBoss').checked = false; $('#wSearch').value = m.name;
   ui.wOpen.add(m.id); renderWorldMaps();
   setTimeout(() => { const r = document.querySelector(`#wMaps [data-wmap="${CSS.escape(m.id)}"]`); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
@@ -5820,7 +5951,7 @@ function renderDex() {
     const srcHtml = !src.length ? `<div class="src dim">沒有怪物掉（商店、任務或活動）</div>`
       : `<div class="src"><a data-dexsrc="${id}" title="看全部掉落地點">${open ? '▾' : '▸'} 掉落 ${src.length} 處</a>・最高 <b>${chancePct(top.c)}</b> <span class="dim">${esc(top.mob.name)}＠${esc(top.map.name)}</span></div>`
         + (open ? `<div class="srcs">${src.slice(0, 30).map(x => `<div class="sr"><span class="p"><b>${chancePct(x.c)}</b></span><span class="w">${mobImg(x.mob)}${esc(x.mob.name)} <span class="dim">Lv${x.mob.lv}${x.mob.isBoss ? '・王' : ''}${x.q ? '・任務' : ''}</span><br><span class="dim">${esc(x.map.name)}・Lv${x.map.minLevel}＋</span></span>
-            <span class="b"><button class="btn sm" data-dexmap="${esc(x.map.id)}" title="到地圖分頁看這張圖">地圖</button><button class="btn sm" data-dexboard="${esc(x.map.id)}|${id}" title="放進派工的「打裝備」並把這件設成目標">派工</button></span></div>`).join('')}${src.length > 30 ? `<div class="dim sm">只列機率最高的 30 處</div>` : ''}</div>` : '');
+            <span class="b"><button class="btn sm" data-dexmap="${esc(x.map.id)}" title="到圖鑑的「地圖查詢」看這張圖">地圖</button><button class="btn sm" data-dexboard="${esc(x.map.id)}|${id}" title="放進派工的「打裝備」並把這件設成目標">派工</button></span></div>`).join('')}${src.length > 30 ? `<div class="dim sm">只列機率最高的 30 處</div>` : ''}</div>` : '');
     return `<div class="dex-card ${open ? 'open' : ''}" title="${esc(itemTip(id) || name)}"><div class="ic">${u ? `<img src="${esc(u)}" loading="lazy" alt="" onerror="this.remove()">` : ''}</div>
       <div class="nm">${esc(name)}${n ? ` <span class="own">✓ 有 ${n} 件</span>` : ''}</div>
       <div class="sub">Lv${lv}・${esc(dexSlotName(type))}・${esc(dexJobText(job))}${tuc ? `・可衝 ${tuc} 次` : ''}</div>
@@ -5863,7 +5994,7 @@ function renderAll() {
   const active = document.querySelector('nav button.on').dataset.tab;
   if (active === 'overview') { renderOverview(); renderIdleCard(); }
   if (active === 'gear') { renderGear(); renderAS(); }
-  if (active === 'dex') renderDex();
+  if (active === 'dex') { if (ui.dexView === 'equip') renderDex(); else renderDexWorld(); }
   if (active === 'trade') renderTrade();
   if (active === 'bag') renderBag();
   if (active === 'quiz') loadQuiz().then(renderQuiz);

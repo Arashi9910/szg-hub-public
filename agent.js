@@ -1600,7 +1600,8 @@ function agentMain(ctx) {
 
       // 打一隻：回傳 {result, text, hp, maxHp, inst}
       const fightOne = async () => {
-        const t0 = Date.now(), maxMs = Math.max(1, Number(b.visitMax) || 20) * 60000;
+        // 血量有在掉就打到死（stuckMin 分鐘完全沒掉血才離開）；maxMin＝安全上限。v0.69 以前的 visitMax 會讓打很久的王打到一半時間到
+        const t0 = Date.now(), maxMs = Math.max(10, Number(b.maxMin) || 180) * 60000, stuckMs = Math.max(1, Number(b.stuckMin) || 3) * 60000;
         const row = ((st && st.bossRespawns) || []).find(r => r.mob === b.mob);
         const srvNow = Number(st && st.serverTime) || Date.now();
         if (row && row.available && row.deadline > srvNow) return { result: 'cooling', text: `還在冷卻，約 ${Math.ceil((row.deadline - srvNow) / 60000)} 分鐘後重生，這次不去` };
@@ -1611,8 +1612,14 @@ function agentMain(ctx) {
         await sleepP(1200);
         deathBossJob = { charId: id, name: b.name, at: Date.now() };
         const presetMsg = await usePreset(b.presetBoss);
+        // 野王地圖的自動販售（遊戲只接受角色目前所在地圖，所以到了才套用）
+        let sellMsg = '';
+        if (b.sell && Array.isArray(b.sell.itemIds)) {
+          try { await gameRetry({ type: 'autoSell', characterId: id, map: b.map, config: { enabled: !!b.sell.enabled, itemIds: b.sell.itemIds } }); sellMsg = b.sell.enabled ? `，自動販售 ${b.sell.itemIds.length} 項` : '，自動販售關閉'; }
+          catch (e) { if (e.gameUpdated) throw e; sellMsg = `（自動販售沒套用：${e.message}）`; }
+        }
         const idleOk = await startIdle();
-        await report(job, { event: 'log', msg: `已前往 ${b.mapName}${presetMsg}${idleOk ? '，已開始掛機' : '（開始掛機失敗）'}（打完${b.chain ? '看還有沒有下一隻，沒有就' : ''}回 ${backName || '原地圖'}）` });
+        await report(job, { event: 'log', msg: `已前往 ${b.mapName}${presetMsg}${sellMsg}${idleOk ? '，已開始掛機' : '（開始掛機失敗）'}（打完${b.chain ? '看還有沒有下一隻，沒有就' : ''}回 ${backName || '原地圖'}）` });
         let idleAt = Date.now();
         let cdChecked = false, seen = false, gone = 0, hp = null, maxHp = null, lowest = Infinity, dropAt = Date.now(), postAt = 0, res = '';
         while (!res) {
@@ -1637,7 +1644,7 @@ function agentMain(ctx) {
           else if (!seen && Date.now() - t0 > 45000) res = 'absent';
           else if (ch.hp != null && Number(ch.hp) <= 0) res = 'dead';
           else if (Date.now() - t0 > maxMs) res = 'timeout';
-          else if (seen && Date.now() - dropAt > 3 * 60000) res = 'stuck';
+          else if (seen && Date.now() - dropAt > stuckMs) res = 'stuck';
           if (!res && hp != null) {
             setBadge(null, `野王：${b.name} 剩 ${pct(hp, maxHp)}%`);
             hub('POST', '/api/boss/hp', { charId: id, instanceId: inst, mob: b.mob, hp, maxHp }).catch(() => {});
@@ -1653,8 +1660,8 @@ function agentMain(ctx) {
         const mins = Math.max(1, Math.round((Date.now() - t0) / 60000));
         const left = hp != null && maxHp ? `（王剩 ${pct(hp, maxHp)}%，血量會保留）` : '';
         const text = {
-          killed: `打死了，花了約 ${mins} 分鐘`, timeout: `打了 ${mins} 分鐘還沒打死${left}`, dead: `角色倒下${left}`,
-          absent: '到了地圖但王不在場上', stuck: `3 分鐘內血量都沒有下降，先放棄${left}`, moved: '中途被換到別的地圖，停止',
+          killed: `打死了，花了約 ${mins} 分鐘`, timeout: `打了 ${mins} 分鐘（安全上限）還沒打死${left}`, dead: `角色倒下${left}`,
+          absent: '到了地圖但王不在場上', stuck: `${Math.round(stuckMs / 60000)} 分鐘內血量都沒有下降，先放棄${left}`, moved: '中途被換到別的地圖，停止',
         }[res] || res;
         return { result: res, text, hp, maxHp, inst, ms: Date.now() - t0 };
       };

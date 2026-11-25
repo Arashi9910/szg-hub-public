@@ -673,10 +673,11 @@ function automationInfo() {
 //    available＝王已死、可以付費重生（＝冷卻中，deadline 是預計重生時間）；deadline 0／已過且 available=false＝進地圖就會出現
 //  - 戰鬥中的怪在同步回應的 enemies（{id, hp, maxHp}）；離開首領地圖時王的血量與冷卻會保留
 //  - 付費重生（bossRespawn，10 點或 1000 萬楓幣）不使用
-// settings.boss = { mode: off|preview|auto, chars: {角色: true}, charSpec, mobs: null(全部)|[mob], estMax(分), visitMax(分) }
+// settings.boss = { mode: off|preview|auto, charMobs, estMax(分), stuckMin(分：血量多久沒降就離開), maxMin(分：安全上限), sell:{on, rule, over}, sellMaps:{地圖:{enabled,itemIds}}（面板依規則算好的） … }
+// v0.69：visitMax（每次最多打 N 分鐘）不再用——打很久的王（海怒斯、噴火龍、格瑞芬多）會打到一半被時間到、連續打拉去別的王
 // db.boss = { state: {角色: {at, offset, list}}, hp: {instanceId: {hp, maxHp, at}}, last: {角色|mob: {at, result}}, home: {角色: map}, log, seen }
 // 0.43.0：換圖後開始掛機、掛機設定組合。舊腳本的分頁會先重新整理換新腳本再接工作（避免舊腳本打王不開掛機、站著發呆）
-BAG_KINDS.add('boss'); KIND_MIN_AGENT.boss = '0.43.0';
+BAG_KINDS.add('boss'); KIND_MIN_AGENT.boss = '0.69.0'; // 0.69：血量有在掉就打到死、到王的地圖套用自動販售
 const BOSS_RETRY_MS = 30 * 60 * 1000;   // 沒打成功（逾時、倒下、王不在）的同一隻王，30 分鐘內不再去
 const BOSS_STATE_STALE = 20 * 60 * 1000; // 王的狀態超過這麼久沒更新就先不派
 // 每隻角色各自要打的王：settings.boss.charMobs = {角色: ['*']（全部）| [王 id…]}，空的／沒有＝不打。
@@ -694,7 +695,9 @@ function bossCfg() {
     partyMode: ['split', 'mixed'].includes(b.partyMode) ? b.partyMode : 'together',
     togetherMobs: Array.isArray(b.togetherMobs) ? b.togetherMobs.map(String) : [],
     chain: b.chain !== false,                                    // 連續打：打完一隻直接去下一隻，全部打完才回練功圖
-    estMax: Number(b.estMax) > 0 ? Number(b.estMax) : 15, visitMax: Number(b.visitMax) > 0 ? Number(b.visitMax) : 20,
+    estMax: Number(b.estMax) > 0 ? Number(b.estMax) : 15,
+    stuckMin: Math.min(30, Math.max(1, Number(b.stuckMin) || 3)), maxMin: Math.min(600, Math.max(10, Number(b.maxMin) || 180)),
+    sellOn: !!(b.sell && b.sell.on), sellMaps: b.sellMaps && typeof b.sellMaps === 'object' ? b.sellMaps : {},
     presetBoss: [1, 2, 3].includes(Number(b.presetBoss)) ? Number(b.presetBoss) : 0,   // 0＝不切換
     presetTrain: [1, 2, 3].includes(Number(b.presetTrain)) ? Number(b.presetTrain) : 0 }; // 0＝換回出發前用的那套
 }
@@ -810,6 +813,13 @@ function bossPick(ids, c, now, busyInst, mobOk, dpsIds, stateIds) {
     .sort((x, y) => (x.estSec == null) - (y.estSec == null) || (x.estSec || 0) - (y.estSec || 0))[0] || null;
 }
 // 出發（試跑只寫紀錄）：go 的每隻各一個 boss 工作；code＝隊伍代碼（一起打）或 null（自己打）
+// 野王地圖的自動販售（面板依「共用規則＋個別調整」算好存在 sellMaps）；沒開＝null（不動遊戲裡那張圖的設定）
+function bossSellOf(c, map) {
+  const x = c.sellOn && c.sellMaps[map];
+  if (!x || !Array.isArray(x.itemIds)) return null;
+  const ids = x.itemIds.map(Number).filter(n => n > 0).slice(0, 500);
+  return { enabled: !!x.enabled && ids.length > 0, itemIds: ids };
+}
 function bossDispatch(c, charId, unitIds, code, go, r, busyInst, now) {
   const b = bossDb();
   const est = r.estSec != null ? `預估 ${Math.max(1, Math.round(r.estSec / 60))} 分鐘` : '還沒有實戰 DPS，無法預估';
@@ -828,7 +838,7 @@ function bossDispatch(c, charId, unitIds, code, go, r, busyInst, now) {
     const job = {
       id: crypto.randomBytes(6).toString('hex'), kind: 'boss', status: 'approved', auto: true, createdAt: now, approvedAt: now,
       fromCharId: id, fromName: snap.char.name, fromCode: snap.playerCode, toCharId: id, toName: snap.char.name, toCode: snap.playerCode,
-      batches: [{ items: [], gear: [], money: 0, boss: { mob: r.mob, name: r.name, map: r.map, mapName: r.mapName, instanceId: r.instanceId, back: b.home[id] || '', backName: homeName, visitMax: c.visitMax, presetBoss: c.presetBoss, presetTrain: c.presetTrain, chain: c.chain, unit: code || '', party: code ? names : null } }],
+      batches: [{ items: [], gear: [], money: 0, boss: { mob: r.mob, name: r.name, map: r.map, mapName: r.mapName, instanceId: r.instanceId, back: b.home[id] || '', backName: homeName, stuckMin: c.stuckMin, maxMin: c.maxMin, sell: bossSellOf(c, r.map), presetBoss: c.presetBoss, presetTrain: c.presetTrain, chain: c.chain, unit: code || '', party: code ? names : null } }],
       batchIndex: 0, log: [], lastMsg: '',
     };
     jobLog(job, `自動：${who}去 ${r.mapName} 打 ${r.name}（${est}）`);
@@ -911,7 +921,7 @@ function bossNext(e) {
         .filter(x => !parts.some(id => { const l = b.last[id + '|' + x.mob]; return l && l.result !== 'killed' && l.result !== 'cooling' && now - l.at < BOSS_RETRY_MS; }))
         .sort((x, y) => (x.estSec == null) - (y.estSec == null) || (x.estSec || 0) - (y.estSec || 0))[0] || null;
     }
-    dec = bossNextDec[key] = { at: now, boss: r ? { mob: r.mob, name: r.name, map: r.map, mapName: r.mapName, instanceId: r.instanceId } : null };
+    dec = bossNextDec[key] = { at: now, boss: r ? { mob: r.mob, name: r.name, map: r.map, mapName: r.mapName, instanceId: r.instanceId, sell: bossSellOf(c, r.map) } : null };
     if (r) bossLog(e.charId, `連續打：${parts.length > 1 ? `隊伍 ${parts.map(charName).join('、')} 一起` : ''}接著去 ${r.mapName} 打 ${r.name}`);
   }
   if (!dec.boss) return { none: true, why: '沒有其他已重生的王' };
