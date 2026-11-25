@@ -599,7 +599,7 @@
       <div id="ovTable"></div>
     </div>
     <details class="card" id="deathCard"><summary><b>💀 死亡與復活</b>　<span id="deathSum" class="dim"></span></summary>
-      <div class="dim help-src">中控從遊戲分頁的同步資料判斷角色死亡，記下死在哪、被什麼打倒（打到角色的怪、遊戲紀錄、HP 藥水是否用完、是不是在打王），以及每次是誰復活的（中控自動、遊戲自己的自動復活、其他＝你手動）。需要那個帳號有遊戲分頁或背景 Chrome 在跑才記得到。</div>
+      <div class="dim help-src">每隻角色死了幾次、死在哪張圖；在野王地圖死的（中控派去打王、或你自己帶去）會寫是打哪隻王。需要那個帳號有遊戲分頁或背景 Chrome 在跑才記得到。</div>
       <div id="deathOut" style="margin-top:6px"></div>
     </details>
     <div id="ovBar" class="action-bar"></div>
@@ -1410,7 +1410,6 @@ document.addEventListener('click', e => {
 });
 // ================= 死亡與復活 =================
 let DEATHS = null, deathsAt = 0;
-const RV_LABEL = { hub: '中控', game: '遊戲自動', other: '其他／手動' };
 async function loadDeaths(force) {
   if (!force && Date.now() - deathsAt < 15000) return;
   deathsAt = Date.now();
@@ -1419,22 +1418,17 @@ async function loadDeaths(force) {
 }
 function renderDeaths() {
   const D = DEATHS; if (!D) return;
-  const n24 = D.chars.reduce((a, c) => a + c.d24, 0), nAll = D.chars.reduce((a, c) => a + c.deaths, 0), rvAll = D.chars.reduce((a, c) => a + c.revives, 0);
-  $('#deathSum').textContent = nAll ? `24 小時內死亡 ${n24} 次・累計死亡 ${nAll} 次、復活 ${rvAll} 次` : '還沒有紀錄';
+  const n24 = D.chars.reduce((a, c) => a + c.d24, 0), nAll = D.chars.reduce((a, c) => a + c.deaths, 0);
+  $('#deathSum').textContent = nAll ? `24 小時內死亡 ${n24} 次・累計 ${nAll} 次` : '還沒有紀錄';
   if (!$('#deathCard').open) return;
   if (!D.chars.length) { $('#deathOut').innerHTML = '<span class="dim">還沒有死亡紀錄</span>'; return; }
-  const tbl = `<table><thead><tr><th>角色</th><th title="最近 1 小時">1 小時</th><th>24 小時</th><th>累計死亡</th><th>復活次數</th><th>最常見的原因</th><th>最近一次</th><th></th></tr></thead><tbody>` +
+  const place = p => p.boss ? `<span class="tag warn">打王 ${esc(p.boss)}</span> ${esc(p.map)}` : esc(p.map);
+  const tbl = `<table><thead><tr><th>角色</th><th title="最近 1 小時">1 小時</th><th>24 小時</th><th>累計</th><th>死在哪（次數）</th><th>最近一次</th><th></th></tr></thead><tbody>` +
     D.chars.map(c => `<tr><td>${esc(c.name)}</td><td>${c.d1 || ''}</td><td>${c.d24 || ''}</td><td>${c.deaths}</td>
-      <td>${c.revives}<span class="dim sm">${Object.entries(c.rv).filter(x => x[1]).map(([k, v]) => `　${RV_LABEL[k]} ${v}`).join('')}</span></td>
-      <td>${c.topCause ? `${esc(c.topCause[0])} <span class="dim sm">×${c.topCause[1]}</span>` : ''}</td>
-      <td class="sm">${c.last ? `${ago(Date.now() - c.last.at)}・${esc(c.last.mapName || '')}` : ''}</td>
+      <td class="sm">${(c.places || []).slice(0, 4).map(p => `${place(p)} <span class="dim">×${p.n}</span>`).join('<br>')}${(c.places || []).length > 4 ? `<br><span class="dim">…還有 ${c.places.length - 4} 處</span>` : ''}</td>
+      <td class="sm">${c.last ? ago(Date.now() - c.last.at) : ''}</td>
       <td><button class="btn sm" data-dreset="${esc(c.charId)}" title="把這隻的紀錄清掉重新計算">歸零</button></td></tr>`).join('') + '</tbody></table>';
-  const log = D.log.slice(0, 60).map(x => {
-    const top = (x.top || []).filter(t => t.dmg > 0).map(t => `${esc(t.name)} ${fmt(t.dmg)}`).join('、');
-    const rv = x.revivedAt ? `<span class="tag">已復活：${RV_LABEL[x.revivedBy] || x.revivedBy}</span>` : '<span class="tag warn">還沒復活</span>';
-    return `<div class="sm" style="padding:3px 0;border-bottom:1px solid var(--line)"><span class="dim">${clock(x.at)}</span> <b>${esc(x.name)}</b>${x.lv ? ` Lv${x.lv}` : ''}・${esc(x.mapName || x.map || '')}：${esc(x.cause)} ${rv}
-      ${top ? `<div class="dim">死前 20 秒受到的傷害：${top}</div>` : ''}${x.gameLine ? `<div class="dim">遊戲紀錄：${esc(x.gameLine)}</div>` : ''}${x.hpQty != null ? `<div class="dim">HP 藥水${x.hpItem ? `（${esc(x.hpItem)}）` : ''}剩 ${fmt(x.hpQty)} 個${x.xpLoss ? `・扣經驗 ${fmt(x.xpLoss)}` : ''}</div>` : ''}</div>`;
-  }).join('');
+  const log = D.log.slice(0, 60).map(x => `<div class="sm" style="padding:3px 0;border-bottom:1px solid var(--line)"><span class="dim">${clock(x.at)}</span> <b>${esc(x.name)}</b>${x.lv ? ` Lv${x.lv}` : ''}・${x.boss ? `<span class="tag warn">打王 ${esc(x.boss)}</span> ` : ''}${esc(x.mapName || x.map || '')}${x.revivedAt ? '' : ' <span class="tag warn">還沒復活</span>'}</div>`).join('');
   $('#deathOut').innerHTML = tbl + `<div class="bar" style="margin-top:8px"><b>最近的死亡</b><button class="btn sm" data-dreset="*">全部歸零</button></div>` + log;
 }
 document.addEventListener('toggle', e => { if (e.target && e.target.id === 'deathCard' && e.target.open) loadDeaths(true); }, true);

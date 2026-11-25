@@ -228,16 +228,18 @@ function agentMain(ctx) {
       if (catalog) return catalog;
       const res = await fetch('/api/catalog', { credentials: 'same-origin' });
       const cat = await res.json();
-      const mapsById = {};
+      const mapsById = {}, bossByMap = {};
       for (const m of Object.values(cat.maps || {})) {
         if (m && m.id != null) mapsById[String(m.id)] = m.name;
         if (m && m.msId != null) mapsById[String(m.msId)] = m.name;
+        const bs = m && (m.bossSpawns || []).map(b => b && b.mobId).filter(Boolean);
+        if (bs && bs.length) { if (m.id != null) bossByMap[String(m.id)] = bs; if (m.msId != null) bossByMap[String(m.msId)] = bs; }
       }
       const skillNames = {};
       for (const sk of (Array.isArray(cat.skills) ? cat.skills : Object.values(cat.skills || {}))) if (sk && sk.msId != null) skillNames[sk.msId] = sk.name;
       const mobNames = {};
       for (const m of cat.mobs || []) if (m && m.id) mobNames[m.id] = m.name;
-      catalog = { equipment: cat.equipment || {}, items: cat.items || {}, scrolls: cat.scrolls || {}, jobs: cat.jobs || {}, statNames: cat.statNames || {}, mapsById, skillNames, mobNames };
+      catalog = { equipment: cat.equipment || {}, items: cat.items || {}, scrolls: cat.scrolls || {}, jobs: cat.jobs || {}, statNames: cat.statNames || {}, mapsById, bossByMap, skillNames, mobNames };
       setTimeout(() => uploadWorld(cat).catch(e => console.warn('[szg-hub world]', e)), 5000);
       return catalog;
     }
@@ -1222,21 +1224,12 @@ function agentMain(ctx) {
     // 死亡＝character.hp <= 0，或遊戲的死亡次數（deaths）增加、死亡時間（deathAt）改變（遊戲自己的自動復活可能在同一次同步就復活）。
     // 原因：最近 20 秒打到這隻角色的怪（summary.events 裡 actor 不是自己的角色、內容指到這隻角色）、
     // 冒險紀錄（character.log）裡死亡那一行、HP 藥水是否用完、是不是正在打王
-    const deathTrack = {}, hitsIn = {};
-    const DEATH_RE = /死亡|倒下|陣亡|擊倒|擊殺了你|戰敗|昏迷/;
+    // 死亡紀錄（v0.68.3 簡化）：只記死在哪張圖、是不是在打王（打哪隻），不再猜是被誰打倒
+    const deathTrack = {};
     function deathIngest(json) {
       const st = readState();
       const mine = new Set((st && st.characters || []).map(c => c.id)); if (st && st.character) mine.add(st.character.id);
-      const evs = json && json.summary && Array.isArray(json.summary.events) ? json.summary.events : [];
       const now = Date.now();
-      for (const e of evs) {
-        if (!e || typeof e !== 'object' || mine.has(e.actor)) continue;
-        const tgt = [e.target, e.targetId, e.victim, e.characterId, e.character, e.char, e.to, e.player].find(v => typeof v === 'string' && mine.has(v));
-        if (!tgt) continue;
-        const l = hitsIn[tgt] || (hitsIn[tgt] = []);
-        l.push({ at: Number(e.at) || now, mob: e.mob || e.mobId || e.source || e.actor || '', mobName: e.mobName || e.actorName || '', dmg: Number(e.damage) || 0, kind: e.kind || '' });
-        while (l.length > 60) l.shift();
-      }
       const c = json && json.character;
       if (!c || !mine.has(c.id) || c.hp == null) return;
       const t = deathTrack[c.id], hp = Number(c.hp), deaths = Number(c.deaths), dAt = Number(c.deathAt) || 0, used = Number(c.autoReviveUsed) || 0;
@@ -1247,49 +1240,32 @@ function agentMain(ctx) {
       else died = (t.hp > 0 && hp <= 0) || (Number.isFinite(deaths) && Number.isFinite(t.deaths) && deaths > t.deaths) || (dAt && t.dAt && dAt !== t.dAt);
       if (died) {
         const key = dAt || now;
-        if (key !== seen || !dAt) { GM_setValue(seenKey, key); sent = reportDeath(c, json, st, key, t).catch(() => {}); }
+        if (key !== seen || !dAt) { GM_setValue(seenKey, key); sent = reportDeath(c, json, key).catch(() => {}); }
       }
       // 復活：上一次看到是死的，這次活著；或死亡次數增加但已經活著（遊戲自動復活在同一次同步完成）
       const revivedNow = (t && t.hp <= 0 && hp > 0) || (died && hp > 0);
       if (revivedNow) {
-        // 同一次同步就死了又活＝遊戲自己的自動復活；看到死著之後中控按了復活＝中控
         const hr = hubRevivedAt[c.id] || 0;
         const by = died && hp > 0 ? 'game' : hr && now - hr < 90000 && (!t || hr >= t.at - 5000) ? 'hub' : t && used > t.used ? 'game' : 'other';
-        // 死亡回報要先到（同一次同步就復活時，兩個都在這一次送出）
         Promise.resolve(sent).then(() => hub('POST', '/api/death', { ev: 'revive', charId: c.id, at: now, by })).catch(() => {});
       }
     }
-    async function reportDeath(c, json, st, key, prev) {
+    async function reportDeath(c, json, key) {
       const cat = await loadCatalog().catch(() => null);
-      const mobName = id => (cat && cat.mobNames[id]) || '';
       const now = Date.now(), at = Number(c.deathAt) || now;
-      const from = Math.max(at - 20000, prev && prev.dAt ? prev.dAt + 1 : 0);
-      const hits = (hitsIn[c.id] || []).filter(h => h.at >= from && h.at <= at + 3000);
-      hitsIn[c.id] = (hitsIn[c.id] || []).filter(h => h.at > at + 3000);
-      const by = {};
-      for (const h of hits) { const n = h.mobName || mobName(h.mob) || h.mob || '?'; const x = by[n] || (by[n] = { name: n, dmg: 0, n: 0, kinds: {} }); x.dmg += h.dmg; x.n++; if (h.kind) x.kinds[h.kind] = 1; }
-      const top = Object.values(by).sort((a, b) => b.dmg - a.dmg).slice(0, 4).map(x => ({ name: x.name, dmg: x.dmg, n: x.n, kinds: Object.keys(x.kinds) }));
-      const last = hits[hits.length - 1];
-      const logs = (Array.isArray(c.log) ? c.log : []).filter(e => e && e.t && DEATH_RE.test(e.t) && (!e.time || Math.abs(e.time - at) < 120000)).map(e => String(e.t).slice(0, 120));
-      const gameLine = logs[logs.length - 1] || '';
-      // 從遊戲的紀錄裡找怪物名稱（例：被 噴火龍 擊倒）
-      let logMob = '';
-      if (gameLine && cat) for (const n of Object.values(cat.mobNames)) if (n && gameLine.includes(n) && n.length > logMob.length) logMob = n;
-      const inv = {}; for (const x of c.inventoryStacks || []) inv[x.item] = (inv[x.item] || 0) + (Number(x.qty) || 0);
-      const sup = c.supply || {}, hpQty = sup.hpItem ? (inv[sup.hpItem] || 0) : null;
-      const boss = deathBossJob && deathBossJob.charId === c.id && now - deathBossJob.at < 2 * 3600e3 ? deathBossJob.name : '';
-      const killer = logMob || (top[0] && top[0].name) || '';
-      const dot = top.length && top.every(x => x.kinds.length && x.kinds.every(k => /burn|poison|dot/.test(k)));
-      const cause = boss ? `打王時倒下（${boss}）` : hpQty === 0 ? `HP 藥水用完${killer ? `，被 ${killer} 打倒` : ''}` : dot ? `持續傷害（燃燒／中毒）${killer ? `：${killer}` : ''}` : killer ? `被 ${killer} 打倒` : gameLine || '原因不明（遊戲沒有回報是誰打的）';
+      // 打王：中控派的打王工作，或角色自己在野王地圖（你手動帶去的）→ 記是哪隻王
+      let boss = deathBossJob && deathBossJob.charId === c.id && now - deathBossJob.at < 2 * 3600e3 ? deathBossJob.name : '';
+      if (!boss && cat) {
+        const ids = cat.bossByMap[String(c.map)] || [];
+        const live = new Set((Array.isArray(json.enemies) ? json.enemies : []).map(e => e && (e.mob || e.mobId || e.id)));
+        const pick = ids.find(m => live.has(m)) || ids[0];
+        if (pick) boss = cat.mobNames[pick] || pick;
+      }
       await hub('POST', '/api/death', {
-        ev: 'death', charId: c.id, key, at, map: c.map, mapName: (cat && cat.mapsById[String(c.map)]) || c.map, cause, killer, boss,
-        hpQty, hpItem: sup.hpItem ? itemInfo(sup.hpItem).name : '', maxhp: c.maxhp, lastHit: last ? { name: last.mobName || mobName(last.mob) || last.mob, dmg: last.dmg, kind: last.kind } : null,
-        top, gameLine, gameDeaths: Number.isFinite(Number(c.deaths)) ? Number(c.deaths) : null, xpLoss: Number(c.lastDeathXpLoss) || 0, lv: c.lv,
-        kinds: [...new Set(evs4(json))].slice(0, 12),
+        ev: 'death', charId: c.id, key, at, map: c.map, mapName: (cat && cat.mapsById[String(c.map)]) || c.map, boss, lv: c.lv,
+        gameDeaths: Number.isFinite(Number(c.deaths)) ? Number(c.deaths) : null, xpLoss: Number(c.lastDeathXpLoss) || 0,
       });
     }
-    // 這次同步裡出現過的事件種類（留著看遊戲實際送什麼，方便之後判斷得更準）
-    const evs4 = json => ((json && json.summary && json.summary.events) || []).map(e => e && e.kind ? String(e.kind) : '').filter(Boolean);
     (function hookDps() {
       try {
         if (!W || W.__szgDpsHook) return;

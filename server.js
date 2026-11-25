@@ -554,7 +554,7 @@ function idleLog(entry) {
 }
 // ===== 死亡原因與復活次數 =====
 // agent 從遊戲同步回應判斷死亡（hp<=0、deaths 增加、deathAt 改變）並 POST /api/death {ev:'death'|'revive'}。
-// db.deaths = { log: [{at, charId, name, map, mapName, cause, killer, boss, top, lastHit, gameLine, hpQty, xpLoss, revivedAt, revivedBy}], since: {角色: 開始計算時間} }
+// db.deaths = { log: [{at, key, charId, name, lv, map, mapName, boss, xpLoss, gameDeaths, revivedAt, revivedBy}], since: {角色: 開始計算時間} }（v0.68.0 的舊紀錄還有 cause、killer、top… 欄位，面板不再顯示）
 function deathDb() { const d = db.deaths || (db.deaths = {}); d.log = d.log || []; d.since = d.since || {}; return d; }
 function deathEvent(e) {
   const d = deathDb(), now = Date.now(), id = String(e.charId || '');
@@ -566,9 +566,8 @@ function deathEvent(e) {
     const key = Number(e.key) || 0;
     if (d.log.some(x => x.charId === id && (x.key && key ? x.key === key : Math.abs(x.at - at) < 30000))) return;
     const str = (v, n) => String(v == null ? '' : v).slice(0, n);
-    d.log.push({ at, key, charId: id, name: charName(id), lv: Number(e.lv) || 0, map: str(e.map, 40), mapName: str(e.mapName, 40), cause: str(e.cause, 120), killer: str(e.killer, 40), boss: str(e.boss, 40),
-      top: (Array.isArray(e.top) ? e.top : []).slice(0, 4).map(x => ({ name: str(x.name, 40), dmg: Number(x.dmg) || 0, n: Number(x.n) || 0 })), lastHit: e.lastHit ? { name: str(e.lastHit.name, 40), dmg: Number(e.lastHit.dmg) || 0, kind: str(e.lastHit.kind, 20) } : null,
-      gameLine: str(e.gameLine, 120), hpQty: e.hpQty == null ? null : Number(e.hpQty), hpItem: str(e.hpItem, 40), xpLoss: Number(e.xpLoss) || 0, gameDeaths: e.gameDeaths == null ? null : Number(e.gameDeaths), kinds: (Array.isArray(e.kinds) ? e.kinds : []).slice(0, 12).map(k => str(k, 20)) });
+    d.log.push({ at, key, charId: id, name: charName(id), lv: Number(e.lv) || 0, map: str(e.map, 40), mapName: str(e.mapName, 40), boss: str(e.boss, 40),
+      xpLoss: Number(e.xpLoss) || 0, gameDeaths: e.gameDeaths == null ? null : Number(e.gameDeaths) });
     if (d.log.length > 1000) d.log.splice(0, d.log.length - 1000);
   } else if (e.ev === 'revive') {
     const x = [...d.log].reverse().find(l => l.charId === id);
@@ -580,13 +579,14 @@ function deathEvent(e) {
 function deathSummary() {
   const d = deathDb(), now = Date.now(), by = {};
   for (const x of d.log) {
-    const s = by[x.charId] || (by[x.charId] = { charId: x.charId, name: charName(x.charId), deaths: 0, d24: 0, d1: 0, revives: 0, rv: { hub: 0, game: 0, other: 0 }, causes: {}, last: null });
+    const s = by[x.charId] || (by[x.charId] = { charId: x.charId, name: charName(x.charId), deaths: 0, d24: 0, d1: 0, revives: 0, rv: { hub: 0, game: 0, other: 0 }, pl: {}, last: null });
     s.deaths++; if (now - x.at < 24 * 3600e3) s.d24++; if (now - x.at < 3600e3) s.d1++;
     if (x.revivedAt) { s.revives++; s.rv[x.revivedBy || 'other']++; }
-    const k = x.boss ? `打王：${x.boss}` : x.killer ? x.killer : x.cause; s.causes[k] = (s.causes[k] || 0) + 1;
+    const k = (x.boss ? '王|' + x.boss + '|' : '圖||') + (x.mapName || x.map || '?');
+    const p = s.pl[k] || (s.pl[k] = { map: x.mapName || x.map || '', boss: x.boss || '', n: 0, last: 0 }); p.n++; p.last = x.at;
     s.last = x;
   }
-  const chars = Object.values(by).map(s => ({ ...s, since: d.since[s.charId] || 0, topCause: Object.entries(s.causes).sort((a, b) => b[1] - a[1])[0] || null })).sort((a, b) => b.d24 - a.d24 || b.deaths - a.deaths);
+  const chars = Object.values(by).map(({ pl, ...s }) => ({ ...s, since: d.since[s.charId] || 0, places: Object.values(pl).sort((a, b) => b.n - a.n || b.last - a.last) })).sort((a, b) => b.d24 - a.d24 || b.deaths - a.deaths);
   return { chars, log: d.log.slice(-200).reverse(), since: d.since };
 }
 function createBagJob(body) {
