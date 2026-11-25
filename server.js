@@ -1198,6 +1198,11 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="szg-bg-accounts-${new Date().toISOString().slice(0, 10)}.csv"` });
         return res.end(bg.exportCsv(id => charName(id)));
       }
+      // 讀遊戲程式碼（只讀）：/api/bg/gamesrc?file=/game/game.js&q=正規表示式&ctx=150&max=20｜words=^party｜from=0&len=2000｜list=1｜fresh=1｜profile=帳號名
+      if (req.method === 'GET' && url.pathname === '/api/bg/gamesrc') {
+        const q = Object.fromEntries(url.searchParams);
+        try { return send(res, 200, await bg.gameSrc(q)); } catch (e) { return send(res, 200, { error: e.message }); }
+      }
       const act = url.pathname.slice('/api/bg/'.length);
       if (req.method === 'POST' && /^(config|add|rename|edit|remove|start|stop|login|login-done|login-batch|login-skip|login-cancel|reload|pages|order|all|import|show|hide|trim)$/.test(act)) {
         return send(res, 200, await bg.action(act, JSON.parse((await readBody(req)) || '{}')));

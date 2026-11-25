@@ -699,6 +699,52 @@ ${fixed}
     return { ...status(), import: sum };
   }
 
+  // ---------- 讀遊戲程式碼（只讀，給開發核對遊戲欄位）：用已登入的背景分頁 fetch，結果只放記憶體 ----------
+  const srcCache = {}; // 檔名 -> {at, text, status, from}
+  function srcPage(want) {
+    for (const p of cfg().profiles) {
+      if (want && p.id !== want && p.name !== want) continue;
+      const r = run[p.id];
+      if (!r || !r.cdp || r.state !== 'running' || r.needLogin) continue;
+      for (const pg of Object.values(r.pages)) if (pg.info && String(pg.info.url || '').startsWith(GAME + '/game') && pg.info.hasState) return { r, pg, name: p.name };
+    }
+    return null;
+  }
+  async function gameSrc(q) {
+    const at = srcPage(q.profile);
+    if (q.list) { // 頁面載入過的程式檔
+      if (!at) return { error: '沒有已登入、執行中的背景分頁' };
+      const v = await at.r.cdp.send('Runtime.evaluate', { expression: `[...new Set([...document.scripts].map(s => s.src).concat(performance.getEntriesByType('resource').map(e => e.name)))].filter(u => u.startsWith(location.origin) && /\\.(m?js|json)(\\?|$)/.test(u)).map(u => u.slice(location.origin.length))`, returnByValue: true }, at.pg.sessionId, 15000);
+      return { from: at.name, files: (v.result && v.result.value) || [] };
+    }
+    const file = String(q.file || '/game/game.js');
+    if (!/^\/[\w./-]+\.(m?js|json)$/.test(file) || file.includes('..')) return { error: '只能讀遊戲網站上的 .js／.json 檔（例如 /game/game.js）' };
+    let c = srcCache[file];
+    if (!c || q.fresh || Date.now() - c.at > 10 * 60000) {
+      if (!at) return { error: '沒有已登入、執行中的背景分頁（帳號分頁要有一個在跑、而且已登入）' };
+      const v = await at.r.cdp.send('Runtime.evaluate', { expression: `fetch(${JSON.stringify(file)}, { cache: 'no-store', credentials: 'same-origin' }).then(async r => ({ status: r.status, text: r.ok ? await r.text() : '' }))`, awaitPromise: true, returnByValue: true }, at.pg.sessionId, 60000);
+      const o = (v.result && v.result.value) || {};
+      c = srcCache[file] = { at: Date.now(), text: String(o.text || ''), status: o.status || 0, from: at.name };
+    }
+    const t = c.text;
+    let h = 0x811c9dc5; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    const out = { file, status: c.status, from: c.from, at: c.at, len: t.length, hash: h.toString(16) };
+    if (q.q) {
+      let re; try { re = new RegExp(String(q.q).slice(0, 300), 'g' + (q.i ? 'i' : '')); } catch (e) { return { ...out, error: '搜尋字串不是正確的正規表示式：' + e.message }; }
+      const ctx = Math.max(0, Math.min(1500, Number(q.ctx) || 150)), max = Math.max(1, Math.min(200, Number(q.max) || 20)), skip = Math.max(0, Number(q.skip) || 0);
+      const matches = []; let n = 0, m;
+      while ((m = re.exec(t))) { if (n >= skip && matches.length < max) matches.push({ i: m.index, text: t.slice(Math.max(0, m.index - ctx), m.index + m[0].length + ctx) }); n++; if (!m[0].length) re.lastIndex++; }
+      Object.assign(out, { q: q.q, count: n, matches });
+    }
+    if (q.words) { // 只回識別字（例如 words=^party 列出所有 party 開頭的字）
+      let re; try { re = new RegExp(String(q.words).slice(0, 200), q.i ? 'i' : ''); } catch (e) { return { ...out, error: e.message }; }
+      const cnt = {}; for (const w of t.match(/[A-Za-z_$][\w$]{2,}/g) || []) if (re.test(w)) cnt[w] = (cnt[w] || 0) + 1;
+      out.words = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 500);
+    }
+    if (q.from !== undefined && q.from !== '') { const f = Math.max(0, Number(q.from) || 0); out.slice = { from: f, text: t.slice(f, f + Math.max(1, Math.min(8000, Number(q.len) || 2000))) }; }
+    return out;
+  }
+
   let allJob = null;
   let timer = null;
   function boot() {
@@ -711,5 +757,5 @@ ${fixed}
     await Promise.all(cfg().profiles.map(p => (run[p.id] && run[p.id].cdp) ? stopBrowser(p.id).catch(() => {}) : null));
   }
 
-  return { boot, tick, status, action, shutdown, exportCsv, GAME };
+  return { boot, tick, status, action, shutdown, exportCsv, gameSrc, GAME };
 };
