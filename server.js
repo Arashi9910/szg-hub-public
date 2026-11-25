@@ -719,6 +719,8 @@ function bossKnow(list) {
 }
 function bossNewList() {
   loadWorldIndex();
+  // 打王關著時角色不會回報王的狀態：用之前存下來的狀態建立（不然新的王永遠不會出現）
+  if (!bossDb().known) { const all = Object.values(bossDb().state).flatMap(st => st.list || []); if (all.length) { bossKnow(all); save(); } }
   const k = bossDb().known || {}, now = Date.now();
   return Object.entries(k).filter(([, v]) => v.at && !v.ack && now - v.at < 14 * 24 * 3600e3)
     .map(([mob, v]) => ({ mob, name: (worldMobs[mob] || {}).name || v.name || mob, lv: (worldMobs[mob] || {}).lv || 0, at: v.at })).sort((a, b) => a.lv - b.lv);
