@@ -356,9 +356,9 @@ function jobLog(job, msg) {
 }
 function publicJob(j) { return j; }
 
-const BAG_KINDS = new Set(['sell', 'lock', 'unlock', 'idle', 'forge']);
+const BAG_KINDS = new Set(['sell', 'lock', 'unlock', 'idle', 'forge', 'equip', 'unequip']);
 // 新種類的工作要遊戲分頁的腳本夠新才看得懂：還沒換上新腳本的，工作先排隊等，不交給它（避免「未知的工作類型」直接失敗）
-const KIND_MIN_AGENT = { forge: '0.27.0' };
+const KIND_MIN_AGENT = { forge: '0.27.0', equip: '0.71.1', unequip: '0.71.1' };
 const verLt = (a, b) => { const x = String(a || '0').split('.').map(Number), y = String(b || '0').split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); } return false; };
 function agentTooOld(job, code, charId) {
   const k = KIND_MIN_AGENT[job.kind], need = job.minAgent && (!k || verLt(k, job.minAgent)) ? job.minAgent : k; if (!need) return false; // 工作可以自己要求更新的腳本（例如組隊大廳的加入／踢人）
@@ -646,6 +646,11 @@ function createBagJob(body) {
     batches: [{ items: b.items || [], gear: b.gear || [], money: 0, ...(body.kind === 'forge' && b.forge ? { forge: b.forge } : {}) }], batchIndex: 0, log: [], lastMsg: '',
     estimate: Number(body.estimate) || 0,
   };
+  // v0.71.1：穿上／脫下是在角色抽屜看過比較、按了確認才送的，直接排隊（一次一件、可以再脫下來，不用到工作清單再確認一次）
+  if ((body.kind === 'equip' || body.kind === 'unequip') && body.approve) {
+    if ((b.gear || []).length !== 1) throw new Error('一次只能穿上或脫下一件裝備');
+    job.status = 'approved'; job.approvedAt = Date.now();
+  }
   db.jobs.push(job);
   save();
   return job;

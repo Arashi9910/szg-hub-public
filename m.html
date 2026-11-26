@@ -309,7 +309,7 @@ async function openMaps(ids) {
 
 // ---------- 工作 ----------
 const ST = { pending: ['待確認', 'acc'], approved: ['排隊中', ''], running: ['執行中', 'good'], done: ['完成', ''], failed: ['失敗', 'bad'], cancelled: ['已取消', ''] };
-const KIND = { trade: '交易', give: '給道具', bag: '背包', sell: '賣出', idle: '掛機', boss: '打王', party: '組隊', forge: '強化', guildDeposit: '存公倉', guildWithdraw: '領公倉', guildView: '看公倉', guildSell: '公倉賣出' };
+const KIND = { trade: '交易', give: '給道具', bag: '背包', sell: '賣出', idle: '掛機', boss: '打王', party: '組隊', forge: '強化', guildDeposit: '存公倉', guildWithdraw: '領公倉', guildView: '看公倉', guildSell: '公倉賣出', equip: '穿上裝備', unequip: '脫下裝備' };
 function renderJobs() {
   const js = D.jobs.slice().reverse();
   const grp = [['pending', '待確認'], ['active', '進行中'], ['failed', '失敗'], ['done', '最近完成']];

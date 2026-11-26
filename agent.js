@@ -1387,6 +1387,16 @@ function agentMain(ctx) {
       const gearOk = new Map((c.equipmentBag || []).map(g => [g.uid, g]));
       const b = job.batches[0];
       const rid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
+      // v0.71.1：穿上／脫下裝備（角色抽屜按的，一次一件；遊戲會檢查等級、職業、能力需求）
+      if (job.kind === 'equip' || job.kind === 'unequip') {
+        const g = (b.gear || [])[0] || {}, on = job.kind === 'equip';
+        const worn = Object.values(c.gear || {}).some(x => x && x.uid === g.uid);
+        if (on ? !gearOk.has(g.uid) : !worn) return report(job, { event: 'error', msg: `${g.name || '這件裝備'}${on ? '不在背包裡（可能已經穿上、賣掉或存走了）' : '沒有穿在身上'}` });
+        setBadge(null, `${on ? '穿上' : '脫下'} ${g.name || ''}…`);
+        await game({ type: on ? 'equip' : 'unequip', uid: g.uid, characterId: c.id, requestId: rid() });
+        await report(job, { event: 'log', msg: `已${on ? '穿上' : '脫下'} ${g.name || ''}` });
+        return report(job, { event: 'batchDone' });
+      }
       if (job.kind === 'lock' || job.kind === 'unlock') {
         const want = job.kind === 'lock';
         const ids = [...(b.items || []).flatMap(i => i.uids || []).filter(u => stackOk.has(u)), ...(b.gear || []).map(g => g.uid).filter(u => gearOk.has(u))];

@@ -295,6 +295,14 @@
   #charDrawer { position: fixed; right: 0; top: var(--hdr, 52px); bottom: 0; width: 340px; max-width: 92vw; background: var(--panel); border-left: 1px solid var(--line); z-index: 1500; padding: 12px; overflow: auto; box-shadow: -8px 0 24px rgba(0,0,0,.45); }
   #charDrawer .cd-top { display: flex; gap: 12px; align-items: flex-start; margin: 8px 0; }
   #charDrawer .ava.cd { width: 90px; height: 110px; object-fit: contain; }
+  #charDrawer { width: 400px; }
+  #charDrawer .cd-h { display: flex; gap: 6px; align-items: center; margin: 12px 0 4px; }
+  #charDrawer .cdg { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; margin-bottom: 5px; }
+  #charDrawer .cdg[data-cdopen] { cursor: pointer; } #charDrawer .cdg[data-cdopen]:hover { border-color: var(--accent); }
+  #charDrawer .cdg.open { border-color: var(--accent); background: rgba(90,169,230,.06); }
+  #charDrawer .cdg-hd { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  #charDrawer .cdg-slot { min-width: 34px; }
+  #charDrawer .cdg-cmp { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); }
   @media (max-width: 1280px) {
     /* 欄位多的表格：維持可讀寬度，放不下時在卡片裡左右捲動，不再把整個頁面撐破 */
     main :has(> table) { overflow-x: auto; }
@@ -1951,8 +1959,8 @@ function charState(s) { if (!s) return 'off'; if (hasTab(s.char.id)) return 'tab
 function stateHtml(s) { const st = charState(s); return st === 'tab' ? `<span class="good">● 分頁中</span>${(tabOf(s.char.id) || {}).bg ? ' <span class="dim sm" title="由中控的「🖥 背景」執行，不用開 Chrome 視窗">（背景執行）</span>' : (tabOf(s.char.id) || {}).hidden ? ' <span class="warn sm">（背景）</span>' : ''}` : st === 'bg' ? '<span class="warn" title="沒有自己的遊戲分頁，在背景掛機；執行工作前要開它的分頁或切換過去">● 背景掛機</span>' : '<span class="bad">● 離線</span>'; }
 const stateSuffix = s => ({ tab: '', bg: '（背景掛機）', off: '（離線）' })[charState(s)];
 const JOB_STATUS = { pending: ['待確認', 'warn'], approved: ['排隊中', ''], running: ['執行中', 'good'], done: ['完成', 'good'], failed: ['失敗', 'bad'], cancelled: ['已取消', 'dim'] };
-const JOB_KIND = { collect: '收集', give: '分發', sell: '賣出', lock: '鎖定', unlock: '解鎖' };
-const BAG_KINDS = ['sell', 'lock', 'unlock', 'forge'];
+const JOB_KIND = { collect: '收集', give: '分發', sell: '賣出', lock: '鎖定', unlock: '解鎖', equip: '穿上裝備', unequip: '脫下裝備' };
+const BAG_KINDS = ['sell', 'lock', 'unlock', 'forge', 'equip', 'unequip'];
 JOB_KIND.forge = '強化';
 Object.assign(JOB_KIND, { guildDeposit: '存入公倉', guildWithdraw: '公倉領取', guildView: '查看公倉', guildSell: '公倉賣出', guildMoney: '公倉楓幣／點數' });
 BAG_KINDS.push('guildDeposit', 'guildWithdraw', 'guildView', 'guildSell', 'guildMoney');
@@ -4731,32 +4739,89 @@ document.addEventListener('change', async e => {
   const t = e.target; if (!t.dataset || !t.dataset.dscope) return;
   await saveDest({ [t.dataset.dscope]: t.checked }); renderDestEditor(); ui.fac.sig = null; renderBoard(); if (typeof renderBoss === 'function' && BOSS) renderBoss();
 });
-// ---- 角色抽屜（v0.71 先放基本資料；裝備、能力點、技能、掛機設定之後加進來） ----
-function openCharDrawer(id) { ui.charDrawer = id; renderCharDrawer(); }
+// ---- 角色抽屜：基本資料、裝備（v0.71.1）；能力點、技能、掛機設定之後加進來 ----
+ui.cd = { tab: 'gear', open: null, wear: true, msg: '' };
+function openCharDrawer(id) { if (ui.charDrawer !== id) { ui.cd.open = null; ui.cd.msg = ''; } ui.charDrawer = id; renderCharDrawer(); }
+const statDiff = (a, b) => { const o = {}; for (const k of new Set([...Object.keys(a || {}), ...Object.keys(b || {})])) { const v = (Number((a || {})[k]) || 0) - (Number((b || {})[k]) || 0); if (v) o[k] = v; } return o; };
+const statTxt = (o, cls) => { const ks = [...STAT_ORDER.filter(k => k in o), ...Object.keys(o).filter(k => !STAT_ORDER.includes(k))]; return ks.map(k => `<span class="${cls ? (o[k] > 0 ? 'good' : 'bad') : ''}">${esc(statNames[k] || k)}${o[k] > 0 ? '+' : ''}${o[k]}</span>`).join(' '); };
+// 剛從強化工坊出來的（24 小時內）：uid → 那次的結果
+function forgedRecent() { const m = new Map(); for (const r of FORGE.log || []) if (Date.now() - r.at < 24 * 3600e3) for (const x of r.results || []) if (x.uid && !x.destroyed) m.set(x.uid, { ...x, at: r.at }); return m; }
+function gearCanWear(c, g) {
+  const why = [];
+  if ((g.reqLevel || 0) > (c.lv || 0)) why.push(`等級不足（要 Lv${g.reqLevel}，現在 ${c.lv}）`);
+  if (g.reqJob && !(g.reqJob & (c.branchBit || 0))) why.push('職業不能穿');
+  return why;
+}
+const gearSlotOf = g => g.slot || g.gtype || '';
+function cdGearRow(c, g, worn, forged) {
+  const scroll = statDiff(g.stats, g.cleanStats), roll = g.baseStats ? statDiff(g.cleanStats, g.baseStats) : null, f = forged.get(g.uid), why = worn ? [] : gearCanWear(c, g);
+  const tags = [f ? `<span class="tag ${f.pass ? 'good' : ''}" title="${esc(`強化工坊 ${clock(f.at)}：衝 ${f.attempts} 次、成功 ${f.successes} 次`)}">剛強化${f.pass ? '・及格' : ''}</span>` : '', g.locked ? '<span class="tag">鎖定</span>' : '', why.length ? `<span class="tag warn" title="${esc(why.join('\n'))}">不能穿</span>` : ''].join('');
+  const info = [`剩 <b>${g.slotsLeft}</b>/${g.maxSlots} 格`, Object.keys(scroll).length ? `卷軸 ${statTxt(scroll)}` : '', roll ? (Object.keys(roll).length ? `浮動 ${statTxt(roll, true)}` : '浮動 ±0') : '<span class="dim">浮動不明</span>'].filter(Boolean).join('・');
+  let cmp = '';
+  if (!worn && ui.cd.open === g.uid) {
+    const cur = (c.gearAll || []).find(w => w.loc === '穿戴' && gearSlotOf(w) === gearSlotOf(g));
+    const d = statDiff(g.stats, cur ? cur.stats : {});
+    cmp = `<div class="cdg-cmp"><div class="sm">${cur ? `跟身上的 <b>${esc(cur.name)}${cur.plus ? ' +' + cur.plus : ''}</b> 比：` : '這個部位現在沒穿東西：'}${Object.keys(d).length ? statTxt(d, true) : '<span class="dim">素質一樣</span>'}</div>
+      ${why.length ? `<div class="warn sm">${esc(why.join('、'))}</div>` : ''}${g.reqSTR || g.reqDEX || g.reqINT || g.reqLUK ? `<div class="dim sm">能力需求：${[['力量', g.reqSTR], ['敏捷', g.reqDEX], ['智力', g.reqINT], ['幸運', g.reqLUK]].filter(x => x[1]).map(x => x[0] + ' ' + x[1]).join('、')}（不夠的話遊戲會拒絕）</div>` : ''}
+      <div class="bar"><button class="btn sm primary" data-cdequip="${esc(g.uid)}" ${why.length ? 'disabled' : ''}>確認穿上</button>${cur ? '<span class="dim sm">換下來的會放回背包</span>' : ''}<button class="btn sm" data-cdopen="">取消</button></div></div>`;
+  }
+  return `<div class="cdg ${ui.cd.open === g.uid ? 'open' : ''}" ${worn ? '' : `data-cdopen="${esc(g.uid)}"`}><div class="cdg-hd">${worn ? `<span class="dim sm cdg-slot">${esc(slotLabel(g.slot))}</span>` : ''}<b>${esc(g.name)}${g.plus ? ` <span class="good">+${g.plus}</span>` : ''}</b>${tags}<span style="flex:1"></span>${worn ? `<button class="btn sm" data-cdunequip="${esc(g.uid)}" title="脫下來放回背包">脫下</button>` : ''}</div><div class="dim sm">${info}</div>${cmp}</div>`;
+}
 function renderCharDrawer() {
   let box = $('#charDrawer');
   const id = ui.charDrawer;
   if (!id) { if (box) box.remove(); return; }
   if (!box) { box = document.createElement('div'); box.id = 'charDrawer'; document.body.appendChild(box); }
+  if (box.contains(document.activeElement) && document.activeElement.tagName === 'INPUT' && document.activeElement.type !== 'checkbox') return;
   const s = DATA.chars[id], c = s && s.char, d = dpsOf(id), g = charGroup(id);
   const acc = (snaps().find(x => (x.accountChars || []).some(a => a.id === id)) || {}).accountChars || [];
   const a = acc.find(x => x.id === id) || {};
   const name = c ? c.name : a.name || id;
-  box.innerHTML = `<div class="bar"><h3 style="margin:0">${esc(name)}</h3><span class="tag">${g} 組</span><span style="flex:1"></span><button class="btn sm" data-cdclose="1">✕</button></div>
-    <div class="cd-top">${avatarImg(id, 'cd')}<div class="sm">
+  if (!forgeLoadAt) loadForge();
+  let body = '';
+  if (ui.cd.tab === 'info' || !s) {
+    body = `<div class="cd-top">${avatarImg(id, 'cd')}<div class="sm">
       <div>Lv <b>${c ? c.lv : a.lv || '?'}</b>・${esc(c ? c.jobName || '' : a.job || '')}</div>
       <div>地圖：${esc(c ? c.mapName || (mapOf(c.map) || {}).name || c.map : '—')}</div>
       <div>${hasTab(id) ? '<span class="good">有自己的遊戲分頁</span>' : '<span class="dim">背景掛機（沒有自己的分頁）</span>'}</div>
       ${c && c.hourlyExp ? `<div>經驗 ${short(c.hourlyExp)}/時</div>` : ''}${d ? `<div>DPS ${short(d.w5.dps || d.w60.dps)}</div>` : ''}
       ${c ? `<div>楓幣 ${short(c.money)}</div>` : ''}</div></div>
-    <div class="bar"><a class="btn sm" data-goto="gear">看裝備</a><a class="btn sm" data-goto="bag">看背包</a><button class="btn sm" data-bdmovegrp="${esc(id)}" title="把這隻角色改到另一組">改到 ${g === 'A' ? 'B' : 'A'} 組</button></div>
-    <div class="card dim sm" style="margin-top:8px">裝備（強化資訊、手動穿上）、能力點、技能、掛機設定會在之後的版本加進這個抽屜，照遊戲的版面讓你直接設定。</div>`;
+      <div class="bar"><a class="btn sm" data-goto="gear">看全部裝備</a><a class="btn sm" data-goto="bag">看背包</a><button class="btn sm" data-bdmovegrp="${esc(id)}" title="把這隻角色改到另一組">改到 ${g === 'A' ? 'B' : 'A'} 組</button></div>
+      <div class="card dim sm" style="margin-top:8px">能力點、技能、掛機設定會在之後的版本加進這個抽屜，照遊戲的版面讓你直接設定。</div>${s ? '' : '<div class="dim sm">這隻角色還沒同步過資料（沒開過它的遊戲分頁），看不到裝備。</div>'}`;
+  } else {
+    const cc = { ...c, gearAll: s.gear || [] }, forged = forgedRecent();
+    const worn = (s.gear || []).filter(x => x.loc === '穿戴').sort((x, y) => (SLOT_ORDER.indexOf(x.slot) + 1 || 99) - (SLOT_ORDER.indexOf(y.slot) + 1 || 99));
+    let bag = (s.gear || []).filter(x => x.loc === '背包');
+    const total = bag.length;
+    if (ui.cd.wear) bag = bag.filter(x => !gearCanWear(cc, x).length);
+    bag.sort((x, y) => (forged.has(y.uid) - forged.has(x.uid)) || (SLOT_ORDER.indexOf(x.slot) + 1 || 99) - (SLOT_ORDER.indexOf(y.slot) + 1 || 99) || (y.plus || 0) - (x.plus || 0));
+    const run = (DATA.jobs || []).filter(j => (j.kind === 'equip' || j.kind === 'unequip') && j.fromCharId === id && ['pending', 'approved', 'running'].includes(j.status));
+    body = `${hasTab(id) ? '' : '<div class="card attn sm" style="margin:0 0 8px;padding:6px 10px">這隻現在沒有自己的遊戲分頁：穿上、脫下會等它有分頁才做。</div>'}
+      ${run.length ? `<div class="sm warn">處理中：${run.map(j => `${JOB_KIND[j.kind]} ${esc(((j.batches[0].gear || [])[0] || {}).name || '')}`).join('、')}</div>` : ''}${ui.cd.msg ? `<div class="sm">${esc(ui.cd.msg)}</div>` : ''}
+      <h4 class="cd-h">身上 <span class="dim sm">${worn.length} 件</span></h4>${worn.map(x => cdGearRow(cc, x, true, forged)).join('') || '<div class="dim sm">沒有穿裝備</div>'}
+      <h4 class="cd-h">背包 <span class="dim sm">${ui.cd.wear ? `能穿的 ${bag.length} 件／共 ${total} 件` : `${total} 件`}</span><label class="sm" style="margin-left:auto"><input type="checkbox" data-cdwear="1" ${ui.cd.wear ? 'checked' : ''}> 只看能穿的</label></h4>
+      <div class="dim sm" style="margin-bottom:4px">點一件跟身上同部位的比較，確認後穿上。剛從強化工坊出來的排在最前面。</div>
+      ${bag.map(x => cdGearRow(cc, x, false, forged)).join('') || '<div class="dim sm">背包裡沒有能穿的裝備</div>'}`;
+  }
+  box.innerHTML = `<div class="bar"><h3 style="margin:0">${esc(name)}</h3><span class="tag">${g} 組</span><span style="flex:1"></span><button class="btn sm" data-cdclose="1">✕</button></div>
+    <div class="seg" style="margin-bottom:8px">${[['gear', '裝備'], ['info', '基本資料']].map(([k, n]) => `<button data-cdtab="${k}" class="${(ui.cd.tab === k && s) || (!s && k === 'info') ? 'on' : ''}">${n}</button>`).join('')}</div>${body}`;
 }
-document.addEventListener('click', e => {
-  const t = e.target.closest && e.target.closest('#charDrawer [data-cdclose], #charDrawer [data-goto], #charDrawer [data-bdmovegrp]'); if (!t) return;
+document.addEventListener('change', e => { if (e.target.dataset && e.target.dataset.cdwear) { ui.cd.wear = e.target.checked; renderCharDrawer(); } });
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('#charDrawer [data-cdclose], #charDrawer [data-goto], #charDrawer [data-bdmovegrp], #charDrawer [data-cdtab], #charDrawer [data-cdequip], #charDrawer [data-cdunequip], #charDrawer [data-cdopen]'); if (!t) return;
+  const id = ui.charDrawer, s = DATA.chars[id];
   if (t.dataset.cdclose) { ui.charDrawer = null; renderCharDrawer(); return; }
-  if (t.dataset.bdmovegrp) { const id = t.dataset.bdmovegrp, to = charGroup(id) === 'A' ? 'B' : 'A'; saveSettings({ charGroup: { ...(S.charGroup || {}), [id]: to } }).then(() => { ui.fac.sig = null; renderBoard(); renderCharDrawer(); }); return; }
-  if (t.dataset.goto) { ui.charDrawer = null; renderCharDrawer(); document.querySelector(`nav button[data-tab="${t.dataset.goto}"]`).click(); }
+  if (t.dataset.cdtab) { ui.cd.tab = t.dataset.cdtab; renderCharDrawer(); return; }
+  if (t.dataset.bdmovegrp) { const to = charGroup(id) === 'A' ? 'B' : 'A'; await saveSettings({ charGroup: { ...(S.charGroup || {}), [id]: to } }); ui.fac.sig = null; renderBoard(); renderCharDrawer(); return; }
+  if (t.dataset.goto) { ui.charDrawer = null; renderCharDrawer(); document.querySelector(`nav button[data-tab="${t.dataset.goto}"]`).click(); return; }
+  const send = async (kind, uid) => {
+    const g = ((s && s.gear) || []).find(x => x.uid === uid); if (!g) return;
+    try { await api('/api/jobs', { kind, fromCharId: id, approve: true, batches: [{ items: [], gear: [{ uid, name: g.name + (g.plus ? ' +' + g.plus : '') }] }] }); ui.cd.open = null; ui.cd.msg = `已送出：${kind === 'equip' ? '穿上' : '脫下'} ${g.name}，幾秒內會換好`; await poll(true); }
+    catch (err) { alert('失敗：' + err.message); }
+  };
+  if (t.dataset.cdequip) { await send('equip', t.dataset.cdequip); return; }
+  if (t.dataset.cdunequip) { const g = ((s && s.gear) || []).find(x => x.uid === t.dataset.cdunequip); if (!g || !confirm(`把 ${g.name} 脫下來放回背包？`)) return; await send('unequip', g.uid); return; }
+  if ('cdopen' in t.dataset) { if (e.target.closest('button') && !e.target.closest('[data-cdopen]').matches('button')) return; ui.cd.open = t.dataset.cdopen && ui.cd.open !== t.dataset.cdopen ? t.dataset.cdopen : null; renderCharDrawer(); }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && ui.charDrawer) { ui.charDrawer = null; renderCharDrawer(); } });
 
@@ -6448,7 +6513,7 @@ async function poll(force) {
     // 正在輸入時不要重畫，避免打斷
     const ae = document.activeElement;
     const typing = ae && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT') && ae.type !== 'checkbox';
-    if (force || !typing) renderAll();
+    if (force || !typing) { renderAll(); if (ui.charDrawer) renderCharDrawer(); }
   } catch (e) {
     $('#status').innerHTML = '<span class="bad">連不到本機伺服器，請確認 server 視窗有開著</span>';
     const sum = $('#sysSum'); if (sum) { sum.className = 'bad'; sum.textContent = '連不到伺服器'; }
