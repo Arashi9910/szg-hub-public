@@ -765,9 +765,10 @@ function bossRows(charId, dpsOverride, allow) {
     const hp = h && now - h.at < 7 * 24 * 3600e3 ? h.hp : maxHp;
     const estSec = dps > 0 && hp > 0 ? Math.round(hp / dps) : null;
     const last = b.last[charId + '|' + r.mob] || null;
-    const selected = allow.has('*') || allow.has(r.mob);
+    const denied = !!(allow.skip && allow.skip.has(r.mob)); // v0.69.4：隊伍設定這隻不打
+    const selected = (allow.has('*') || allow.has(r.mob)) && !denied;
     let skip = '';
-    if (!selected) skip = '沒有勾選';
+    if (!selected) skip = denied ? '隊伍設定不打' : '沒有勾選';
     else if (cooling) skip = '冷卻中';
     else if (estSec != null && estSec > c.estMax * 60) skip = `預估 ${Math.ceil(estSec / 60)} 分鐘才打得死，超過 ${c.estMax} 分鐘`;
     else if (last && last.result !== 'killed' && last.result !== 'cooling' && now - last.at < BOSS_RETRY_MS) skip = `${Math.ceil((BOSS_RETRY_MS - (now - last.at)) / 60000)} 分鐘後再試（上次：${BOSS_RESULT[last.result] || last.result}）`;
@@ -815,7 +816,8 @@ function partyCfgOf(ids, c) {
   let best = P[k], ov = 1;
   if (!best) for (const [key, v] of Object.entries(P)) { const n = key.split(',').filter(x => ids.includes(x)).length; if (n > ov && n >= 2) { ov = n; best = v; } }
   const mode = best && ['together', 'split', 'mixed'].includes(best.mode) ? best.mode : c.partyMode;
-  return { key: k, custom: !!best, mode, togetherMobs: best && Array.isArray(best.togetherMobs) ? best.togetherMobs.map(String) : c.togetherMobs };
+  return { key: k, custom: !!(best && best.mode), mode, togetherMobs: best && Array.isArray(best.togetherMobs) ? best.togetherMobs.map(String) : c.togetherMobs,
+    skipMobs: best && Array.isArray(best.skipMobs) ? best.skipMobs.map(String) : [] };
 }
 // 出發單位：隊伍一起打＝整隊；各自打＝每隻自己（同隊的王是共用的，靠 busyInst 避免兩隻同時去同一隻）
 const bossUnitFor = (charId, pm, c) => { const u = bossUnitOf(charId, pm); return u.code && partyCfgOf(u.ids, c).mode === 'split' ? { code: null, ids: [charId] } : u; };
@@ -828,7 +830,17 @@ function bossWhyNot(id) {
   if (bossBusy(id)) return db.jobs.some(j => j.kind === 'boss' && ACTIVE.has(j.status) && j.fromCharId === id) ? '打王中' : '有其他工作';
   return '';
 }
-const bossAllow = (unit, c) => new Set(unit.ids.flatMap(id => c.charMobs[id] || []));
+// 可以打的王＝隊員勾的合起來，扣掉隊伍設定「不打」的（v0.69.4；各自分開打時也照隊伍的設定）
+function bossAllow(unit, c) {
+  const set = new Set(unit.ids.flatMap(id => c.charMobs[id] || []));
+  const P = c.parties || {};
+  if (Object.keys(P).length) {
+    const pm = partyMap(), skip = new Set();
+    for (const id of unit.ids) { const u = bossUnitOf(id, pm); if (u.code) for (const m of partyCfgOf(u.ids, c).skipMobs) skip.add(m); }
+    if (skip.size) set.skip = skip;
+  }
+  return set;
+}
 const bossHeld = id => { const h = (bossDb().hold || {})[id]; return h && h > Date.now() ? h : 0; }; // 按了強制停止：這段時間不再派去打王
 const bossAvail = id => { const s = db.chars[id]; return !!(s && s.char && s.playerCode && tabOf(s.playerCode, id) && s.char.auto && !bossBusy(id) && !bossHeld(id)); };
 const BOSS_HOLD_MS = 30 * 60 * 1000;
@@ -1114,7 +1126,7 @@ function bossSummary() {
   const parties = [], seenCode = new Set();
   for (const id of ids) { const u = bossUnitOf(id, pm); if (!u.code || seenCode.has(u.code)) continue; seenCode.add(u.code);
     const pc = partyCfgOf(u.ids, c);
-    parties.push({ code: u.code, key: pc.key, custom: pc.custom, mode: pc.mode, togetherMobs: pc.togetherMobs, ids: u.ids, names: u.ids.map(x => db.chars[x].char.name),
+    parties.push({ code: u.code, key: pc.key, custom: pc.custom, mode: pc.mode, togetherMobs: pc.togetherMobs, skipMobs: pc.skipMobs, ids: u.ids, names: u.ids.map(x => db.chars[x].char.name),
       dps: u.ids.reduce((t, x) => t + charDps(x), 0), why: Object.fromEntries(u.ids.map(x => [x, bossWhyNot(x)])), picked: u.ids.some(x => c.chars[x]) }); }
   return { cfg: c, chars, parties, live: bossLive(), log: b.log.slice(-100), newBosses: bossNewList() };
 }

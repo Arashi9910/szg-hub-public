@@ -507,6 +507,12 @@
   .bb-ft .btn { margin-left: auto; }
   .bset { display: flex; flex-direction: column; gap: 2px; }
   .pb-seg button { font-size: 12px; padding: 3px 10px; }
+  .pb-mobs { display: flex; flex-wrap: wrap; gap: 4px; }
+  #bossParties a, #bossSum a { color: var(--accent); }
+  .pb-mob { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); user-select: none; }
+  .pb-mob > span { padding: 1px 8px; cursor: pointer; } .pb-mob > a { cursor: pointer; padding: 0 6px 0 2px; text-decoration: none; }
+  .pb-mob.yes { border-color: var(--accent); } .pb-mob.yes.tog { background: rgba(90, 169, 230, .18); }
+  .pb-mob.no { opacity: .55; } .pb-mob.no > span { text-decoration: line-through; color: var(--dim); }
   .bset-row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--line); align-items: start; }
   .bset-k { font-weight: 600; padding-top: 3px; }
   .bsell-rule { display: grid; grid-template-columns: 160px auto; gap: 6px 12px; align-items: center; margin: 6px 0 10px; }
@@ -3392,7 +3398,7 @@ function bossCellState(r, g) {
   if (g) return { k: 'busy', t: `打王中${g.hp != null && g.maxHp ? ' ' + Math.round(g.hp / g.maxHp * 100) + '%' : ''}` };
   if (!r) return { k: 'skip', t: '—' };
   if (r.cooling) return { k: 'cd', t: hm(r.remainMs) };
-  if (r.skip) return { k: 'skip', t: /預估/.test(r.skip) ? '太久' : '稍後' };
+  if (r.skip) return { k: 'skip', t: /預估/.test(r.skip) ? '太久' : /隊伍設定不打/.test(r.skip) ? '隊伍不打' : '稍後' };
   return { k: 'ok', t: '可打' };
 }
 ui.bossView = (() => { try { return localStorage.getItem('bossView') || 'boss'; } catch (_) { return 'boss'; } })();
@@ -3521,12 +3527,17 @@ function renderBossParties(c, live) {
     const union = [...new Set(p.ids.flatMap(mobsOf))].sort((a, b2) => ((mobs.find(x => x.mob === a) || {}).lv || 0) - ((mobs.find(x => x.mob === b2) || {}).lv || 0));
     const tog = new Set(p.togetherMobs || []);
     const mem = p.ids.map(id => { const w = p.why[id]; return `<span class="bb-c ${w && w !== '打王中' ? 'off' : ''}" title="${esc(charNameOf(id) + (w ? '\n' + w : '\n可以出發'))}">${avatarImg(id, 'sm')}${esc(charNameOf(id))}<span class="s ${w === '打王中' ? 'busy' : w ? 'skip' : 'ok'}">${esc(w || '可出發')}</span></span>`; }).join('');
+    const skip = new Set(p.skipMobs || []);
     let mobHtml;
     if (!union.length) mobHtml = '<span class="dim sm">隊員都還沒勾王（到「依王看」按「＋ 加角色」）</span>';
-    else if (p.mode === 'split') mobHtml = p.ids.map(id => `<div class="sm"><b>${esc(charNameOf(id))}</b>：${mobsOf(id).map(nameOfMob).map(esc).join('、') || '<span class="dim">不打王</span>'}</div>`).join('');
-    else if (p.mode === 'mixed') mobHtml = `<div class="bk-mobs">${union.map(m => `<span class="bk-mob ${tog.has(m) ? 'on' : ''}" data-pbtog="${esc(p.key)}|${esc(m)}" title="${tog.has(m) ? '整隊一起打（點一下改成分開打）' : '各自分開打（點一下改成整隊一起打）'}">${tog.has(m) ? '👥 ' : ''}${esc(nameOfMob(m))}</span>`).join('')}</div>
-      <div class="bar" style="margin:4px 0 0"><span class="dim sm">亮的＝整隊一起打，其他各自打。快速設定：</span><input type="number" class="pb-lv" data-pblvin="${esc(p.key)}" min="1" max="250" placeholder="等級" style="width:60px"><button class="btn sm" data-pblv="${esc(p.key)}">以上的王一起打</button></div>`;
-    else mobHtml = `<div class="sm">整隊一起打：${union.map(nameOfMob).map(esc).join('、')}</div>`;
+    else {
+      const chip = m => { const no = skip.has(m), tg = p.mode === 'together' || (p.mode === 'mixed' && tog.has(m)); const bm = mobs.find(x => x.mob === m) || {};
+        return `<span class="pb-mob ${no ? 'no' : 'yes'} ${!no && tg ? 'tog' : ''}"><span data-pbskip="${esc(p.key)}|${esc(m)}" title="${esc(`${nameOfMob(m)} Lv${bm.lv || '?'}${bm.mapName ? '・' + bm.mapName : ''}\n${no ? '這隊不打（點一下改成要打）' : '這隊會打（點一下改成不打）'}`)}">${no ? '🚫 ' : ''}${esc(nameOfMob(m))}</span>${p.mode === 'mixed' && !no ? `<a data-pbtog="${esc(p.key)}|${esc(m)}" title="${tog.has(m) ? '整隊一起打（點一下改成各自打）' : '各自打（點一下改成整隊一起打）'}">${tog.has(m) ? '👥' : '👤'}</a>` : ''}</span>`; };
+      mobHtml = `<div class="pb-mobs">${union.map(chip).join('')}</div>
+        <div class="dim sm">點王的名字＝這隊打不打（🚫＝不打）${p.mode === 'mixed' ? '；👥＝整隊一起打、👤＝各自打' : ''}${skip.size ? `　<a href="#" data-pbunskip="${esc(p.key)}">全部恢復要打</a>` : ''}</div>`
+        + (p.mode === 'mixed' ? `<div class="bar" style="margin:4px 0 0"><span class="dim sm">快速設定：</span><input type="number" class="pb-lv" data-pblvin="${esc(p.key)}" min="1" max="250" placeholder="等級" style="width:60px"><button class="btn sm" data-pblv="${esc(p.key)}">以上的王一起打</button></div>` : '')
+        + (p.mode === 'split' ? p.ids.map(id => `<div class="dim sm"><b>${esc(charNameOf(id))}</b>：${mobsOf(id).filter(m => !skip.has(m)).map(nameOfMob).map(esc).join('、') || '不打王'}</div>`).join('') : '');
+    }
     return `<div class="bb ${lv.length ? 'st-live' : block.length && p.mode !== 'split' ? 'st-cd' : 'st-ready'}" data-pbkey="${esc(p.key)}">
       <div class="bb-hd"><div><div class="nm">👥 ${esc(p.names.join('、'))}</div><div class="sub">${p.ids.length} 人${p.dps ? `・合計 DPS ${short(p.dps)}` : ''}・${p.custom ? '這隊自己的設定' : '用預設打法'}</div></div>
         <div class="bb-st ${lv.length ? 'live' : ''}"><span class="big">${lv.length ? '打王中' : block.length && p.mode !== 'split' ? '等隊友' : '待命'}</span><span class="sm">${lv.length ? esc(lv.map(g => g.name).join('、')) : ''}</span></div></div>
@@ -3539,12 +3550,12 @@ function renderBossParties(c, live) {
 }
 async function savePartyBoss(key, patch) {
   const c = bossCfg(), P = { ...(c.parties || {}) };
-  if (patch === null) delete P[key];
-  else { const p = ((BOSS && BOSS.parties) || []).find(x => x.key === key) || {}; P[key] = { mode: p.mode || c.partyMode, togetherMobs: p.togetherMobs || c.togetherMobs || [], ...(P[key] || {}), ...patch }; }
+  if (patch === null) { const sk = (P[key] || {}).skipMobs || []; if (sk.length) P[key] = { skipMobs: sk }; else delete P[key]; } // 改回預設：只改打法，「不打」的王保留
+  else { const p = ((BOSS && BOSS.parties) || []).find(x => x.key === key) || {}; P[key] = { mode: p.mode || c.partyMode, togetherMobs: p.togetherMobs || c.togetherMobs || [], skipMobs: p.skipMobs || [], ...(P[key] || {}), ...patch }; }
   await saveBoss({ parties: P }); await loadBoss(true); renderBoss(true);
 }
 document.addEventListener('click', async e => {
-  const t = e.target.closest && e.target.closest('[data-pbmode],[data-pbtog],[data-pblv],[data-pbreset]'); if (!t || !t.closest('#bossParties')) return;
+  const t = e.target.closest && e.target.closest('[data-pbmode],[data-pbtog],[data-pblv],[data-pbreset],[data-pbskip],[data-pbunskip]'); if (!t || !t.closest('#bossParties')) return;
   e.preventDefault();
   const d = t.dataset;
   try {
@@ -3552,6 +3563,8 @@ document.addEventListener('click', async e => {
     if (d.pbtog) { const [key, mob] = d.pbtog.split('|'); const p = BOSS.parties.find(x => x.key === key); const set = new Set(p.togetherMobs || []); set.has(mob) ? set.delete(mob) : set.add(mob); await savePartyBoss(key, { mode: 'mixed', togetherMobs: [...set] }); }
     if (d.pblv) { const lv = Number((document.querySelector(`[data-pblvin="${CSS.escape(d.pblv)}"]`) || {}).value); if (!lv) { alert('先填等級'); return; } await savePartyBoss(d.pblv, { mode: 'mixed', togetherMobs: bossList().filter(x => (x.lv || 0) >= lv).map(x => x.mob) }); }
     if (d.pbreset) await savePartyBoss(d.pbreset, null);
+    if (d.pbskip) { const [key, mob] = d.pbskip.split('|'); const p = BOSS.parties.find(x => x.key === key); const set = new Set(p.skipMobs || []); set.has(mob) ? set.delete(mob) : set.add(mob); await savePartyBoss(key, { skipMobs: [...set] }); }
+    if (d.pbunskip) await savePartyBoss(d.pbunskip, { skipMobs: [] });
   } catch (err) { alert('失敗：' + err.message); }
 });
 function bossMapOf(mob) { if (!WORLD) return ''; const m = WORLD.maps.find(x => (x.boss || []).includes(mob)); return m ? m.id : ''; }
