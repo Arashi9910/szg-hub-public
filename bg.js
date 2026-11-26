@@ -363,6 +363,7 @@ ${fixed}
     await sleep(800);
   }
 
+  const GOOGLE_LOGIN = new RegExp(process.env.SZG_GOOGLE_LOGIN_RE || '^https://accounts\\.google\\.com/', 'i'); // 測試用 SZG_GOOGLE_LOGIN_RE 換成模擬的網址
   async function stop(id) { const r = R(id); r.busy = true; try { await stopBrowser(id); } finally { r.busy = false; } r.state = 'off'; r.msg = ''; }
 
   // 登入：同一個資料夾開「一般的 Chrome 視窗」（不接 DevTools，不是自動化瀏覽器，Google 登入不會被擋）
@@ -373,6 +374,9 @@ ${fixed}
     const r = R(id);
     if (r.login) return;
     await stop(id);
+    // 還有中控開的 Chrome（有遠端除錯）佔著這個資料夾：新開的視窗會變成它的一個視窗（同一個資料夾只會有一個 Chrome），
+    // Google 會判斷成自動化瀏覽器、擋登入（「這個瀏覽器或應用程式可能有安全疑慮」）→ 先確實關掉
+    if ((await chromeOf(id)).some(x => /--remote-debugging-port/.test(x.cmd))) { log(`${p.name}：先關掉還在跑的背景 Chrome，再開登入視窗`); await killStale(id); }
     const dir = dirOf(id); prepDir(dir);
     try { fs.unlinkSync(path.join(dir, 'DevToolsActivePort')); } catch (_) {}
     const args = [`--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check', ...(LOGIN_HEADLESS ? ['--headless=new', '--remote-debugging-port=0', ...sandboxArgs()] : []),
@@ -419,6 +423,19 @@ ${fixed}
       const v = await r.cdp.send('Runtime.evaluate', { expression: probeExpr(withAcct), awaitPromise: true, returnByValue: true }, pg.sessionId, 15000);
       const o = (v.result && v.result.value) || {};
       pg.info = { ...(pg.info || {}), ...o, at: now }; pg.fail = 0;
+      // 「顯示」的視窗（中控開的、有遠端除錯）裡按 Google 登入會被 Google 擋（「這個瀏覽器或應用程式可能有安全疑慮」）：
+      // 看到 Google 登入頁（同一頁或跳出來的視窗）就自動換成「一般的 Chrome 登入視窗」，在那裡登入
+      if (r.visible && !r.toLogin) {
+        let g = GOOGLE_LOGIN.test(String(o.url || ''));
+        if (!g) { try { const t = await r.cdp.send('Target.getTargets', {}, undefined, 5000); g = (t.targetInfos || []).some(x => x.type === 'page' && GOOGLE_LOGIN.test(x.url || '')); } catch (_) {} }
+        if (g) {
+          r.toLogin = true; const nm = (prof(r.id) || {}).name;
+          log(`${nm}：顯示的視窗打開了 Google 登入，Google 會擋自動化的瀏覽器 → 改開一般的登入視窗`);
+          (r.logs || (r.logs = [])).push({ at: now, page: key, msg: 'Google 登入要在一般的登入視窗登入：已自動換過去，登入完關掉視窗就會回到背景執行' });
+          setTimeout(() => login(r.id).catch(e => log(`${nm}：開登入視窗失敗（${e.message}）`)).finally(() => { r.toLogin = false; }), 300);
+          return;
+        }
+      }
       try { const h = await r.cdp.send('Runtime.getHeapUsage', {}, pg.sessionId, 5000); pg.heap = Math.round((h.usedSize || 0) / 1048576); pg.heapTotal = Math.round((h.totalSize || 0) / 1048576); } catch (_) {}
       if (o.hasState) pg.stateOk = true;
       // 省資源模式的保險：遊戲頁載入 2 分鐘還沒有遊戲資料 → 這個帳號改回完整模式（可能遊戲有地方需要圖片才會啟動）

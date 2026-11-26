@@ -6852,6 +6852,8 @@ function acStateHtml(p) {
   return `<div class="ac-st"><span class="bg-dot ${c}"></span> <span class="${c === 'ok' ? 'good' : c}">${esc(t)}</span>${p.visible ? ' <span class="tag">👁 顯示中</span>' : ''}`
     + (p.state === 'running' && live.length ? `<div class="dim sm">${live.length} 個分頁${stand ? `，${stand} 個暫停（你的 Chrome 開著）` : ''}${p.mem ? `・<span title="遊戲分頁 ${p.mem.pageMb} MB、Chrome 本身 ${p.mem.baseMb} MB（${p.mem.procs} 個程序）">${p.mem.mb >= 1024 ? (p.mem.mb / 1024).toFixed(1) + ' GB' : p.mem.mb + ' MB'}</span>` : ''}${p.noLite ? '・<span class="warn" title="省資源模式下遊戲沒有載入完成，這個帳號先用完整模式">完整模式</span>' : ''}</div>` : '')
     + (p.state === 'error' && p.msg ? `<div class="bad sm">${esc(p.msg)}</div>` : '')
+    + (p.needLogin && p.state === 'running' ? '<div class="sm">按右邊的「登入」，在跳出來的視窗登入 Google。不要在「顯示」的視窗裡登入：Google 會把它當成自動化的瀏覽器擋掉（中控看到會自動換成登入視窗）。</div>' : '')
+    + (p.state === 'login' ? '<div class="dim sm">在跳出來的 Chrome 視窗登入，登入完關掉視窗（或按「登入完成」）就會回到背景執行。</div>' : '')
     + ((p.logs || []).length ? `<details><summary class="dim sm">錯誤紀錄（${p.logs.length}）</summary><div class="bg-log">${p.logs.map(l => `${new Date(l.at).toLocaleTimeString()} ${esc(l.page)} ${esc(l.msg)}`).join('\n')}</div></details>` : '') + '</div>';
 }
 function acCharsHtml(p) {
