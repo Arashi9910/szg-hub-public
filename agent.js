@@ -1624,6 +1624,9 @@ function agentMain(ctx) {
         let cdChecked = false, seen = false, gone = 0, hp = null, maxHp = null, lowest = Infinity, dropAt = Date.now(), postAt = 0, res = '';
         while (!res) {
           await sleepP(4000);
+          // 中控面板按了強制停止
+          const sr = await hub('GET', '/api/boss/stopreq?job=' + encodeURIComponent(job.id)).catch(() => null);
+          if (sr && sr.stop) { res = 'stopped'; break; }
           let j;
           try { j = await gameRetry({ type: 'sync', characterId: id }); }
           catch (e) { if (e.gameUpdated) throw e; if (Date.now() - t0 > maxMs) res = 'timeout'; continue; }
@@ -1661,7 +1664,7 @@ function agentMain(ctx) {
         const left = hp != null && maxHp ? `（王剩 ${pct(hp, maxHp)}%，血量會保留）` : '';
         const text = {
           killed: `打死了，花了約 ${mins} 分鐘`, timeout: `打了 ${mins} 分鐘（安全上限）還沒打死${left}`, dead: `角色倒下${left}`,
-          absent: '到了地圖但王不在場上', stuck: `${Math.round(stuckMs / 60000)} 分鐘內血量都沒有下降，先放棄${left}`, moved: '中途被換到別的地圖，停止',
+          stopped: `你按了強制停止，放棄這隻${left}`, absent: '到了地圖但王不在場上', stuck: `${Math.round(stuckMs / 60000)} 分鐘內血量都沒有下降，先放棄${left}`, moved: '中途被換到別的地圖，停止',
         }[res] || res;
         return { result: res, text, hp, maxHp, inst, ms: Date.now() - t0 };
       };
@@ -1676,7 +1679,7 @@ function agentMain(ctx) {
         if (r.result === 'dead') { hubRevivedAt[id] = Date.now(); try { await gameRetry({ type: 'revive', characterId: id }); } catch (_) {} }
         // 更新王的狀態（下一隻用最新的冷卻判斷）
         try { st = await fullSync(); await postBossState(id, st); } catch (_) { st = null; }
-        const cont = b.chain && !['moved', 'dead', 'error'].includes(r.result) && n < 30;
+        const cont = b.chain && !['moved', 'dead', 'error', 'stopped'].includes(r.result) && n < 30;
         let nx = null;
         if (cont) {
           await result(r.result, r.text, { hp: r.hp, maxHp: r.maxHp, ms: r.ms }); posted = true;
@@ -1703,7 +1706,7 @@ function agentMain(ctx) {
       lastHash = '';
       if (!traveled && r.result !== 'error') backMsg = '';
       const sum = n > 1 ? `（這一輪連續打了 ${n} 隻，打死 ${killed.length} 隻，共 ${Math.max(1, Math.round((Date.now() - tAll) / 60000))} 分鐘）` : '';
-      const lastTold = b.chain && traveled && !['moved', 'dead', 'error'].includes(r.result);
+      const lastTold = b.chain && traveled && !['moved', 'dead', 'error', 'stopped'].includes(r.result);
       deathBossJob = null;
       if (lastTold) await hub('POST', '/api/boss/result', { charId: id, mob: b.mob, logOnly: true, msg: `沒有下一隻了，回練功圖${backMsg.replace(/^，/, '：')}${sum}` }).catch(() => {});
       else if (!posted) await result(r.result, r.text + backMsg + sum, { hp: r.hp, maxHp: r.maxHp, ms: r.ms });

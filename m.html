@@ -324,7 +324,8 @@ function renderBoss() {
   const live = D.boss.live || [];
   $('#bossLive').innerHTML = live.length ? `<h4>正在打</h4>` + live.map(g => { const p = g.hp != null && g.maxHp ? g.hp / g.maxHp * 100 : null;
     return `<div class="card"><div class="t" style="display:flex;gap:6px"><b style="flex:1">${esc(g.name)}</b><span class="dim sm">${esc(g.mapName)}</span></div><div class="hp"><i style="width:${p == null ? 100 : p.toFixed(1)}%"></i></div>
-      <div class="sm">${p == null ? esc(g.msg || '前往中') : p.toFixed(1) + '%'}${g.etaSec != null ? `・預估還要 ${hm(g.etaSec * 1000)}` : ''}・${esc(g.names.join('＋'))}</div></div>`; }).join('') : '';
+      <div class="sm">${p == null ? esc(g.msg || '前往中') : p.toFixed(1) + '%'}${g.etaSec != null ? `・預估還要 ${hm(g.etaSec * 1000)}` : ''}</div>
+      <div class="chips" style="margin-top:6px">${(g.who || []).map(w => w.stopping ? `<span class="chip">${esc(w.name)} 停止中…</span>` : `<span class="chip" data-bstop="${esc(w.charId)}">⏹ ${esc(w.name)}</span>`).join('')}${(g.who || []).filter(w => !w.stopping).length > 1 ? `<span class="chip" data-bstopall="${esc(g.instanceId)}">⏹ 全部停止</span>` : ''}</div></div>`; }).join('') : '';
   if (!BOSS) { $('#bossCards').innerHTML = '<div class="empty">讀取中…</div>'; loadBoss().then(() => view === 'boss' && renderBoss()); return; }
   const cm = BOSS.cfg.charMobs || {}, mobs = bossList(), info = Object.fromEntries(BOSS.chars.map(x => [x.charId, x]));
   const q = ui.bq.trim();
@@ -396,7 +397,7 @@ function go(v) {
   window.scrollTo(0, 0); render();
 }
 document.addEventListener('click', async e => {
-  const t = e.target.closest('button, [data-ch], [data-pickmap], [data-bkm], [data-btog]'); if (!t) return;
+  const t = e.target.closest('button, [data-ch], [data-pickmap], [data-bkm], [data-btog], [data-bstop], [data-bstopall]'); if (!t) return;
   const d = t.dataset;
   try {
     if (d.v) return go(d.v);
@@ -428,6 +429,10 @@ document.addEventListener('click', async e => {
     if (t.id === 'bossRun') { BOSS = await api('/api/boss/run-now', {}); toast('已檢查'); return render(); }
     if (d.bkm) { const [id, mob] = d.bkm.split('|'), cm = BOSS.cfg.charMobs || {}; let l = [...(cm[id] || [])]; if (mob === '*') l = bossList().map(b => b.mob); else l = l.includes(mob) ? l.filter(x => x !== mob) : [...l, mob]; return setCharMobs(id, l); }
     if (d.bk) { const [a, id] = d.bk.split('|'), c = byId(id); return setCharMobs(id, a === 'all' ? ['*'] : a === 'none' ? [] : bossList().filter(b => (b.lv || 0) <= ((c && c.lv) || 0)).map(b => b.mob)); }
+    if (d.bstop || d.bstopall) { // 強制停止：放棄這隻王、回原本的地圖練功
+      if (!confirm(d.bstop ? '這隻放棄打王，回原本的地圖練功？（30 分鐘內不再派去打王）' : '打這隻王的全部放棄，回原本的地圖練功？（30 分鐘內不再派去打王）')) return;
+      await api('/api/boss/stop', d.bstop ? { charIds: [d.bstop] } : { instanceId: d.bstopall }); toast('已送出停止'); await load(); await loadBoss(); return render();
+    }
     if (d.btog) { const set = new Set(BOSS.cfg.togetherMobs || []); set.has(d.btog) ? set.delete(d.btog) : set.add(d.btog); return saveBoss({ togetherMobs: [...set] }); }
     if (d.pt) return applyParties([d.pt]);
     if (t.id === 'ptAll') return applyParties(null);

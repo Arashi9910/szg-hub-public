@@ -677,7 +677,7 @@ function automationInfo() {
 // v0.69：visitMax（每次最多打 N 分鐘）不再用——打很久的王（海怒斯、噴火龍、格瑞芬多）會打到一半被時間到、連續打拉去別的王
 // db.boss = { state: {角色: {at, offset, list}}, hp: {instanceId: {hp, maxHp, at}}, last: {角色|mob: {at, result}}, home: {角色: map}, log, seen }
 // 0.43.0：換圖後開始掛機、掛機設定組合。舊腳本的分頁會先重新整理換新腳本再接工作（避免舊腳本打王不開掛機、站著發呆）
-BAG_KINDS.add('boss'); KIND_MIN_AGENT.boss = '0.69.0'; // 0.69：血量有在掉就打到死、到王的地圖套用自動販售
+BAG_KINDS.add('boss'); KIND_MIN_AGENT.boss = '0.69.1'; // 0.69.1：強制停止 // 0.69：血量有在掉就打到死、到王的地圖套用自動販售
 const BOSS_RETRY_MS = 30 * 60 * 1000;   // 沒打成功（逾時、倒下、王不在）的同一隻王，30 分鐘內不再去
 const BOSS_STATE_STALE = 20 * 60 * 1000; // 王的狀態超過這麼久沒更新就先不派
 // 每隻角色各自要打的王：settings.boss.charMobs = {角色: ['*']（全部）| [王 id…]}，空的／沒有＝不打。
@@ -773,7 +773,7 @@ function bossRows(charId, dpsOverride, allow) {
       lv: mob.lv || 0, hp, maxHp, hpKnown: !!h, ready, cooling, remainMs: cooling ? r.deadline - srvNow : 0, estSec, selected, last, skip };
   });
 }
-const BOSS_RESULT = { killed: '打死了', timeout: '時間到還沒打死', dead: '角色倒下', absent: '王不在場上', stuck: '打不動（血量沒有下降）', moved: '中途被換到別的地圖', cooling: '還在冷卻', error: '出錯' };
+const BOSS_RESULT = { killed: '打死了', timeout: '時間到還沒打死', dead: '角色倒下', absent: '王不在場上', stuck: '打不動（血量沒有下降）', moved: '中途被換到別的地圖', cooling: '還在冷卻', error: '出錯', stopped: '強制停止' };
 function bossBusy(charId) { return db.jobs.some(j => ACTIVE.has(j.status) && (j.fromCharId === charId || j.toCharId === charId)); }
 // 隊伍：每隻角色回報時帶著遊戲的 party（{code, members:[{id, name, …}]}）。同隊伍共用同一份野王，
 // 所以排程以「隊伍」為單位：勾了其中一隻，同隊的一起挑同一隻王出發（預估用隊員 DPS 加總），各自打完回自己原本的地圖
@@ -800,7 +800,25 @@ function bossUnitOf(charId, pm) {
 // 出發單位：隊伍一起打＝整隊；各自打＝每隻自己（同隊的王是共用的，靠 busyInst 避免兩隻同時去同一隻）
 const bossUnitFor = (charId, pm, c) => c.partyMode === 'split' ? { code: null, ids: [charId] } : bossUnitOf(charId, pm);
 const bossAllow = (unit, c) => new Set(unit.ids.flatMap(id => c.charMobs[id] || []));
-const bossAvail = id => { const s = db.chars[id]; return !!(s && s.char && s.playerCode && tabOf(s.playerCode, id) && s.char.auto && !bossBusy(id)); };
+const bossHeld = id => { const h = (bossDb().hold || {})[id]; return h && h > Date.now() ? h : 0; }; // 按了強制停止：這段時間不再派去打王
+const bossAvail = id => { const s = db.chars[id]; return !!(s && s.char && s.playerCode && tabOf(s.playerCode, id) && s.char.auto && !bossBusy(id) && !bossHeld(id)); };
+const BOSS_HOLD_MS = 30 * 60 * 1000;
+// 強制停止：{instanceId?（正在打的那一場）, charIds?（只停這幾隻）}。還沒開始的工作直接取消；進行中的標 stopReq，
+// 遊戲分頁每 4 秒問一次（/api/boss/stopreq），看到就放棄這隻、回原本的地圖開始掛機。停的角色 30 分鐘內不再派去打王
+function bossStop(e) {
+  const b = bossDb(), now = Date.now(); b.hold = b.hold || {};
+  const ids = Array.isArray(e.charIds) && e.charIds.length ? new Set(e.charIds.map(String)) : null;
+  const js = db.jobs.filter(j => j.kind === 'boss' && ACTIVE.has(j.status) && (!e.instanceId || j.batches[0].boss.instanceId === e.instanceId) && (!ids || ids.has(j.fromCharId)));
+  for (const j of js) {
+    b.hold[j.fromCharId] = now + BOSS_HOLD_MS;
+    if (j.status !== 'running') { j.status = 'cancelled'; jobLog(j, '你按了強制停止，取消'); }
+    else { j.stopReq = now; jobLog(j, '你按了強制停止：放棄這隻王，回原本的地圖練功'); }
+    bossLog(j.fromCharId, `強制停止：不打 ${j.batches[0].boss.name}，回原本的地圖練功（30 分鐘內不再派去打王）`);
+  }
+  for (const [k, v] of Object.entries(b.hold)) if (v < now) delete b.hold[k];
+  save();
+  return { stopped: js.map(j => j.fromName) };
+}
 // 從這幾隻角色（ids）可以打的王裡挑一隻：已重生、有勾、預估不會太久、別人沒在打、30 分鐘內沒失敗過；mobOk 再限制哪些王（依王決定時用）
 // 王的狀態：同隊伍的王是共用的，用隊伍裡最新回報的那一份（自己打時也一樣，隊友剛打死的王才會看成冷卻中）
 function bossPick(ids, c, now, busyInst, mobOk, dpsIds, stateIds) {
@@ -894,6 +912,7 @@ function bossNext(e) {
   if (c.mode !== 'auto' || !c.chain) return { none: true, why: c.mode !== 'auto' ? '打王不是自動出發' : '沒開連續打' };
   const job = db.jobs.find(j => j.id === e.jobId && j.kind === 'boss' && ACTIVE.has(j.status));
   if (!job || job.fromCharId !== e.charId) return { none: true, why: '找不到這個打王工作' };
+  if (job.stopReq) return { none: true, why: '強制停止' };
   const pm = partyMap(), tog = new Set(c.togetherMobs);
   let unit = bossUnitFor(e.charId, pm, c), mobOk = null;
   // 依王決定：這個工作是一起打的（boss.unit 有隊伍代碼）就只接「一起打」的王，自己打的就只接「分開打」的王
@@ -999,7 +1018,7 @@ function bossLive() {
   const b = bossDb(), by = {};
   for (const j of db.jobs.filter(j => j.kind === 'boss' && ACTIVE.has(j.status))) {
     const x = j.batches[0].boss, g = by[x.instanceId] || (by[x.instanceId] = { instanceId: x.instanceId, mob: x.mob, name: x.name, mapName: x.mapName, names: [], startedAt: j.createdAt, msg: '' });
-    g.names.push(j.fromName); g.startedAt = Math.min(g.startedAt, j.createdAt); if (j.lastMsg) g.msg = j.lastMsg;
+    g.names.push(j.fromName); (g.who || (g.who = [])).push({ charId: j.fromCharId, name: j.fromName, stopping: !!j.stopReq }); g.startedAt = Math.min(g.startedAt, j.createdAt); if (j.lastMsg) g.msg = j.lastMsg;
   }
   return Object.values(by).map(g => {
     const h = b.hp[g.instanceId], t = bossHpTrack[g.instanceId];
@@ -1019,7 +1038,7 @@ function bossSummary() {
     const pdps = unit.code ? unit.ids.reduce((t, x) => t + charDps(x), 0) : null;
     return { charId: id, slot: s.char.settingsSlot || 1, party: unit.code ? { code: unit.code, ids: unit.ids, names: unit.ids.map(x => db.chars[x].char.name) } : null, partyDps: pdps, name: s.char.name, lv: s.char.lv, map: s.char.map, mapName: s.char.mapName, auto: !!s.char.auto, tab: !!tabOf(s.playerCode, id), on: c.partyMode === 'split' ? !!c.chars[id] : unit.ids.some(x => c.chars[x]), picked: !!c.chars[id], mobs: c.charMobs[id] || [],
       at: (b.state[id] || {}).at || 0, dps: charDps(id), rows: bossRows(id, c.partyMode === 'split' ? null : pdps, bossAllow(u2, c)),
-      job: (db.jobs.filter(j => j.kind === 'boss' && j.fromCharId === id).slice(-1)[0]) || null };
+      held: bossHeld(id), job: (db.jobs.filter(j => j.kind === 'boss' && j.fromCharId === id).slice(-1)[0]) || null };
   });
   return { cfg: c, chars, live: bossLive(), log: b.log.slice(-100), newBosses: bossNewList() };
 }
@@ -1523,6 +1542,12 @@ const server = http.createServer(async (req, res) => {
         else if (t) t.at = Date.now();
       }
       return send(res, 200, { ok: true });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/boss/stop') return send(res, 200, { ...bossStop(JSON.parse((await readBody(req)) || '{}') || {}), ...bossSummary() });
+    if (req.method === 'POST' && url.pathname === '/api/boss/unhold') { const b = bossDb(); const e = JSON.parse((await readBody(req)) || '{}') || {}; if (b.hold) { if (e.charId) delete b.hold[e.charId]; else b.hold = {}; } save(); return send(res, 200, bossSummary()); }
+    if (req.method === 'GET' && url.pathname === '/api/boss/stopreq') {
+      const j = db.jobs.find(x => x.id === url.searchParams.get('job'));
+      return send(res, 200, { stop: !!(j && (j.stopReq || j.status === 'cancelled')) });
     }
     // 連續打：打完一隻問下一隻
     if (req.method === 'POST' && url.pathname === '/api/boss/next') {

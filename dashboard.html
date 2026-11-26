@@ -513,6 +513,8 @@
   .bsell-m { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--panel2); display: flex; flex-direction: column; gap: 4px; }
   .bsell-m.over { border-color: var(--warn); } .bsell-m .hd { display: flex; gap: 6px; align-items: center; } .bsell-m .hd .btn { margin-left: auto; }
   .boss-live { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 8px 10px; margin: 0 0 8px; border: 1px solid var(--line); border-left: 3px solid var(--bad); border-radius: 6px; background: var(--panel2); }
+  .btn.danger { border-color: var(--bad); color: var(--bad); } .btn.danger:hover { background: rgba(230,107,107,.15); }
+  .boss-live .bl-stop { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-left: auto; }
   .boss-live .bl-name { min-width: 180px; } .boss-live .bl-pct { font-variant-numeric: tabular-nums; min-width: 52px; }
   .hpbar.big { width: 240px; height: 10px; } .hpbar i { transition: width .6s; }
   .boss-grid-wrap { overflow-x: auto; }
@@ -3360,7 +3362,7 @@ function bossList() {
   if (!m.size && WORLD) for (const mp of WORLD.maps) for (const id of mp.boss || []) { const x = WORLD.mobs.find(o => o.id === id); if (x && !m.has(id)) m.set(id, { mob: id, name: x.name, lv: x.lv, mapName: mp.name }); }
   return [...m.values()].sort((a, b) => (a.lv || 0) - (b.lv || 0));
 }
-const BOSS_RES = { killed: '打死了', timeout: '時間到', dead: '倒下', absent: '王不在', stuck: '打不動', moved: '被換圖', cooling: '冷卻中', error: '出錯' };
+const BOSS_RES = { killed: '打死了', timeout: '時間到', dead: '倒下', absent: '王不在', stuck: '打不動', moved: '被換圖', cooling: '冷卻中', error: '出錯', stopped: '強制停止' };
 const mmss = sec => { sec = Math.max(0, Math.round(sec)); const m = Math.floor(sec / 60); return m >= 60 ? hm(sec * 1000) : `${m}:${String(sec % 60).padStart(2, '0')}`; };
 // 名字共同的前綴（例如「佐藤」）在表頭省略，滑鼠移上去看全名
 function namePrefix(names) { if (names.length < 2) return ''; let p = names[0]; for (const n of names) while (p && !n.startsWith(p)) p = p.slice(0, -1); return names.every(n => n.length > p.length) ? p : ''; }
@@ -3424,12 +3426,14 @@ function renderBoss(force) {
     const el = (Date.now() - g.startedAt) / 1000;
     return `<div class="boss-live"><span class="bl-name"><b>${esc(g.name)}</b> <span class="dim sm">${esc(g.mapName)}</span></span>
       <span class="hpbar big"><i style="width:${p == null ? 100 : p.toFixed(1)}%"></i></span><b class="bl-pct">${p == null ? '—' : p.toFixed(1) + '%'}</b>
-      <span class="sm">${g.names.map(esc).join('＋')}</span>
-      <span class="dim sm">已打 ${mmss(el)}${g.etaSec != null ? `・預估還要 ${mmss(g.etaSec)}` : p == null ? '・' + esc(g.msg || '前往中') : ''}${g.hpAt ? `・${Math.max(0, Math.round((Date.now() - g.hpAt) / 1000))} 秒前` : ''}</span></div>`;
+      <span class="dim sm">已打 ${mmss(el)}${g.etaSec != null ? `・預估還要 ${mmss(g.etaSec)}` : p == null ? '・' + esc(g.msg || '前往中') : ''}${g.hpAt ? `・${Math.max(0, Math.round((Date.now() - g.hpAt) / 1000))} 秒前` : ''}</span>
+      <span class="bl-stop">${(g.who || []).map(w => w.stopping ? `<span class="bb-c off" title="已送出停止，等遊戲分頁回原地圖">${avatarImg(w.charId, 'sm')}${esc(w.name)}<span class="s">停止中…</span></span>` : `<span class="bb-c" data-bstop="${esc(w.charId)}" title="只讓 ${esc(w.name)} 放棄這隻，回原本的地圖練功">${avatarImg(w.charId, 'sm')}${esc(w.name)}<span class="s busy">⏹ 停止</span></span>`).join('')}
+        ${(g.who || []).filter(w => !w.stopping).length > 1 ? `<button class="btn sm danger" data-bstopall="${esc(g.instanceId)}" title="打這隻王的人全部放棄，回原本的地圖練功">⏹ 全部停止</button>` : ''}</span></div>`;
   }).join('');
   const sum = renderBossBoard(c, live);
   if (ui.bossView === 'char' && (force || document.activeElement !== $('#bossCardQ'))) renderBossCards();
-  $('#bossSum').textContent = sum;
+  const held = ((BOSS && BOSS.chars) || []).filter(x => x.held > Date.now());
+  $('#bossSum').innerHTML = esc(sum) + (held.length ? `・<span class="warn" title="${esc(held.map(x => `${x.name}：${clock(x.held)} 前不派去打王`).join('\n'))}">${held.length} 隻按了停止、暫停打王</span> <a href="#" data-bunhold="1" title="讓它們馬上可以再被派去打王">恢復</a>` : '');
   $('#bossSellSum').textContent = sellOn ? '開' : '關';
   if ($('#bossSellDrawer').style.display !== 'none') renderBossSell();
   const logs = ((BOSS && BOSS.log) || []).slice().reverse().slice(0, 80);
@@ -3466,6 +3470,8 @@ function renderBossBoard(c, live) {
     const sell = bossSellCalc(r0.map || bossMapOf(b.mob));
     const who = st.map(x => {
       const ch = byId[x.id] || { name: charNameOf(x.id), lv: 0 };
+      const held = x.i && x.i.held > Date.now() && !live.some(l => l.mob === b.mob && l.names.includes(x.i.name));
+      if (held) x.s = { k: 'skip', t: `暫停到 ${clock(x.i.held).slice(-5)}` };
       const off = !hasTab(x.id) || (x.i && !x.i.auto);
       const tip = [`${ch.name} Lv${ch.lv || '?'}`, off ? (!hasTab(x.id) ? '沒有自己的遊戲分頁，不會出發' : '沒在掛機，不會出發') : '', x.r && x.r.skip && x.r.skip !== '冷卻中' ? x.r.skip : '', x.r && x.r.estSec != null ? `預估 ${Math.max(1, Math.ceil(x.r.estSec / 60))} 分鐘打死` : '', x.r && x.r.last ? `上次 ${clock(x.r.last.at)} ${BOSS_RES[x.r.last.result] || x.r.last.result}` : '', (cm[x.id] || []).includes('*') ? '（這隻設定成打全部的王）' : '', '點一下：不讓它打這隻王'].filter(Boolean).join('\n');
       return `<span class="bb-c ${off ? 'off' : ''}" data-bbdel="${esc(x.id)}|${esc(b.mob)}" title="${esc(tip)}">${avatarImg(x.id, 'sm')}${esc(ch.name)}<span class="s ${x.s.k}">${esc(x.s.t)}</span></span>`;
@@ -3484,6 +3490,7 @@ function renderBossBoard(c, live) {
       <div class="bb-hd">${wm ? mobImg(wm) : ''}<div><div class="nm">${esc(b.name)}</div><div class="sub">Lv${b.lv || '?'}・${esc(b.mapName || '')}</div></div>
         <div class="bb-st ${cls}"><span class="big">${esc(big)}</span><span class="sm">${esc(small)}</span></div></div>
       ${g && g.hp != null && g.maxHp ? `<span class="hpbar" style="width:100%"><i style="width:${(g.hp / g.maxHp * 100).toFixed(1)}%"></i></span>` : ''}
+      ${g && (g.who || []).some(w => !w.stopping) ? `<div class="bar" style="margin:0"><button class="btn sm danger" data-bstopall="${esc(g.instanceId)}" title="打這隻王的人全部放棄，回原本的地圖練功（30 分鐘內不再派去打王）">⏹ 強制停止，回練功圖</button><span class="dim sm">只停某幾隻：用上方「正在打」的角色按鈕</span></div>` : ''}
       <div class="bb-meta">${r0.maxHp ? `<span>HP ${short(r0.maxHp)}</span>` : wm ? `<span>HP ${short(wm.hp)}</span>` : ''}${hpLeft != null ? `<span class="warn">上次打到剩 ${hpLeft}%</span>` : ''}${est != null ? `<span class="${long ? 'long' : ''}">${long ? '⏳ ' : ''}預估 ${estTxt(est)}打死${est > c.estMax * 60 ? `（超過 ${c.estMax} 分不去，⚙ 設定可調）` : ''}</span>` : ids.length ? '<span>還沒有實戰 DPS，無法預估</span>' : ''}</div>
       <div class="bb-who">${who || '<span class="dim sm">還沒有角色打這隻</span>'}${mateHtml}${addOpen ? '' : `<button class="bb-add" data-bbaddopen="${esc(b.mob)}">＋ 加角色</button>`}</div>
       ${pick}
@@ -3528,6 +3535,20 @@ document.addEventListener('click', async e => {
     }
   } catch (err) { alert('失敗：' + err.message); return; }
   await loadBoss(true); renderBoss(true);
+});
+// 強制停止：選的人（正在打的角色按鈕）或打這隻王的全部人
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('[data-bstop],[data-bstopall],[data-bunhold]'); if (!t || !t.closest('#maps')) return;
+  e.preventDefault();
+  const d = t.dataset;
+  try {
+    if (d.bunhold) { BOSS = await api('/api/boss/unhold', {}); bossLoadAt = Date.now(); renderBoss(); return; }
+    const g = ((BOSS && BOSS.live) || []).find(x => x.instanceId === d.bstopall || (x.who || []).some(w => w.charId === d.bstop));
+    const names = d.bstop ? [charNameOf(d.bstop)] : ((g && g.who) || []).filter(w => !w.stopping).map(w => w.name);
+    if (!confirm(`${names.join('、')} 放棄打 ${g ? g.name : '這隻王'}，回原本的地圖練功？\n（王的血量遊戲會保留；這幾隻 30 分鐘內不會再被派去打王）`)) return;
+    BOSS = await api('/api/boss/stop', d.bstop ? { charIds: [d.bstop] } : { instanceId: d.bstopall });
+    bossLoadAt = Date.now(); $('#bossMsg').textContent = `已送出停止：${(BOSS.stopped || []).join('、') || '（沒有進行中的）'}`; renderBoss();
+  } catch (err) { alert('失敗：' + err.message); }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.boss-drawer').forEach(x => { x.style.display = 'none'; }); });
 
