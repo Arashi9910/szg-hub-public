@@ -102,18 +102,6 @@
   .btn.sm { padding: 1px 6px; font-size: 12px; } .btn.on { border-color: var(--good); }
   .mc-chars { min-height: 30px; margin: 6px 0 2px; display: flex; flex-wrap: wrap; align-items: center; }
   .mc-chars .holder { cursor: grab; } .holder.mv { border-style: dashed; border-color: var(--warn); }
-  .bd-lanes { display: flex; flex-direction: column; gap: 12px; }
-  .bd-lane-hd { display: flex; align-items: center; gap: 10px; margin: 2px 0 6px; } .bd-lane-hd b { font-size: 14px; } .bd-lane-hd .bd-add { margin-left: auto; max-width: 280px; }
-  .bd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
-  .bd-card { border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; border-top: 3px solid var(--line); }
-  .bd-card.has { border-top-color: var(--accent); } .bd-card.mv { border-top-color: var(--warn); } .bd-card.drop-hover { outline: 2px dashed var(--accent); outline-offset: 2px; }
-  .bd-card .hd { display: flex; align-items: center; gap: 6px; } .bd-card .hd .nm { font-weight: 700; } .bd-card .hd .sub { font-size: 11px; color: var(--dim); }
-  .bd-card .hd .acts { margin-left: auto; display: inline-flex; gap: 4px; align-items: center; } .bd-card .flane { font-size: 12px; padding: 0 2px; }
-  .bd-card .bb-c.mv { border-style: dashed; border-color: var(--warn); }
-  .bd-card .ft { display: flex; gap: 6px; align-items: center; border-top: 1px solid var(--line); padding-top: 5px; font-size: 11px; color: var(--dim); } .bd-card .ft .btn:first-of-type { margin-left: auto; }
-  .bd-auto { font-size: 11px; color: var(--warn); }
-  #bdChars table td, #bdChars table th { padding: 3px 8px; } #bdChars tr.sel td { background: rgba(90,169,230,.12); }
-  .bd-cbar { position: sticky; top: var(--hdr, 52px); z-index: 3; background: var(--panel); padding: 6px 0; }
   .bd-est { font-size: 12px; margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 10px; } .bd-est .goal { white-space: nowrap; }
   .bd-add { width: 100%; }
   .tile.sellx { box-shadow: inset 0 0 0 2px var(--warn); border-color: var(--warn); background: #3a2e14; }
@@ -811,15 +799,15 @@
   <section id="board">
     <div class="card">
       <h3>派工看板</h3>
-      <div class="dim help-src">「卡片」：一張地圖一張卡片，按「＋ 加角色」點選誰去那裡（點卡片上的角色＝不派），下面的角色清單可以多選一次派到某張圖；排好後按「▶ 套用派工」才會真的換圖並開始掛機。地圖分成「練功、打卷軸、打裝備」三條路線，每張圖可以設定 🎯 目標道具（估計每小時打到幾個）和 💰 自動販售範本（套用派工時一起設定）。自己加的地圖會一直留著；「與遊戲同步」自動放上來的地圖沒人時會自動移除（📌 可以留著）。「⤓ 匯出設定」把派工設定存成檔案，可以備份或給別人用。</div>
-      <div class="bar"><div class="seg" id="bdViewSeg"><button data-bview2="factory"><span data-ic="factory"></span> 工廠圖</button><button data-bview2="list"><span data-ic="list"></span> 卡片</button></div>
+      <div class="dim help-src">把角色拖到地圖上決定去哪裡（也可以點一下角色再點地圖）。地圖分成「練功、打卷軸、打裝備」三條路線，每張圖可以設定：🎯 要打的目標道具（看板會估計派去的角色每小時大約打到幾個）、💰 自動販售（撿到就賣給商店的道具，遊戲伺服器處理，分頁沒開也有效）。排好後按「套用派工」：要移動的角色換過去，並套用那張圖的自動販售。遊戲只能設定「目前所在地圖」的自動販售，所以換圖和設定是一起做的。估計值和組隊分頁「自動排一版」用同一套方法，只是參考。</div>
+      <div class="bar"><div class="seg" id="bdViewSeg"><button data-bview2="factory"><span data-ic="factory"></span> 工廠圖</button><button data-bview2="list"><span data-ic="list"></span> 清單</button></div>
         <span id="bdGroupBox"></span><button class="btn" id="bdApply">▶ 套用派工</button><button class="btn" id="bdImport" title="把角色目前所在的地圖放上看板，並用你在遊戲裡設好的自動販售當範本">⤓ 匯入目前設定</button><button class="btn" id="bdClear">清除派工</button><span id="bdSyncBox"></span>
         <select id="bdAddMap" style="max-width:260px"><option value="">＋ 加入地圖…</option></select><button class="btn" id="bdExport" title="把派工設定（看板上的地圖、三條路線、販售範本、目標道具，A／B 組）存成一個檔案，可以備份或給別人用">⤓ 匯出設定</button><button class="btn" id="bdImportBtn" title="讀入之前匯出的派工設定檔（會合併：原本的地圖保留，檔案裡的地圖加進來）">⤒ 匯入設定檔</button><input type="file" id="bdImportFile" accept=".json,application/json" style="display:none"><span class="dim" id="bdMsg"></span></div>
     </div>
     <div id="bdFactory" class="fac"></div>
-    <div id="bdList">
-      <div id="bdLanes" class="bd-lanes"></div>
-      <div id="bdChars"></div>
+    <div class="board" id="bdList">
+      <div class="pool-col card"><div class="lane-hd"><b>角色</b><input id="bdSearch" placeholder="搜尋" style="width:90px" autocomplete="off"></div><div id="bdPool" class="pool"></div><div class="dim sm" style="margin-top:6px">拖回這裡＝不派工</div></div>
+      <div id="bdLanes" class="lanes"></div>
     </div>
     <div class="card" id="bdSell" style="display:none"></div>
     <div class="card" id="bdGoal" style="display:none"></div>
@@ -4089,16 +4077,17 @@ function renderBoard() {
   const moving = chars.filter(c => cfg.assign[c.id] && cfg.assign[c.id] !== c.map);
   $('#bdApply').textContent = moving.length ? `▶ 套用派工（${moving.length} 隻要移動）` : '▶ 套用派工';
   $('#bdApply').classList.toggle('primary', moving.length > 0);
-  // 卡片檢視（v0.70）：一張地圖一張卡片，「＋ 加角色」點選派工；下面是角色清單（多選一次派到某張圖）
-  if (!fv) {
-    const mapOpts = WORLD.maps.filter(m => !onBoard.has(m.id) && m.mobs && m.mobs.length).sort((a, b) => a.minLevel - b.minLevel || a.lvMin - b.lvMin).map(m => `<option value="${esc(m.id)}">${esc(m.name)}（Lv${m.minLevel}＋・怪 ${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}）</option>`).join('');
-    $('#bdLanes').innerHTML = LANES.map(([lane, label]) => {
-      const maps = cfg.lanes[lane].map(id => mapOf(id)).filter(Boolean);
-      return `<div class="bd-lane card"><div class="bd-lane-hd"><b>${label}</b><span class="dim sm">${maps.length} 張圖</span><select class="bd-add" data-bdadd="${lane}"><option value="">＋ 加入地圖…</option>${mapOpts}</select></div>
-        <div class="bd-grid">${maps.map(m => boardMapCard(lane, m, chars.filter(c => where(c) === m.id), cfg, chars, where)).join('') || '<div class="dim sm">還沒有地圖：用右邊「＋ 加入地圖」</div>'}</div></div>`;
-    }).join('');
-    if (!($('#bdChars').contains(document.activeElement) && ['SELECT', 'INPUT'].includes(document.activeElement.tagName))) renderBoardChars(cfg, chars, where, onBoard);
-  }
+  // 角色池
+  const q = ui.board.q.trim();
+  const pool = chars.filter(c => !where(c) && (!q || c.name.includes(q)));
+  $('#bdPool').innerHTML = pool.map(c => boardCard(c, cfg)).join('') || '<div class="dim sm" style="padding:8px">所有角色都已派到看板上的地圖</div>';
+  // 三條路線
+  $('#bdLanes').innerHTML = LANES.map(([lane, label, what]) => {
+    const maps = cfg.lanes[lane].map(id => mapOf(id)).filter(Boolean);
+    return `<div class="lane"><div class="lane-hd"><b>${label}</b><span class="dim sm">${maps.length} 張圖</span></div>
+      ${maps.map(m => boardMapCard(lane, m, chars.filter(c => where(c) === m.id), cfg)).join('')}
+      <select class="bd-add" data-bdadd="${lane}"><option value="">＋ 加入地圖…</option>${WORLD.maps.filter(m => !onBoard.has(m.id) && m.mobs && m.mobs.length).sort((a, b) => a.minLevel - b.minLevel || a.lvMin - b.lvMin).map(m => `<option value="${esc(m.id)}">${esc(m.name)}（Lv${m.minLevel}＋・怪 ${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}）</option>`).join('')}</select></div>`;
+  }).join('');
   const addSel = $('#bdAddMap');
   if (document.activeElement !== addSel) addSel.innerHTML = '<option value="">＋ 加入地圖…</option>' + WORLD.maps.filter(m => !onBoard.has(m.id) && m.mobs && m.mobs.length).sort((a, b) => a.minLevel - b.minLevel || a.lvMin - b.lvMin).map(m => `<option value="${esc(m.id)}">${esc(m.name)}（Lv${m.minLevel}＋・怪 ${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}）</option>`).join('');
   if (fv) renderFactory();
@@ -4111,7 +4100,7 @@ function boardCard(c, cfg) {
     ${avatarImg(c.id, 'bc')}<div><b>${esc(c.name)}</b> <span class="dim sm">Lv${c.lv}・${esc(c.jobName || '')}</span>${c.active ? '' : ' <span class="tag" title="沒有自己的遊戲分頁（背景掛機），換圖可能被遊戲拒絕">背景</span>'}</div>
     <div class="dim sm">${to ? `<span class="warn">${esc(cur ? cur.name : '?')} → ${esc(to.name)}</span>` : esc(cur ? cur.name : '—')}${d ? `・DPS ${short(d.w5.dps || d.w60.dps)}` : ''}</div></div>`;
 }
-function boardMapCard(lane, m, here, cfg, all, where) {
+function boardMapCard(lane, m, here, cfg) {
   const est = here.length ? groupEstimate(here, m) : null;
   const goals = cfg.goals[m.id] || [];
   const sell = cfg.sell[m.id];
@@ -4119,97 +4108,19 @@ function boardMapCard(lane, m, here, cfg, all, where) {
   let estHtml = '';
   if (est) {
     if (lane === 'train') estHtml = `<div class="bd-est">估計經驗 <b>${short(est.total)}</b>/小時${est.partyMult > 1 ? `<span class="dim">（同圖 ${here.length} 人 ×${est.partyMult.toFixed(1)}，要組隊才有）</span>` : ''}</div>`;
-    else if (goals.length) {
-      // 目標很多時卡片只列每小時最多的 4 項，其他收起來（滑鼠移上去看）
-      const rows = goals.map(id => ({ id, r: dropRate(est, m, id) })).sort((a, b) => b.r - a.r);
-      const txt = x => x.r >= 10 ? `${fmt(Math.round(x.r))} 個/小時` : x.r >= 0.1 ? `${x.r.toFixed(1)} 個/小時` : x.r > 0 ? `約每 ${fmt(Math.round(1 / x.r))} 小時 1 個` : '不會掉';
-      const show = rows.slice(0, 4), rest = rows.slice(4);
-      estHtml = `<div class="bd-est">${show.map(x => `<span class="goal">${iname(x.id, wName(x.id))} ${x.r > 0 ? `<b>${txt(x)}</b>` : '<span class="dim">不會掉</span>'}</span>`).join('')}${rest.length ? `<span class="dim" title="${esc(rest.map(x => `${wName(x.id)}：${txt(x)}`).join('\n'))}">…還有 ${rest.length} 項</span>` : ''}</div>`;
-    } else estHtml = `<div class="bd-est dim">還沒選目標 → 按「🎯 目標」</div>`;
+    else estHtml = goals.length ? `<div class="bd-est">${goals.map(id => { const r = dropRate(est, m, id); return `<span class="goal">${iname(id, wName(id))} ${r >= 10 ? `<b>${fmt(Math.round(r))}</b> 個/小時` : r >= 0.1 ? `<b>${r.toFixed(1)}</b> 個/小時` : r > 0 ? `約每 <b>${fmt(Math.round(1 / r))}</b> 小時 1 個` : '<span class="dim">不會掉</span>'}</span>`; }).join('')}</div>`
+      : `<div class="bd-est dim">還沒選目標 → 按「目標」</div>`;
   }
-  const moving = c => cfg.assign[c.id] && cfg.assign[c.id] !== c.map;
   const chips = here.map(c => {
-    const x = per[c.id], mv = moving(c), from = mapOf(c.map);
+    const x = per[c.id], moving = cfg.assign[c.id] && cfg.assign[c.id] !== c.map;
     const sa = (c.s || {}).autoSell, same = sell && sa && sa.map === m.id && sa.enabled === sell.enabled && sa.itemIds.length === sell.itemIds.length && sell.itemIds.every(id => sa.itemIds.includes(id));
-    const tip = [`${c.name} Lv${c.lv}${c.jobName ? '・' + c.jobName : ''}`, mv ? `目前在 ${from ? from.name : '?'}，按「▶ 套用派工」才會過來` : '已經在這張圖', c.active ? '' : '沒有自己的遊戲分頁（背景掛機），換圖可能被遊戲拒絕', x ? `估計 ${short(x.exp)} 經驗/小時` : '', x && !x.eligible ? '等級太低，分不到經驗' : '', sell && !mv ? (same ? '自動販售和這張圖的設定一致' : '自動販售和這張圖的設定不同（套用派工時會更新）') : '', '點一下：不派到這裡（也可以拖到別張圖）'].filter(Boolean).join('\n');
-    return `<span class="bb-c ${mv ? 'mv' : ''} ${c.active ? '' : 'off'}" draggable="true" data-bdchar="${c.id}" data-bdrm="${c.id}|${esc(m.id)}" title="${esc(tip)}">${avatarImg(c.id, 'sm')}${esc(c.name)}<span class="s ${mv ? 'skip' : 'ok'}">${mv ? '待套用' : 'Lv' + c.lv}</span>${x && !x.eligible ? '<span class="bad">!</span>' : ''}${sell && !mv ? (same ? '<span class="good">✓</span>' : '<span class="warn">≠</span>') : ''}</span>`;
+    return `<span class="holder ${moving ? 'mv' : ''}" draggable="true" data-bdchar="${c.id}" title="${esc([moving ? '待移動到這張圖' : '已在這張圖', x ? `估計 ${short(x.exp)} 經驗/小時、擊殺 ${fmt(Math.round(x.kills))}/小時` : '', x && !x.eligible ? '等級太低，分不到經驗' : '', sell ? (same ? '自動販售和這張圖的設定一致' : '自動販售和這張圖的設定不同（套用派工時會更新）') : ''].filter(Boolean).join('\n'))}">${moving ? '→ ' : ''}${esc(c.name)} <span class="dim">Lv${c.lv}</span>${x && !x.eligible ? ' <span class="bad">!</span>' : ''}${sell && !moving ? (same ? ' <span class="good">✓</span>' : ' <span class="warn">≠</span>') : ''}</span>`;
   }).join('');
-  const open = ui.board.addOpen === m.id;
-  let pick = '';
-  if (open) {
-    const others = all.filter(c => where(c) !== m.id).sort((a, b) => (!!where(a)) - (!!where(b)) || b.active - a.active || b.lv - a.lv); // 還沒派工的排前面
-    const free = others.filter(c => !where(c) && c.lv >= m.minLevel);
-    pick = `<div class="bb-pick">${others.map(c => { const w = where(c), wm = w && w !== '__pool' ? mapOf(w) : null, low = c.lv < m.minLevel;
-      return `<span class="bb-c ${low || !c.active ? 'off' : ''}" data-bdpk="${c.id}|${esc(m.id)}" title="${esc(`${c.name} Lv${c.lv}\n${wm ? '現在派在 ' + wm.name + '（點了會改派到這裡）' : '還沒派工'}${low ? `\n等級不足（這張圖要 Lv${m.minLevel}）` : ''}${c.active ? '' : '\n沒有自己的遊戲分頁'}`)}">${avatarImg(c.id, 'sm')}${esc(c.name)}<span class="s ${low ? 'skip' : ''}">${low ? '等級不足' : wm ? esc(wm.name.slice(0, 6)) : '待命'}</span></span>`; }).join('') || '<span class="dim sm">這組的角色都在這張圖了</span>'}
-      ${free.length ? `<button class="btn sm" data-bdpkfree="${esc(m.id)}" title="把還沒派工、等級夠的 ${free.length} 隻都派到這裡">加入沒派工的（${free.length}）</button>` : ''}<button class="btn sm" data-bdpkclose="1">完成</button></div>`;
-  }
-  const nMv = here.filter(moving).length;
-  return `<div class="bd-card ${nMv ? 'mv' : here.length ? 'has' : ''}" data-bddrop="${esc(m.id)}">
-    <div class="hd"><div><div class="nm">${esc(m.name)}</div><div class="sub">Lv${m.minLevel}＋・怪 ${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}${here.length ? `・${here.length} 隻` : ''}${nMv ? `・<span class="warn">${nMv} 隻待套用</span>` : ''}</div></div>
-      <span class="acts">${cfg.auto[m.id] ? `<button class="btn sm" data-bdpin="${esc(m.id)}" title="這張圖是「與遊戲同步」自動放上來的，沒人時會自動移除；按一下留著">📌 留著</button>` : ''}<select class="flane" data-flane="${esc(m.id)}" title="這張圖的用途">${LANES.map(([k, n]) => `<option value="${k}" ${k === lane ? 'selected' : ''}>${n}</option>`).join('')}</select><button class="btn sm" data-bddel="${lane}|${esc(m.id)}" title="從看板移除這張圖（不會移動角色）">✕</button></span></div>
-    ${cfg.auto[m.id] ? '<div class="bd-auto">自動放上來的地圖：沒有角色時會自動移除</div>' : ''}
-    <div class="bb-who">${chips || '<span class="dim sm">還沒有角色</span>'}${open ? '' : `<button class="bb-add" data-bdaddopen="${esc(m.id)}">＋ 加角色</button>`}</div>
-    ${pick}${estHtml}
-    <div class="ft"><span>${sell ? `💰 販售 ${sell.enabled ? sell.itemIds.length + ' 項' : '關'}` : '💰 沒設販售'}${goals.length ? `・🎯 ${goals.length}` : ''}</span>${lane !== 'train' ? `<button class="btn sm" data-bdgoal="${esc(m.id)}" title="選這張圖要打的卷軸或裝備">🎯 目標</button>` : ''}<button class="btn sm ${sell ? 'on' : ''}" data-bdsell="${esc(m.id)}" title="這張圖的自動販售設定">💰 販售</button></div></div>`;
+  return `<div class="mcard" data-bddrop="${esc(m.id)}">
+    <div class="mc-hd"><b>${esc(m.name)}</b><span class="dim sm">Lv${m.minLevel}＋・怪 ${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}</span>
+      <span class="mc-act">${cfg.auto[m.id] ? `<button class="btn sm" data-bdpin="${esc(m.id)}" title="這張圖是「與遊戲同步」自動放上來的，沒人時會自動移除；按一下留著">📌 留著</button>` : ''}${lane !== 'train' ? `<button class="btn sm" data-bdgoal="${esc(m.id)}" title="選這張圖要打的卷軸或裝備">${ic('target')} 目標${goals.length ? ` ${goals.length}` : ''}</button>` : ''}<button class="btn sm ${sell ? 'on' : ''}" data-bdsell="${esc(m.id)}" title="這張圖的自動販售設定">${ic('coins')} 販售${sell ? (sell.enabled ? ` ${sell.itemIds.length}` : ' 關') : ''}</button><button class="btn sm" data-bddel="${lane}|${esc(m.id)}" title="從看板移除這張圖（不會移動角色）">✕</button></span></div>
+    <div class="mc-chars">${chips || `<span class="dim sm">${ui.board.pick ? '點這裡把選取的角色放進來' : '把角色拖到這裡'}</span>`}</div>${estHtml}</div>`;
 }
-// 角色清單：點整列選取（Shift 選一段），一次派到某張圖
-ui.board.csel = new Set(); ui.board.cto = '';
-function renderBoardChars(cfg, chars, where, onBoard) {
-  const box = $('#bdChars'); if (!box) return;
-  const q = (ui.board.q || '').trim();
-  const list = chars.filter(c => !q || c.name.includes(q) || ((mapOf(c.map) || {}).name || '').includes(q)).sort((a, b) => b.active - a.active || b.lv - a.lv);
-  for (const id of [...ui.board.csel]) if (!chars.some(c => c.id === id)) ui.board.csel.delete(id);
-  const sel = ui.board.csel, maxLv = Math.max(0, ...chars.filter(c => sel.has(c.id)).map(c => c.lv));
-  const boardOpts = LANES.map(([lane, label]) => { const ms = cfg.lanes[lane].map(mapOf).filter(Boolean); return ms.length ? `<optgroup label="看板：${label}">${ms.map(m => `<option value="${esc(m.id)}">${esc(m.name)}（Lv${m.minLevel}＋）</option>`).join('')}</optgroup>` : ''; }).join('');
-  const other = WORLD.maps.filter(m => !onBoard.has(m.id) && m.mobs && m.mobs.length && !(m.boss || []).length).sort((a, b) => a.minLevel - b.minLevel || a.lvMin - b.lvMin);
-  const opts = `<option value="">選地圖…</option>${boardOpts}<optgroup label="其他地圖（會加到看板「練功」）">${other.map(m => `<option value="${esc(m.id)}">${esc(m.name)}（Lv${m.minLevel}＋・怪 ${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}）</option>`).join('')}</optgroup>`;
-  box.innerHTML = `<div class="card"><div class="bar"><b>角色清單</b><span class="dim sm">點整列選取（Shift 選一段），再選地圖按「派過去」；之後按上方「▶ 套用派工」</span><span style="flex:1"></span><input id="bdSearch" placeholder="搜尋角色或地圖" style="width:150px" autocomplete="off" value="${esc(ui.board.q || '')}"></div>
-    <div class="bar bd-cbar">已選 <b id="bdCN">${sel.size}</b> 隻：派到 <select id="bdCTo" style="max-width:320px">${opts}</select><button class="btn primary" id="bdCGo">派過去</button><button class="btn" id="bdCNone" title="勾選的角色不派工（留在原地）">取消派工</button><span style="flex:1"></span><button class="btn sm" id="bdCAll">全選</button><button class="btn sm" id="bdCClear">清除選取</button></div>
-    <table class="pick"><thead><tr><th class="nosort"></th><th class="nosort">角色</th><th class="nosort num">Lv</th><th class="nosort">目前地圖</th><th class="nosort">派到</th><th class="nosort">狀態</th></tr></thead><tbody>${list.map(c => {
-      const w = cfg.assign[c.id], wm = w && w !== '__pool' ? mapOf(w) : null, cur = mapOf(c.map), on = where(c);
-      const st = !c.active ? '<span class="dim">背景掛機（沒有分頁）</span>' : w && w !== '__pool' && w !== c.map ? '<span class="warn">待套用</span>' : on ? '<span class="good">已在看板的地圖</span>' : '<span class="dim">待命</span>';
-      return `<tr class="pickrow ${sel.has(c.id) ? 'sel' : ''}"><td><input type="checkbox" data-bdcpick="${c.id}" ${sel.has(c.id) ? 'checked' : ''}></td><td>${avatarImg(c.id, 'sm')} ${esc(c.name)} <span class="dim sm">${esc(c.jobName || '')}</span></td><td class="num">${c.lv}</td><td>${esc(cur ? cur.name : '—')}</td><td>${wm ? (w === c.map ? esc(wm.name) : `<b>→ ${esc(wm.name)}</b>`) : w === '__pool' ? '<span class="dim">不派工</span>' : on ? esc((mapOf(on) || {}).name || '') : '<span class="dim">—</span>'}</td><td>${st}</td></tr>`;
-    }).join('') || '<tr><td colspan="6" class="empty">沒有符合的角色</td></tr>'}</tbody></table></div>`;
-  if (ui.board.cto) $('#bdCTo').value = ui.board.cto;
-  if (maxLv && ui.board.cto) { const m = mapOf(ui.board.cto); if (m && m.minLevel > maxLv) $('#bdCTo').value = ''; }
-}
-function boardUnassign(cfg, id, mapId) {
-  if (!mapId || cfg.assign[id] === mapId) delete cfg.assign[id];
-  const c = DATA.chars[id];
-  if (c && Object.values(cfg.lanes).flat().includes(c.char.map) && (!mapId || c.char.map === mapId)) cfg.assign[id] = '__pool'; // 人就在看板的地圖上：標成「不派工」
-}
-document.addEventListener('change', e => {
-  const t = e.target;
-  if (t.dataset && t.dataset.bdcpick) { const set = ui.board.csel; if (t.checked) set.add(t.dataset.bdcpick); else set.delete(t.dataset.bdcpick); const tr = t.closest('tr'); if (tr) tr.classList.toggle('sel', t.checked); const n = $('#bdCN'); if (n) n.textContent = set.size; return; }
-  if (t.id === 'bdCTo') { ui.board.cto = t.value; return; }
-});
-document.addEventListener('click', async e => {
-  const t = e.target.closest && e.target.closest('[data-bdrm],[data-bdaddopen],[data-bdpk],[data-bdpkfree],[data-bdpkclose],[data-bdpin],#bdCGo,#bdCNone,#bdCAll,#bdCClear,#bdExport,#bdImportBtn');
-  if (!t || !t.closest('#board')) return;
-  e.preventDefault(); e.stopPropagation();
-  const d = t.dataset, cfg = boardCfg();
-  if (d.bdaddopen) { ui.board.addOpen = d.bdaddopen; renderBoard(); return; }
-  if (d.bdpkclose) { ui.board.addOpen = null; renderBoard(); return; }
-  if (d.bdrm) { const [id, mid] = d.bdrm.split('|'); boardUnassign(cfg, id, mid); saveBoard(cfg); renderBoard(); return; }
-  if (d.bdpk) { const [id, mid] = d.bdpk.split('|'); const c = boardChars().find(x => x.id === id), m = mapOf(mid); if (c && m && c.lv < m.minLevel && !confirm(`${c.name} Lv${c.lv}，${m.name} 要 Lv${m.minLevel}，遊戲會拒絕換圖。還是要派？`)) return; if (c && c.map === mid) delete cfg.assign[id]; else cfg.assign[id] = mid; saveBoard(cfg); renderBoard(); return; }
-  if (d.bdpkfree) { const m = mapOf(d.bdpkfree), onB = new Set(Object.values(cfg.lanes).flat()); for (const c of boardChars().filter(x => x.group === boardGroup())) { const w = cfg.assign[c.id] || (onB.has(c.map) ? c.map : null); if (!w && c.lv >= m.minLevel) cfg.assign[c.id] = m.id; } saveBoard(cfg); renderBoard(); return; }
-  if (d.bdpin) { delete cfg.auto[d.bdpin]; saveBoard(cfg); renderBoard(); return; }
-  if (t.id === 'bdCAll') { document.querySelectorAll('#bdChars [data-bdcpick]').forEach(b => ui.board.csel.add(b.dataset.bdcpick)); renderBoard(); return; }
-  if (t.id === 'bdCClear') { ui.board.csel.clear(); renderBoard(); return; }
-  if (t.id === 'bdCGo' || t.id === 'bdCNone') {
-    const ids = [...ui.board.csel]; if (!ids.length) { alert('先在清單點選角色'); return; }
-    if (t.id === 'bdCNone') { for (const id of ids) boardUnassign(cfg, id, null); saveBoard(cfg); ui.board.csel.clear(); renderBoard(); return; }
-    const mid = $('#bdCTo').value, m = mapOf(mid); if (!m) { alert('先選要派到哪張地圖'); return; }
-    if (!Object.values(cfg.lanes).flat().includes(mid)) cfg.lanes.train.push(mid);
-    const cs = boardChars(), low = [];
-    for (const id of ids) { const c = cs.find(x => x.id === id); if (!c) continue; if (c.lv < m.minLevel) { low.push(c.name); continue; } if (c.map === mid) delete cfg.assign[id]; else cfg.assign[id] = mid; }
-    saveBoard(cfg); ui.board.csel.clear(); renderBoard();
-    $('#bdMsg').textContent = `已派 ${ids.length - low.length} 隻到 ${m.name}${low.length ? `（等級不足沒派：${low.join('、')}）` : ''}，按「▶ 套用派工」開始移動`;
-    return;
-  }
-  if (t.id === 'bdExport') { boardExport(); return; }
-  if (t.id === 'bdImportBtn') { $('#bdImportFile').value = ''; $('#bdImportFile').click(); return; }
-}, true);
 // ---- 匯出／匯入派工設定（v0.70）：看板上的地圖、三條路線、販售範本、目標道具（A／B 組）；誰派去哪（角色指派）不匯出 ----
 function boardExport() {
   const all = { A: S.board || {}, ...(S.boards || {}) }, groups = {};
@@ -4243,6 +4154,13 @@ async function boardImportFile(file) {
   renderBoard(); $('#bdMsg').textContent = '已匯入派工設定';
 }
 document.addEventListener('change', e => { if (e.target.id === 'bdImportFile' && e.target.files && e.target.files[0]) boardImportFile(e.target.files[0]); });
+document.addEventListener('click', e => {
+  const t = e.target.closest && e.target.closest('[data-bdpin],#bdExport,#bdImportBtn'); if (!t || !t.closest('#board')) return;
+  e.preventDefault(); e.stopPropagation();
+  if (t.dataset.bdpin) { const cfg = boardCfg(); delete cfg.auto[t.dataset.bdpin]; saveBoard(cfg); renderBoard(); return; }
+  if (t.id === 'bdExport') { boardExport(); return; }
+  if (t.id === 'bdImportBtn') { $('#bdImportFile').value = ''; $('#bdImportFile').click(); }
+}, true);
 // 自動販售編輯：每張圖一份範本，套用派工時跟著角色一起套用
 function renderSellEditor(cfg, chars) {
   const id = ui.board.sellEdit, box = $('#bdSell');
@@ -4368,7 +4286,7 @@ document.addEventListener('change', e => {
 document.addEventListener('input', e => { if (e.target.id === 'bdSearch') { ui.board.q = e.target.value; renderBoard(); } });
 
 // ================= 派工看板：工廠圖（節點＋連線） =================
-ui.board.view = (() => { try { return localStorage.getItem('boardView2') || 'list'; } catch (_) { return 'list'; } })(); // v0.70：預設改成卡片
+ui.board.view = (() => { try { return localStorage.getItem('boardView') || 'factory'; } catch (_) { return 'factory'; } })();
 ui.fac = { pan: null, zoom: 1, drag: null };
 try { const v = JSON.parse(localStorage.getItem('facView') || 'null'); if (v) { ui.fac.pan = v.pan; ui.fac.zoom = v.zoom; } } catch (_) {}
 const LANE_COLOR = { train: 'var(--good)', scroll: '#a78bfa', gear: '#f08a5d' };
@@ -4559,7 +4477,7 @@ document.addEventListener('wheel', e => {
 }, { passive: false });
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-fzoom],[data-funassign],[data-bview2]'); if (!t || !t.closest('#board')) return;
-  if (t.dataset.bview2) { ui.board.view = t.dataset.bview2; try { localStorage.setItem('boardView2', ui.board.view); } catch (_) {} renderBoard(); return; }
+  if (t.dataset.bview2) { ui.board.view = t.dataset.bview2; try { localStorage.setItem('boardView', ui.board.view); } catch (_) {} renderBoard(); return; }
   if (t.dataset.funassign) { const cfg = boardCfg(); delete cfg.assign[t.dataset.funassign]; saveBoard(cfg); renderBoard(); return; }
   const z = t.dataset.fzoom;
   if (z === 'reset') { ui.fac.zoom = 1; ui.fac.pan = { x: 10, y: 10 }; facApplyTransform(); facSaveView(); return; }
@@ -4937,7 +4855,7 @@ document.addEventListener('click', async e => {
   try { t.disabled = true; await runSplit(r); } catch (err) { alert('失敗：' + err.message); } finally { t.disabled = false; }
 });
 // ================= 點整列選取（勾選框仍然可以點；Shift＋點一次選一段） =================
-const PICK_ATTRS = ['data-gwpick', 'data-gdpick', 'data-fgpick', 'data-acpick', 'data-bdcpick'];
+const PICK_ATTRS = ['data-gwpick', 'data-gdpick', 'data-fgpick', 'data-acpick'];
 let pickLast = null; // { attr, key }
 function pickBox(tr) { for (const a of PICK_ATTRS) { const b = tr.querySelector(`input[type=checkbox][${a}]`); if (b) return [b, a]; } return [null, null]; }
 function pickSet(attr, key, want) {
