@@ -506,6 +506,7 @@
   .bb-ft { display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 5px; }
   .bb-ft .btn { margin-left: auto; }
   .bset { display: flex; flex-direction: column; gap: 2px; }
+  .pb-seg button { font-size: 12px; padding: 3px 10px; }
   .bset-row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--line); align-items: start; }
   .bset-k { font-weight: 600; padding-top: 3px; }
   .bsell-rule { display: grid; grid-template-columns: 160px auto; gap: 6px 12px; align-items: center; margin: 6px 0 10px; }
@@ -823,19 +824,20 @@
       <div id="bossNew"></div>
       <div id="bossLive"></div>
       <div class="bar boss-viewbar">
-        <div class="seg" id="bossView"><button data-bview="boss" title="一張卡片一隻王：誰會打、多久重生">依王看</button><button data-bview="char" title="一張卡片一隻角色：勾這隻要打哪些王">依角色看</button></div>
+        <div class="seg" id="bossView"><button data-bview="boss" title="一張卡片一隻王：誰會打、多久重生">依王看</button><button data-bview="party" title="一張卡片一個隊伍：一起打還是分開打、誰還沒準備好">依隊伍看</button><button data-bview="char" title="一張卡片一隻角色：勾這隻要打哪些王">依角色看</button></div>
         <input id="bossCardQ" placeholder="搜尋王或角色" style="width:140px" autocomplete="off">
         <label class="sm"><input type="checkbox" id="bossCardOnly"> 只看有人打的</label>
         <span class="dim sm" id="bossViewHelp"></span>
       </div>
       <div id="bossBoard" class="boss-board"></div>
       <div id="bossCards" class="boss-cards"></div>
+      <div id="bossParties" class="boss-board"></div>
       <details id="bossLogBox"><summary>紀錄</summary><div id="bossLog"></div></details>
     </div>
     <aside id="bossSetDrawer" class="drawer boss-drawer" style="display:none">
       <div class="dhd"><h3 style="margin:0">⚙ 打王設定</h3><span style="flex:1"></span><button class="btn" data-bossclose="bossSetDrawer">關閉（Esc）</button></div>
       <div class="bset">
-        <div class="bset-row"><div class="bset-k">隊伍打王</div><div><select id="bossPartyMode"><option value="together">整隊一起打同一隻</option><option value="split">保留隊伍，各自分開打（同一隻王不會同時去）</option><option value="mixed">依王決定：勾的王整隊一起打，其他各自分開打</option></select>
+        <div class="bset-row"><div class="bset-k">隊伍打王（預設）</div><div><div class="dim sm" style="margin-bottom:4px">每個隊伍可以在「依隊伍看」各自設定；沒設定的隊伍用這裡的。一起打時要全員能出發才會去，倒下會原地復活繼續打，有人回去整隊一起回。</div><select id="bossPartyMode"><option value="together">整隊一起打同一隻</option><option value="split">保留隊伍，各自分開打（同一隻王不會同時去）</option><option value="mixed">依王決定：勾的王整隊一起打，其他各自分開打</option></select>
           <div class="bar" id="bossTogBox" style="display:none;margin-top:6px"><span>整隊一起打的王</span><span class="chips" id="bossTogMobs"></span>
             <span class="dim sm">快速設定：</span><input type="number" id="bossTogLv" min="1" max="250" placeholder="等級" style="width:64px"><button class="btn sm" id="bossTogLvBtn" title="等級大於等於這個數字的王一起打，其他分開打">以上的王一起打</button>
             <div class="dim sm" style="flex-basis:100%">沒勾的王：隊友各自分開打（同一隻不會同時去）。勾的王：等隊友都把分開打的王打完、空下來之後，才整隊一起去。</div></div></div></div>
@@ -3411,7 +3413,8 @@ function renderBoss(force) {
   document.querySelectorAll('#bossView button').forEach(b => b.classList.toggle('on', b.dataset.bview === ui.bossView));
   $('#bossBoard').style.display = ui.bossView === 'boss' ? '' : 'none';
   $('#bossCards').style.display = ui.bossView === 'char' ? '' : 'none';
-  $('#bossViewHelp').textContent = ui.bossView === 'boss' ? '點角色＝不讓它打這隻王；「＋ 加角色」讓更多角色打。同隊伍的會一起出發。' : '每隻角色各自點選要打的王（亮的＝會打）。同隊伍的會一起出發，打的王＝隊友勾的合起來。';
+  $('#bossParties').style.display = ui.bossView === 'party' ? '' : 'none';
+  $('#bossViewHelp').textContent = ui.bossView === 'boss' ? '點角色＝不讓它打這隻王；「＋ 加角色」讓更多角色打。同隊伍的會一起出發。' : ui.bossView === 'party' ? '每個隊伍選一起打還是分開打；一起打要全員能出發才會去。' : '每隻角色各自點選要打的王（亮的＝會打）。同隊伍的會一起出發，打的王＝隊友勾的合起來。';
   const live = (BOSS && BOSS.live) || [];
   // 上方三步驟（還沒設好時引導）
   const nOn = Object.keys(c.charMobs).length, sellOn = !!(c.sell && c.sell.on);
@@ -3432,6 +3435,7 @@ function renderBoss(force) {
   }).join('');
   const sum = renderBossBoard(c, live);
   if (ui.bossView === 'char' && (force || document.activeElement !== $('#bossCardQ'))) renderBossCards();
+  if (ui.bossView === 'party') renderBossParties(c, live);
   const held = ((BOSS && BOSS.chars) || []).filter(x => x.held > Date.now());
   $('#bossSum').innerHTML = esc(sum) + (held.length ? `・<span class="warn" title="${esc(held.map(x => `${x.name}：${clock(x.held)} 前不派去打王`).join('\n'))}">${held.length} 隻按了停止、暫停打王</span> <a href="#" data-bunhold="1" title="讓它們馬上可以再被派去打王">恢復</a>` : '');
   $('#bossSellSum').textContent = sellOn ? '開' : '關';
@@ -3477,7 +3481,7 @@ function renderBossBoard(c, live) {
       return `<span class="bb-c ${off ? 'off' : ''}" data-bbdel="${esc(x.id)}|${esc(b.mob)}" title="${esc(tip)}">${avatarImg(x.id, 'sm')}${esc(ch.name)}<span class="s ${x.s.k}">${esc(x.s.t)}</span></span>`;
     }).join('');
     // 同隊伍、沒勾這隻的隊友：整隊一起打時會跟著去（虛線）
-    const mates = c.partyMode === 'split' ? [] : [...new Set(ids.flatMap(id => ((info[id] || {}).party || {}).ids || []))].filter(id => !ids.includes(id) && !(c.partyMode === 'mixed' && !(c.togetherMobs || []).includes(b.mob)));
+    const mates = [...new Set(ids.flatMap(id => { const p = bossPartyOf(id); return !p || p.mode === 'split' || (p.mode === 'mixed' && !(p.togetherMobs || []).includes(b.mob)) ? [] : p.ids; }))].filter(id => !ids.includes(id));
     const mateHtml = mates.map(id => { const ch = byId[id] || { name: charNameOf(id) }; return `<span class="bb-c grp" data-bbadd="${esc(id)}|${esc(b.mob)}" title="${esc(`${ch.name}：同隊伍，隊友勾了這隻王就會跟著一起去\n點一下：讓它自己也勾這隻`)}">${avatarImg(id, 'sm')}${esc(ch.name)}<span class="s">隊友</span></span>`; }).join('');
     const addOpen = ui.bossAdd === b.mob;
     const others = cand.filter(x => !ids.includes(x.id)).sort((p, q2) => hasTab(q2.id) - hasTab(p.id) || (q2.lv || 0) - (p.lv || 0));
@@ -3502,6 +3506,54 @@ function renderBossBoard(c, live) {
   return `${Object.keys(cm).length} 隻角色・${nPick} 隻王有人打${live.length ? `・打王中 ${live.length} 場` : ''}${nReady ? `・已重生 ${nReady}` : ''}`;
 }
 const estTxt = sec => { const m = Math.max(1, Math.ceil(sec / 60)); return m >= 120 ? `約 ${m >= 6000 ? fmt(Math.round(m / 60)) : (m / 60).toFixed(1)} 小時` : `${m} 分鐘`; };
+const bossPartyOf = id => ((BOSS && BOSS.parties) || []).find(p => p.ids.includes(id)) || null;
+const PT_MODE = { together: ['一起打同一隻', '整隊一起出發打同一隻王（要全員能出發），倒下原地復活，有人回去就整隊一起回'], split: ['各自分開打', '保留隊伍，每隻照自己勾的王各打各的；同一隻王不會同時去'], mixed: ['依王決定', '亮的王整隊一起打，其他的各自分開打（先分開打完、全隊空下來才一起去）'] };
+// 依隊伍看：一個隊伍一張卡片（打法、誰卡住、會打哪些王）
+function renderBossParties(c, live) {
+  const box = $('#bossParties'); if (!box) return;
+  const ps = (BOSS && BOSS.parties) || [], mobs = bossList(), q = (ui.bossCard.q || '').trim();
+  if (!ps.length) { box.innerHTML = '<div class="dim">目前沒有隊伍。遊戲裡組好隊（或在「組隊」分頁套用）約 1 分鐘後會出現在這裡。</div>'; return; }
+  const cm = c.charMobs, nameOfMob = m => (mobs.find(x => x.mob === m) || {}).name || m;
+  const mobsOf = id => { const l = cm[id] || []; return l.includes('*') ? mobs.map(x => x.mob) : l; };
+  box.innerHTML = ps.filter(p => !q || p.names.some(n => n.includes(q))).map(p => {
+    const lv = live.filter(g => p.names.some(n => g.names.includes(n)));
+    const block = p.ids.filter(id => p.why[id] && p.why[id] !== '打王中');
+    const union = [...new Set(p.ids.flatMap(mobsOf))].sort((a, b2) => ((mobs.find(x => x.mob === a) || {}).lv || 0) - ((mobs.find(x => x.mob === b2) || {}).lv || 0));
+    const tog = new Set(p.togetherMobs || []);
+    const mem = p.ids.map(id => { const w = p.why[id]; return `<span class="bb-c ${w && w !== '打王中' ? 'off' : ''}" title="${esc(charNameOf(id) + (w ? '\n' + w : '\n可以出發'))}">${avatarImg(id, 'sm')}${esc(charNameOf(id))}<span class="s ${w === '打王中' ? 'busy' : w ? 'skip' : 'ok'}">${esc(w || '可出發')}</span></span>`; }).join('');
+    let mobHtml;
+    if (!union.length) mobHtml = '<span class="dim sm">隊員都還沒勾王（到「依王看」按「＋ 加角色」）</span>';
+    else if (p.mode === 'split') mobHtml = p.ids.map(id => `<div class="sm"><b>${esc(charNameOf(id))}</b>：${mobsOf(id).map(nameOfMob).map(esc).join('、') || '<span class="dim">不打王</span>'}</div>`).join('');
+    else if (p.mode === 'mixed') mobHtml = `<div class="bk-mobs">${union.map(m => `<span class="bk-mob ${tog.has(m) ? 'on' : ''}" data-pbtog="${esc(p.key)}|${esc(m)}" title="${tog.has(m) ? '整隊一起打（點一下改成分開打）' : '各自分開打（點一下改成整隊一起打）'}">${tog.has(m) ? '👥 ' : ''}${esc(nameOfMob(m))}</span>`).join('')}</div>
+      <div class="bar" style="margin:4px 0 0"><span class="dim sm">亮的＝整隊一起打，其他各自打。快速設定：</span><input type="number" class="pb-lv" data-pblvin="${esc(p.key)}" min="1" max="250" placeholder="等級" style="width:60px"><button class="btn sm" data-pblv="${esc(p.key)}">以上的王一起打</button></div>`;
+    else mobHtml = `<div class="sm">整隊一起打：${union.map(nameOfMob).map(esc).join('、')}</div>`;
+    return `<div class="bb ${lv.length ? 'st-live' : block.length && p.mode !== 'split' ? 'st-cd' : 'st-ready'}" data-pbkey="${esc(p.key)}">
+      <div class="bb-hd"><div><div class="nm">👥 ${esc(p.names.join('、'))}</div><div class="sub">${p.ids.length} 人${p.dps ? `・合計 DPS ${short(p.dps)}` : ''}・${p.custom ? '這隊自己的設定' : '用預設打法'}</div></div>
+        <div class="bb-st ${lv.length ? 'live' : ''}"><span class="big">${lv.length ? '打王中' : block.length && p.mode !== 'split' ? '等隊友' : '待命'}</span><span class="sm">${lv.length ? esc(lv.map(g => g.name).join('、')) : ''}</span></div></div>
+      <div class="bb-who">${mem}</div>
+      ${block.length && p.mode !== 'split' && !lv.length ? `<div class="warn sm">⏸ 一起打要全員能出發：等 ${block.map(id => `${esc(charNameOf(id))}（${esc(p.why[id])}）`).join('、')}</div>` : ''}
+      <div class="seg pb-seg">${Object.entries(PT_MODE).map(([k, [n, d]]) => `<button data-pbmode="${esc(p.key)}|${k}" class="${p.mode === k ? 'on' : ''}" title="${esc(d)}">${n}</button>`).join('')}</div>
+      <div class="dim sm">${esc(PT_MODE[p.mode][1])}${p.custom ? ` <a href="#" data-pbreset="${esc(p.key)}" title="刪掉這隊自己的設定，改用 ⚙ 設定裡的預設">改回預設</a>` : ''}</div>
+      ${mobHtml}</div>`;
+  }).join('') || '<div class="dim">沒有符合的隊伍</div>';
+}
+async function savePartyBoss(key, patch) {
+  const c = bossCfg(), P = { ...(c.parties || {}) };
+  if (patch === null) delete P[key];
+  else { const p = ((BOSS && BOSS.parties) || []).find(x => x.key === key) || {}; P[key] = { mode: p.mode || c.partyMode, togetherMobs: p.togetherMobs || c.togetherMobs || [], ...(P[key] || {}), ...patch }; }
+  await saveBoss({ parties: P }); await loadBoss(true); renderBoss(true);
+}
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('[data-pbmode],[data-pbtog],[data-pblv],[data-pbreset]'); if (!t || !t.closest('#bossParties')) return;
+  e.preventDefault();
+  const d = t.dataset;
+  try {
+    if (d.pbmode) { const [key, mode] = d.pbmode.split('|'); await savePartyBoss(key, { mode }); }
+    if (d.pbtog) { const [key, mob] = d.pbtog.split('|'); const p = BOSS.parties.find(x => x.key === key); const set = new Set(p.togetherMobs || []); set.has(mob) ? set.delete(mob) : set.add(mob); await savePartyBoss(key, { mode: 'mixed', togetherMobs: [...set] }); }
+    if (d.pblv) { const lv = Number((document.querySelector(`[data-pblvin="${CSS.escape(d.pblv)}"]`) || {}).value); if (!lv) { alert('先填等級'); return; } await savePartyBoss(d.pblv, { mode: 'mixed', togetherMobs: bossList().filter(x => (x.lv || 0) >= lv).map(x => x.mob) }); }
+    if (d.pbreset) await savePartyBoss(d.pbreset, null);
+  } catch (err) { alert('失敗：' + err.message); }
+});
 function bossMapOf(mob) { if (!WORLD) return ''; const m = WORLD.maps.find(x => (x.boss || []).includes(mob)); return m ? m.id : ''; }
 // 把某隻王加給／從某隻角色拿掉（'*'＝全部的王：拿掉時改成逐一挑選）
 async function bossToggle(id, mob, on) {

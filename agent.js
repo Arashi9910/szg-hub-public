@@ -1623,12 +1623,14 @@ function agentMain(ctx) {
         const idleOk = await startIdle();
         await report(job, { event: 'log', msg: `已前往 ${b.mapName}${presetMsg}${sellMsg}${idleOk ? '，已開始掛機' : '（開始掛機失敗）'}（打完${b.chain ? '看還有沒有下一隻，沒有就' : ''}回 ${backName || '原地圖'}）` });
         let idleAt = Date.now();
+        let stopWhy = '', deaths = 0;
+        const together = !!(b.unit && Array.isArray(b.party) && b.party.length > 1);
         let cdChecked = false, seen = false, gone = 0, hp = null, maxHp = null, lowest = Infinity, dropAt = Date.now(), postAt = 0, res = '';
         while (!res) {
           await sleepP(4000);
           // 中控面板按了強制停止
           const sr = await hub('GET', '/api/boss/stopreq?job=' + encodeURIComponent(job.id)).catch(() => null);
-          if (sr && sr.stop) { res = 'stopped'; break; }
+          if (sr && sr.stop) { res = 'stopped'; stopWhy = sr.why || ''; break; }
           let j;
           try { j = await gameRetry({ type: 'sync', characterId: id }); }
           catch (e) { if (e.gameUpdated) throw e; if (Date.now() - t0 > maxMs) res = 'timeout'; continue; }
@@ -1647,7 +1649,15 @@ function agentMain(ctx) {
             try { const s1 = await fullSync(); const r1 = (s1.bossRespawns || []).find(r => r.mob === b.mob); if (r1 && r1.available && r1.deadline > (Number(s1.serverTime) || Date.now())) res = 'killed'; } catch (_) {}
           }
           else if (!seen && Date.now() - t0 > 45000) res = 'absent';
-          else if (ch.hp != null && Number(ch.hp) <= 0) res = 'dead';
+          else if (ch.hp != null && Number(ch.hp) <= 0) {
+            // 一起打（v0.69.3）：倒下就原地復活繼續跟隊友一起打；同一隻王倒下第 3 次才放棄（整隊一起回）
+            deaths++;
+            if (together && deaths < 3) {
+              hubRevivedAt[id] = Date.now();
+              try { await gameRetry({ type: 'revive', characterId: id }); await sleepP(800); await startIdle(); idleAt = Date.now(); await report(job, { event: 'log', msg: `${b.name}：倒下了，原地復活繼續跟隊友一起打（第 ${deaths} 次）` }); }
+              catch (e) { if (e.gameUpdated) throw e; res = 'dead'; }
+            } else res = 'dead';
+          }
           else if (Date.now() - t0 > maxMs) res = 'timeout';
           else if (seen && Date.now() - dropAt > stuckMs) res = 'stuck';
           if (!res && hp != null) {
@@ -1665,8 +1675,8 @@ function agentMain(ctx) {
         const mins = Math.max(1, Math.round((Date.now() - t0) / 60000));
         const left = hp != null && maxHp ? `（王剩 ${pct(hp, maxHp)}%，血量會保留）` : '';
         const text = {
-          killed: `打死了，花了約 ${mins} 分鐘`, timeout: `打了 ${mins} 分鐘（安全上限）還沒打死${left}`, dead: `角色倒下${left}`,
-          stopped: `你按了強制停止，放棄這隻${left}`, absent: '到了地圖但王不在場上', stuck: `${Math.round(stuckMs / 60000)} 分鐘內血量都沒有下降，先放棄${left}`, moved: '中途被換到別的地圖，停止',
+          killed: `打死了，花了約 ${mins} 分鐘`, timeout: `打了 ${mins} 分鐘（安全上限）還沒打死${left}`, dead: `角色倒下${deaths > 1 ? `（第 ${deaths} 次，放棄）` : ''}${left}`,
+          stopped: stopWhy ? `${stopWhy}，整隊一起回練功圖${left}` : `你按了強制停止，放棄這隻${left}`, absent: '到了地圖但王不在場上', stuck: `${Math.round(stuckMs / 60000)} 分鐘內血量都沒有下降，先放棄${left}`, moved: '中途被換到別的地圖，停止',
         }[res] || res;
         return { result: res, text, hp, maxHp, inst, ms: Date.now() - t0 };
       };
