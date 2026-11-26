@@ -67,9 +67,26 @@
   .maplist .row { cursor: pointer; } .empty { text-align: center; color: var(--dim); padding: 30px 10px; }
   .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 120px); transform: translateX(-50%); background: #000c; color: #fff; padding: 8px 14px; border-radius: 18px; font-size: 13px; z-index: 60; display: none; max-width: 86vw; text-align: center; }
   .pair { padding: 40px 20px; text-align: center; } .pair h2 { font-size: 18px; }
+  .boot-err { display: none; margin: 10px; padding: 10px 12px; border: 1px solid #e66b6b; border-radius: 10px; background: #2a1517; color: #ffd7d7; font-size: 13px; white-space: pre-wrap; word-break: break-all; }
 </style>
+<script>
+// v0.69.5：手機版出錯時把原因顯示在畫面上（以前會一片空白、看不出是哪裡壞）。這段用最舊的寫法，舊手機也跑得動
+window.__szgErr = [];
+function __szgShow(msg) {
+  try {
+    window.__szgErr.push(msg);
+    var b = document.getElementById('bootErr'); if (!b) return;
+    b.style.display = 'block';
+    b.textContent = '手機版出錯了，請截這個畫面給中控的作者：\n' + window.__szgErr.slice(-5).join('\n') + '\n\n網址：' + location.origin + location.pathname + '\n瀏覽器：' + navigator.userAgent;
+  } catch (e) {}
+}
+window.onerror = function (m, src, line, col) { __szgShow('程式錯誤：' + m + '（第 ' + line + ' 行 ' + col + '）'); };
+window.addEventListener && window.addEventListener('unhandledrejection', function (e) { var r = e && e.reason; __szgShow('程式錯誤：' + (r && r.message ? r.message : r)); });
+</script>
 </head>
 <body>
+<div class="boot-err" id="bootErr"></div>
+<noscript><div class="boot-err" style="display:block">這個瀏覽器關掉了 JavaScript，手機版需要它才能顯示。</div></noscript>
 <header><h1>🍁 上漲谷中控</h1><span class="st" id="st">連線中…</span><button class="ibtn" id="refresh" aria-label="重新整理">↻</button></header>
 <main>
   <section id="v-chars" class="on">
@@ -162,7 +179,7 @@ async function api(path, body) {
   const r = await fetch(path, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', ...(TOKEN ? { 'X-Hub-Token': TOKEN } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
   if (r.status === 401) throw new AuthErr('需要配對');
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+  if (!r.ok) throw new Error((j.error ? j.error + '，' : '') + 'HTTP ' + r.status);
   return j;
 }
 const avatar = (c, cls = '') => c.ava ? `<img class="${cls}" src="/api/avatar/${encodeURIComponent(c.id)}?t=${c.ava}${TOKEN ? '&token=' + TOKEN : ''}" alt="" loading="lazy">` : `<span class="ph ${cls}" style="font-size:24px;opacity:.35">👤</span>`;
@@ -181,6 +198,7 @@ async function load(quiet) {
     render();
   } catch (e) {
     if (e instanceof AuthErr) return showPair();
+    load.lastErr = e.message || String(e);
     $('#st').innerHTML = '<span class="bad">連不到中控</span>';
     if (!quiet) toast('連不到中控：' + e.message);
   }
@@ -449,6 +467,8 @@ $('#bChain').onchange = async e => { if (!BOSS) await loadBoss(); await saveBoss
 document.addEventListener('visibilitychange', () => { if (!document.hidden) load(true); });
 setInterval(() => { if (!document.hidden) { load(true); if (view === 'boss' && D && (D.boss.live || []).length) loadBoss().then(render); } }, 10000);
 load();
+// 8 秒還沒拿到中控的資料（也不是配對畫面）：把卡在哪裡顯示出來
+setTimeout(() => { if (!D && !document.querySelector('.pair')) __szgShow('8 秒還沒收到中控的資料' + (load.lastErr ? '：' + load.lastErr : '（還在等回應，可能是網路或 Tailscale 連線很慢）')); }, 8000);
 </script>
 </body>
 </html>
