@@ -658,6 +658,9 @@ function agentMain(ctx) {
             setBadge(null, `${t.name}：前往 ${t.mapName || t.map}…`);
             await gameRetry({ type: 'map', map: t.map, characterId: t.charId });
             done.push(`${t.name} 前往 ${t.mapName || t.map}`);
+            // 真實遊戲換地圖會停止掛機（2026-11-20 實測）：到了就重新開始（v0.70；派工套用、手機換圖都會走這裡）
+            await new Promise(r => setTimeout(r, 1200));
+            try { await gameRetry({ type: 'start', characterId: t.charId }); done.push(`${t.name} 開始掛機`); } catch (e) { if (e.gameUpdated) throw e; failed.push(`${t.name} 開始掛機（${e.message}）`); }
             if (t.sell) {
               await new Promise(r => setTimeout(r, 1200));
               try { await gameRetry({ type: 'autoSell', characterId: t.charId, map: t.map, config: t.sell }); done.push(`${t.name} 套用自動販售（${t.sell.enabled ? t.sell.itemIds.length + ' 項' : '關閉'}）`); }
