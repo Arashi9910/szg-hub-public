@@ -3717,7 +3717,7 @@ function renderBossSell() {
   const sc = bossSellCfg(), R = sc.rule;
   const opt = (k, label) => `<div>${label}</div><div class="seg">${(k === 'boss' ? [['keep', '一律保留'], ['rule', '照上面的規則']] : [['sell', '賣掉'], ['keep', '保留']]).map(([v, n]) => `<button data-bsrule="${k}|${v}" class="${R[k] === v ? 'on' : ''}">${n}</button>`).join('')}</div>`;
   if (ui.bossSellEdit) {
-    const x = bossSellCalc(ui.bossSellEdit, sc); const m = mapOf(ui.bossSellEdit);
+    const x = bossSellCalc(ui.bossSellEdit); const m = mapOf(ui.bossSellEdit);
     if (!x || !m) { box.innerHTML = '<div class="dim">這張圖沒有可以賣的掉落資料（遊戲分頁更新到新版腳本後會上傳）</div><button class="btn" data-bsback="1">← 回到全部的王</button>'; return; }
     const dr = ui.bossSellDraft || (ui.bossSellDraft = new Set(x.ids));
     const bossNames = (m.boss || []).map(id => (WORLD.mobIdx[id] || {}).name).filter(Boolean).join('、');
@@ -3730,7 +3730,7 @@ function renderBossSell() {
         return `<div class="tile ${on ? 'sel sellx' : ''}" data-bsi="${r[0]}" title="${esc(r[2] + (r[3] ? `\n商店價 ${fmt(r[3])}` : '') + (boss ? '\n👑 王會掉的' : '') + (itemTip(r[0]) ? '\n' + itemTip(r[0]) : ''))}">${itemImg(r[0]) ? `<img src="${esc(itemImg(r[0]))}" loading="lazy" alt="" onerror="this.remove()">` : `<span class="nm">${esc(r[2].slice(0, 6))}</span>`}${on ? '<span class="l">💰</span>' : ''}${boss ? '<span class="p">👑</span>' : ''}<span class="tn">${esc(r[2])}</span></div>`; }).join('')}</div>` : ''; }).join('')}`;
     return;
   }
-  const maps = bossMapsAll().map(m => ({ m, x: bossSellCalc(m.id, sc), names: (m.boss || []).map(id => (WORLD.mobIdx[id] || {}).name).filter(Boolean).join('、'), lv: Math.max(0, ...(m.boss || []).map(id => (WORLD.mobIdx[id] || {}).lv || 0)) })).sort((a, b) => a.lv - b.lv);
+  const maps = bossMapsAll().map(m => ({ m, x: bossSellCalc(m.id), names: (m.boss || []).map(id => (WORLD.mobIdx[id] || {}).name).filter(Boolean).join('、'), lv: Math.max(0, ...(m.boss || []).map(id => (WORLD.mobIdx[id] || {}).lv || 0)) })).sort((a, b) => a.lv - b.lv);
   const restored = (bossCfg().sell || {}).restored;
   box.innerHTML = `${restored ? `<div class="card attn sm" style="margin:0 0 8px;padding:6px 10px">ℹ 你的掉落篩選之前被手機版清掉了，${clock(restored)} 已自動還原：每隻王都設成「個別調整」，要賣的東西和原本一樣。想改回共用規則，按王的「調整」→「恢復共用規則」。</div>` : ''}<div class="bar"><label><input type="checkbox" class="sw" id="bossSellOn" ${sc.on ? 'checked' : ''}> <b>到野王地圖時自動套用販售</b></label><span class="dim sm">（跟派工的「去處規則」是同一份設定）</span>
       <span class="dim sm">開啟後，打王的角色到了王的地圖，中控會把那張圖的自動販售設成下面的結果（撿到就賣給商店；回練功圖時練功圖用它自己原本的設定）。</span></div>
