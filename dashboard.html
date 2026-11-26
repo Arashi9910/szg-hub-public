@@ -306,6 +306,12 @@
   #charDrawer .cd-stat td { padding: 3px 4px; } #charDrawer .cd-stat button { padding: 0 6px; }
   #charDrawer .cdsk .cdg-hd button { padding: 0 6px; }
   #charDrawer .cd-sw { display: block; margin: 6px 0; }
+  .tparty { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: 4px; padding: 14px 4px 3px; margin: 2px; border: 1.5px solid #8a6cd8; border-radius: 10px; background: rgba(138,108,216,.08); position: relative; vertical-align: top; }
+  .tparty .tp-hd { position: absolute; top: -1px; left: 6px; font-size: 11px; color: #b9a3f5; cursor: grab; white-space: nowrap; max-width: 95%; overflow: hidden; text-overflow: ellipsis; user-select: none; }
+  .tparty .tp-hd:hover { color: #fff; }
+  .tav.tdim { opacity: .28; }
+  .tav .grp.gB { color: #f0b86a; }
+  .town-pool .tparty { padding-top: 13px; }
   #charDrawer .seg { flex-wrap: wrap; }
   @media (max-width: 1280px) {
     /* 欄位多的表格：維持可讀寬度，放不下時在卡片裡左右捲動，不再把整個頁面撐破 */
@@ -4217,7 +4223,7 @@ document.addEventListener('change', e => { if (e.target.id === 'bdImportFile' &&
 document.addEventListener('click', e => {
   const t = e.target.closest && e.target.closest('[data-bdpin],#bdExport,#bdImportBtn'); if (!t || !t.closest('#board')) return;
   e.preventDefault(); e.stopPropagation();
-  if (t.dataset.bdpin) { const [g, id] = t.dataset.bdpin.split('|'); const cfg = boardCfg(g); delete cfg.auto[id]; saveBoard(cfg, g); ui.fac.sig = null; renderBoard(); return; }
+  if (t.dataset.bdpin) { const v = t.dataset.bdpin, id = v.includes('|') ? v.split('|')[1] : v; for (const g of ['A', 'B']) { const cfg = boardCfg(g); if (cfg.auto[id]) { delete cfg.auto[id]; saveBoard(cfg, g); } } ui.fac.sig = null; renderBoard(); return; }
   if (t.id === 'bdExport') { boardExport(); return; }
   if (t.id === 'bdImportBtn') { $('#bdImportFile').value = ''; $('#bdImportFile').click(); }
 }, true);
@@ -4276,7 +4282,9 @@ document.addEventListener('click', async e => {
   try {
     if (d.bdsell) { ui.board.sellEdit = ui.board.sellEdit === d.bdsell ? null : d.bdsell; ui.board.sellDraft = null; ui.board.goalEdit = null; renderBoard(); if (ui.board.sellEdit) $('#bdSell').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); return; }
     if (d.bdgoal) { ui.board.goalEdit = ui.board.goalEdit === d.bdgoal ? null : d.bdgoal; ui.board.sellEdit = null; renderBoard(); if (ui.board.goalEdit) $('#bdGoal').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); return; }
-    if (d.bddel) { const [g, id] = d.bddel.split('|'); const cfg = boardCfg(g); for (const l of Object.keys(cfg.lanes)) cfg.lanes[l] = cfg.lanes[l].filter(x => x !== id); for (const [cid, mid] of Object.entries(cfg.assign)) if (mid === id) delete cfg.assign[cid]; delete cfg.auto[id]; saveBoard(cfg, g); ui.fac.sig = null; renderBoard(); return; }
+    if (d.bddel) { const v = d.bddel, id = v.includes('|') ? v.split('|')[1] : v; // v0.73：地圖兩組共用，兩組都拿掉
+      for (const g of ['A', 'B']) { const cfg = boardCfg(g); for (const l of Object.keys(cfg.lanes)) cfg.lanes[l] = cfg.lanes[l].filter(x => x !== id); for (const [cid, mid] of Object.entries(cfg.assign)) if (mid === id) delete cfg.assign[cid]; delete cfg.auto[id]; saveBoard(cfg, g); }
+      ui.fac.sig = null; renderBoard(); return; }
     if (d.bdchar && !e.target.closest('[data-bddrop] .mc-act')) { ui.board.pick = ui.board.pick === d.bdchar ? null : d.bdchar; renderBoard(); return; }
     if (d.bddrop && ui.board.pick) { boardMove(ui.board.pick, d.bddrop); return; }
     if (d.bdsi) { const sd = ui.board.sellDraft, id = Number(d.bdsi); if (sd.sel.has(id)) sd.sel.delete(id); else sd.sel.add(id); renderBoard(); return; }
@@ -4308,7 +4316,7 @@ document.addEventListener('click', async e => {
       // v0.71：A、B 兩組一起套用；自動販售用去處規則算出來的（沒開或沿用遊戲設定的圖不動）
       const targets = [], lines = [], skipped = [], cfgs = {};
       for (const grp of ['A', 'B']) {
-        const cfg = cfgs[grp] = boardCfg(grp), chars = boardChars().filter(c => c.group === grp), onBoard = new Set(Object.values(cfg.lanes).flat());
+        const cfg = cfgs[grp] = boardCfg(grp), chars = boardChars().filter(c => c.group === grp), onBoard = townLanes(); // v0.73：地圖兩組共用
         for (const c of chars) {
           const to = cfg.assign[c.id]; if (!to || to === '__pool') continue;
           const m = mapOf(to); if (!m) continue;
@@ -4425,7 +4433,7 @@ document.addEventListener('pointerup', e => {
   if (d.type === 'ava') { townDragEnd(e, d); return; }
   if (d.type === 'pan') { facSaveView(); return; }
   // 城鎮圖的地圖位置存在各組的 tpos（v0.71）
-  if (d.type === 'node' || d.type === 'resize') { if (d.moved && d.el.dataset.fgrp) { const g = d.el.dataset.fgrp, cfg = boardCfg(g); cfg.tpos = { ...(cfg.tpos || {}), ['m:' + d.el.dataset.fmap]: [d.el.offsetLeft, d.el.offsetTop] }; saveBoard(cfg, g); ui.fac.sig = null; } return; }
+  if (d.type === 'node' || d.type === 'resize') { if (d.moved && d.el.dataset.fmap) { const cfg = boardCfg('A'); cfg.tpos = { ...(cfg.tpos || {}), ['t:' + d.el.dataset.fmap]: [d.el.offsetLeft, d.el.offsetTop] }; saveBoard(cfg, 'A'); ui.fac.sig = null; } return; }
   if (d.type === 'wire') {
     document.querySelectorAll('.fmap.hot').forEach(x => x.classList.remove('hot'));
     const over = document.elementFromPoint(e.clientX, e.clientY); const m = over && over.closest && over.closest('.fmap');
@@ -4472,6 +4480,7 @@ const TB = { bag: { dx: -210, dy: -210, name: '背包', icon: 'backpack', color:
 const TB_W = 200;
 const DEST_NAME = { bag: '背包', shop: '商店', guild: '公倉', forge: '強化' };
 ui.fac.sel = new Set();
+ui.fac.gf = (() => { try { return localStorage.getItem('townGf') || ''; } catch (_) { return ''; } })();
 const destCfg = () => DX.cfg(S);
 const destCalc = mapId => (WORLD ? DX.calc(WORLD, S, mapId) : null);
 const destSellFor = (mapId, ctx = 'board') => (WORLD ? DX.sellOf(WORLD, S, mapId, ctx) : null);
@@ -4479,6 +4488,42 @@ const destSellFor = (mapId, ctx = 'board') => (WORLD ? DX.sellOf(WORLD, S, mapId
 async function saveDest(patch) { S.dest = { ...(S.dest || {}), ...patch }; ui.fac.sig = null; try { await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dest: patch }) }); } catch (e) { $('#status').textContent = '設定儲存失敗：' + e.message; } }
 async function saveGuildIds(ids) { const g = { ...(S.guildDep || {}), ids: [...new Set(ids.map(Number))] }; if (ui.gd) ui.gd.ids = g.ids; await saveSettings({ guildDep: g }); ui.fac.sig = null; }
 const sameSell = (a, b) => !!a && !!b && !!a.enabled === !!b.enabled && (a.itemIds || []).length === (b.itemIds || []).length && (b.itemIds || []).every(id => (a.itemIds || []).map(Number).includes(Number(id)));
+// v0.73：城鎮圖不分左右兩邊，一張圖一個節點（A、B 組的角色都在裡面）。資料還是照組存（每組的 lanes／assign），地圖會同時放進兩組的 lanes
+function townLanes() { const on = new Set(); for (const g of ['A', 'B']) for (const id of Object.values(boardCfg(g).lanes).flat()) on.add(id); return on; }
+function townWhereAll() {
+  const on = townLanes(), cfgs = { A: boardCfg('A'), B: boardCfg('B') };
+  return c => { const cfg = cfgs[c.group] || cfgs.A, a = cfg.assign[c.id]; return a && a !== '__pool' ? a : (a !== '__pool' && on.has(c.map) ? c.map : null); };
+}
+// 隊伍（遊戲裡現在的隊伍，2 人以上）：{ code: { code, ids, leader, name } }、{ 角色 id: code }
+function townParties(chars) {
+  const ids = new Set(chars.map(c => c.id)), parties = {}, of = {};
+  for (const c of chars) {
+    const p = DATA.chars[c.id] && DATA.chars[c.id].party && DATA.chars[c.id].party.party;
+    if (!p || !p.code || (p.members || []).length < 2 || parties[p.code]) continue;
+    const mem = p.members.filter(m => ids.has(m.id)); if (mem.length < 1) continue;
+    const lead = p.members.find(m => m.leader) || p.members[0];
+    parties[p.code] = { code: p.code, ids: mem.map(m => m.id), total: p.members.length, leader: lead.id, name: `${lead.name} 的隊伍` };
+    for (const m of mem) of[m.id] = p.code;
+  }
+  return { parties, of };
+}
+// 拖曳的角色：同隊的一起（隊伍框整隊走、沒組隊的單隻走）
+function townExpand(ids) {
+  const { parties, of } = ui.fac.pt || { parties: {}, of: {} }, out = new Set();
+  for (const id of ids) { const code = of[id]; if (code && parties[code]) parties[code].ids.forEach(x => out.add(x)); else out.add(id); }
+  return [...out];
+}
+function townAvas(list, opts = {}) {
+  const { parties, of } = ui.fac.pt || { parties: {}, of: {} }, seen = new Set(), out = [];
+  for (const c of list) {
+    const code = of[c.id];
+    if (!code) { out.push(tavHtml(c, opts)); continue; }
+    if (seen.has(code)) continue; seen.add(code);
+    const p = parties[code], mem = list.filter(x => of[x.id] === code);
+    out.push(`<span class="tparty" data-tparty="${esc(code)}"><span class="tp-hd" data-tpdrag="${esc(code)}" title="拖這裡整隊一起移動（遊戲裡現在的隊伍）">👥 ${esc(p.name)}${mem.length < p.total ? ` <span class="dim">${mem.length}/${p.total}</span>` : ''}</span>${mem.map(x => tavHtml(x, opts)).join('')}</span>`);
+  }
+  return out.join('');
+}
 function townWhere(cfg) { const onBoard = new Set(Object.values(cfg.lanes).flat()); return c => cfg.assign[c.id] && cfg.assign[c.id] !== '__pool' ? cfg.assign[c.id] : (onBoard.has(c.map) && cfg.assign[c.id] !== '__pool' ? c.map : null); }
 // 預設位置：有角色的地圖排在城鎮旁邊（內圈），沒有角色的排在更外面（外圈）；一列放不下就再往外加一列。
 // 每一列上下排開，離中間越遠的往外彎一點（看起來是一圈），不會蓋到城鎮
@@ -4501,10 +4546,10 @@ function townDefaults(g, inner, outer) {
   col(outer, 220, 86, 112, 9);
   return pos;
 }
-function tavHtml(c, cfg, opts = {}) {
-  const pend = cfg && cfg.assign[c.id] && cfg.assign[c.id] !== '__pool' && cfg.assign[c.id] !== c.map;
-  const tip = [`${c.name} Lv${c.lv}・${c.jobName || ''}`, c.active ? '' : '背景掛機中（沒有自己的遊戲分頁）', pend ? `待移動：${(mapOf(c.map) || {}).name || '?'} → ${(mapOf(cfg.assign[c.id]) || {}).name || '?'}（按「套用派工」才會換過去）` : '', '點一下選取・拖到地圖派遣・點兩下看角色'].filter(Boolean).join('\n');
-  return `<span class="tav ${ui.fac.sel.has(c.id) ? 'sel' : ''} ${pend ? 'pend' : ''} ${c.active ? '' : 'bgc'}" data-tav="${esc(c.id)}" data-tgrp="${c.group}" title="${esc(tip)}">${opts.grp ? `<span class="grp">${c.group}</span>` : ''}${avatarImg(c.id, 'tv')}<i class="tav-i" data-tinfo="${esc(c.id)}">i</i><span class="tav-n">${pend ? '→' : ''}${esc(c.name)}</span></span>`;
+function tavHtml(c, opts = {}) {
+  const cfg = boardCfg(c.group), pend = cfg && cfg.assign[c.id] && cfg.assign[c.id] !== '__pool' && cfg.assign[c.id] !== c.map;
+  const tip = [`${c.name} Lv${c.lv}・${c.jobName || ''}`, c.active ? '' : '背景掛機中（沒有自己的遊戲分頁）', pend ? `待移動：${(mapOf(c.map) || {}).name || '?'} → ${(mapOf(cfg.assign[c.id]) || {}).name || '?'}（按「套用派工」才會換過去）` : '', (ui.fac.pt && ui.fac.pt.of[c.id] ? '同隊的會一起移動・' : '') + '點一下選取・拖到地圖派遣・點兩下看角色'].filter(Boolean).join('\n');
+  return `<span class="tav ${ui.fac.gf && ui.fac.gf !== c.group ? 'tdim' : ''} ${ui.fac.sel.has(c.id) ? 'sel' : ''} ${pend ? 'pend' : ''} ${c.active ? '' : 'bgc'}" data-tav="${esc(c.id)}" data-tgrp="${c.group}" title="${esc(tip)}"><span class="grp g${c.group}">${c.group}</span>${avatarImg(c.id, 'tv')}<i class="tav-i" data-tinfo="${esc(c.id)}">i</i><span class="tav-n">${pend ? '→' : ''}${esc(c.name)}</span></span>`;
 }
 function townSink(key, body) {
   const b = TB[key], x = TOWN.cx + b.dx, y = TOWN.cy + b.dy;
@@ -4515,28 +4560,29 @@ function renderFactory() {
   const box = $('#bdFactory'); if (!box) return;
   if (ui.fac.drag) return;
   if (!WORLD) return;
-  const dc = destCfg(), all = boardChars(), html = [], est = {}, info = { A: null, B: null };
+  const dc = destCfg(), all = boardChars(), html = [], est = {};
   let sold = 0, mapsOn = 0;
-  for (const g of ['A', 'B']) {
-    const cfg = boardCfg(g), where = townWhere(cfg), chars = all.filter(c => c.group === g);
-    const maps = [...new Set(Object.values(cfg.lanes).flat())].filter(id => mapOf(id));
-    const here = id => chars.filter(c => where(c) === id);
-    const inner = maps.filter(id => here(id).length), outer = maps.filter(id => !here(id).length);
-    const def = townDefaults(g, inner, outer), tp = cfg.tpos || {};
-    info[g] = { cfg, where, chars };
-    for (const id of maps) {
-      const m = mapOf(id), hs = here(id), e = hs.length ? groupEstimate(hs, m) : null, x = destCalc(id), empty = !hs.length;
-      const p = tp['m:' + id] || def[id], key = `m:${g}:${id}`, ov = dc.over[id] || {};
-      est[key] = { g, id, m, here: hs, e, x, empty };
-      const sell = x && dc.board && !x.game ? x.sell.length : null;
-      if (hs.length && sell) { sold += sell; mapsOn++; }
-      const status = !dc.board ? '<span class="dim">去處規則沒開（照遊戲設定）</span>' : x && x.game ? '<span class="dim">沿用遊戲裡的設定</span>' : x && x.rows.length ? `賣 <b>${x.sell.length}</b> 項・留 ${x.rows.length - x.sell.length} 項${x.over ? ' <span class="warn">改過</span>' : ''}` : '<span class="dim">還沒有掉落資料</span>';
-      html.push(`<div class="fnode fmap tmap ${empty ? 'tm-empty' : ''}" data-fn="${key}" data-fmap="${esc(id)}" data-fgrp="${g}" style="left:${p[0]}px;top:${p[1]}px;width:${empty ? 220 : 250}px" title="${empty ? '沒有角色：把角色拖進來' : ''}">
-        <div class="fn-hd" data-fdrag><b class="tm-name" title="${esc(m.name)}">${esc(m.name)}</b><span class="dim sm">Lv${m.minLevel}＋</span><span style="flex:1"></span>${cfg.auto[id] ? `<button class="btn sm" data-bdpin="${g}|${esc(id)}" title="這張圖是「與遊戲同步」自動放上來的，沒人時會自動移除；按一下留著">📌</button>` : ''}<button class="btn sm" data-bddel="${g}|${esc(id)}" title="從看板移除這張圖（不會移動角色）">✕</button></div>
-        <div class="fn-bd sm">${empty ? '' : `<div class="tm-chars">${hs.map(c => tavHtml(c, cfg)).join('')}</div>`}
-          <div class="tm-st">${e ? `經驗 <b>${short(e.total)}</b>/時・` : ''}${status}</div></div>
-        <button class="btn sm tm-cfg ${x && x.over ? 'ov' : ''}" data-tmcfg="${g}|${esc(id)}" title="這張圖的自訂設定（每樣掉落物的去處）">${ic('settings-2')}</button></div>`);
-    }
+  ui.fac.pt = townParties(all);
+  const where = townWhereAll(), cfgA = boardCfg('A'), cfgB = boardCfg('B');
+  const maps = [...townLanes()].filter(id => mapOf(id));
+  const here = id => all.filter(c => where(c) === id);
+  const inner = maps.filter(id => here(id).length), outer = maps.filter(id => !here(id).length);
+  // 左右兩邊輪流放（不再是 A 左 B 右）
+  const half = (list, k) => list.filter((_, i) => i % 2 === k);
+  const def = { ...townDefaults('A', half(inner, 0), half(outer, 0)), ...townDefaults('B', half(inner, 1), half(outer, 1)) }, tp = cfgA.tpos || {};
+  for (const id of maps) {
+    const m = mapOf(id), hs = here(id), e = hs.length ? groupEstimate(hs, m) : null, x = destCalc(id), empty = !hs.length;
+    const p = tp['t:' + id] || def[id], key = `m:${id}`, auto = cfgA.lanes && (cfgA.auto[id] || cfgB.auto[id]);
+    const w = empty ? 220 : Math.min(420, 250 + Math.max(0, hs.length - 4) * 22);
+    est[key] = { id, m, here: hs, e, x, empty, left: p[0] + w / 2 < TOWN.cx };
+    const sell = x && dc.board && !x.game ? x.sell.length : null;
+    if (hs.length && sell) { sold += sell; mapsOn++; }
+    const status = !dc.board ? '<span class="dim">去處規則沒開（照遊戲設定）</span>' : x && x.game ? '<span class="dim">沿用遊戲裡的設定</span>' : x && x.rows.length ? `賣 <b>${x.sell.length}</b> 項・留 ${x.rows.length - x.sell.length} 項${x.over ? ' <span class="warn">改過</span>' : ''}` : '<span class="dim">還沒有掉落資料</span>';
+    html.push(`<div class="fnode fmap tmap ${empty ? 'tm-empty' : ''}" data-fn="${key}" data-fmap="${esc(id)}" style="left:${p[0]}px;top:${p[1]}px;width:${w}px" title="${empty ? '沒有角色：把角色拖進來' : ''}">
+      <div class="fn-hd" data-fdrag><b class="tm-name" title="${esc(m.name)}">${esc(m.name)}</b><span class="dim sm">Lv${m.minLevel}＋</span><span style="flex:1"></span>${auto ? `<button class="btn sm" data-bdpin="${esc(id)}" title="這張圖是「與遊戲同步」自動放上來的，沒人時會自動移除；按一下留著">📌</button>` : ''}<button class="btn sm" data-bddel="${esc(id)}" title="從看板移除這張圖（不會移動角色）">✕</button></div>
+      <div class="fn-bd sm">${empty ? '' : `<div class="tm-chars">${townAvas(hs)}</div>`}
+        <div class="tm-st">${e ? `經驗 <b>${short(e.total)}</b>/時・` : ''}${status}</div></div>
+      <button class="btn sm tm-cfg ${x && x.over ? 'ov' : ''}" data-tmcfg="${esc(id)}" title="這張圖的自訂設定（每樣掉落物的去處）">${ic('settings-2')}</button></div>`);
   }
   // 城鎮
   const T = TOWN, g0 = GUILD && GUILD.data, ga = S.guildAuto || {};
@@ -4551,20 +4597,19 @@ function renderFactory() {
   html.push(townSink('guild', `${g0 ? `<div>道具 ${Object.values(g0.items || {}).filter(n => n > 0).length}/${(g0.capacity || {}).items || '?'} 格・共 <b>${short(Object.values(g0.items || {}).reduce((t, n) => t + (n > 0 ? n : 0), 0))}</b> 個</div><div>裝備 ${(g0.gear || []).length}/${(g0.capacity || {}).gear || '?'} 件</div>` : '<div class="dim">還沒讀過公倉</div>'}<div>自動存入：${ga.mode === 'deposit' ? `<span class="good">開</span>，每 ${Math.max(10, ga.everyMin || 30)} 分` : ga.mode === 'preview' ? '試跑中' : '<span class="warn">關</span>'}</div><div class="dim">存入規則：整類 ${gids.cats.size}・指定 ${gids.ids.size} 種</div>`));
   html.push(townSink('forge', `${run ? `<div class="good">執行中：${esc(run.fromName)}</div>` : ''}${last ? `<div>上次 ${clock(last.at)}：衝 ${last.results.length} 件，<b class="good">及格 ${last.results.filter(x => x.pass).length}</b></div>` : '<div class="dim">還沒衝過</div>'}${todo ? `<div class="warn">等你分流：${todo} 件</div>` : ''}<div>自動強化：${(() => { const fa = faCfg(), n = fa.rules.filter(r => r.on !== false).length; return fa.mode === 'off' ? '<span class="dim">關</span>' : `${fa.mode === 'auto' ? `<span class="good">上限內自動</span>（今天 ${short(FORGE.spentToday || 0)}／${short(fa.dailyCap)}）` : '每次確認'}・${n} 條規則`; })()}</div><div class="dim">送來強化的道具 ${forgeN} 種</div>`));
   html.push(`<button class="btn sm town-rule" data-trules="1" style="left:${T.cx - 70}px;top:${T.cy - T.ring - 18}px" title="套用到所有地圖的去處規則">${ic('settings-2')} 共用規則${dc.board ? '' : '（沒開）'}</button>`);
-  html.push(`<div class="town-side" style="left:${T.cx - 900}px;top:${T.cy - 760}px">A 組</div><div class="town-side" style="left:${T.cx + 840}px;top:${T.cy - 760}px">B 組</div>`);
   if (!ui.fac.pan) { ui.fac.pan = { x: (box.clientWidth || 1200) / 2 - T.cx * ui.fac.zoom, y: (box.clientHeight || 700) / 2 - T.cy * ui.fac.zoom }; }
-  ui.fac.est = est; ui.fac.info = info;
+  ui.fac.est = est;
   // 上方：還沒派遣的角色＋開新地圖
-  const pool = all.filter(c => info[c.group] && !info[c.group].where(c));
-  const addOpts = g => { const on = new Set(Object.values(info[g].cfg.lanes).flat()); return '<option value="">＋ 開 ' + g + ' 組地圖…</option>' + WORLD.maps.filter(m => !on.has(m.id) && m.mobs && m.mobs.length).sort((a, b) => a.minLevel - b.minLevel || a.lvMin - b.lvMin).map(m => `<option value="${esc(m.id)}">${esc(m.name)}（Lv${m.minLevel}＋・怪 ${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}）</option>`).join(''); };
+  const pool = all.filter(c => !where(c));
+  const addOpts = () => { const on = townLanes(); return '<option value="">＋ 開新地圖…</option>' + WORLD.maps.filter(m => !on.has(m.id) && m.mobs && m.mobs.length).sort((a, b) => a.minLevel - b.minLevel || a.lvMin - b.lvMin).map(m => `<option value="${esc(m.id)}">${esc(m.name)}（Lv${m.minLevel}＋・怪 ${m.lvMin}${m.lvMax !== m.lvMin ? '~' + m.lvMax : ''}）</option>`).join(''); };
   const inact = g => groupInactive(g).length;
-  const top = `<div class="fac-hud town-pool"><b class="sm">未派遣</b><span class="tp-list" data-tpool="1">${pool.map(c => tavHtml(c, info[c.group].cfg, { grp: true })).join('') || '<span class="dim sm">全部都派出去了</span>'}</span>
-    <span style="flex:1"></span>${ui.fac.sel.size ? `<span class="sm">已選 ${ui.fac.sel.size} 隻 <a class="sm" data-tselclear="1">取消</a></span>` : ''}<select class="sm" data-taddmap="A" style="max-width:190px">${addOpts('A')}</select><select class="sm" data-taddmap="B" style="max-width:190px">${addOpts('B')}</select>
+  const top = `<div class="fac-hud town-pool"><b class="sm">未派遣</b><span class="tp-list" data-tpool="1">${townAvas(pool) || '<span class="dim sm">全部都派出去了</span>'}</span>
+    <span style="flex:1"></span>${ui.fac.sel.size ? `<span class="sm">已選 ${ui.fac.sel.size} 隻 <a class="sm" data-tselclear="1">取消</a></span>` : ''}<span class="seg tgf" title="淡化另一組的角色（只是看的，不影響派工）">${[['', '全部'], ['A', 'A 組'], ['B', 'B 組']].map(([v, n]) => `<button data-tgf="${v}" class="${(ui.fac.gf || '') === v ? 'on' : ''}">${n}</button>`).join('')}</span><select class="sm" data-taddmap="1" style="max-width:220px">${addOpts()}</select>
     ${['A', 'B'].map(g => inact(g) ? `<button class="btn sm" data-bdgswitch="${g}" title="把這一組沒有分頁的角色切過去">⇄ ${g} 組沒分頁的切過去（${inact(g)}）</button>` : '').join('')}</div>`;
   const hud = `<div class="fac-hud"><button class="btn sm" data-fzoom="1.15">＋</button><button class="btn sm" data-fzoom="0.87">－</button><button class="btn sm" data-fzoom="fit" title="縮放到看得到所有節點">全部顯示</button><button class="btn sm" data-fzoom="reset">100%</button><button class="btn sm" data-fzoom="layout" title="把地圖排回預設位置（有人的內圈、沒人的外圈）">重新排列</button>
       <button class="btn sm" data-fzoom="max" title="畫布佔滿整個視窗">${document.getElementById('board').classList.contains('fac-max') ? '還原' : ic('maximize') + ' 放大畫布'}</button><button class="btn sm primary" data-fzoom="apply">▶ 套用派工</button><button class="btn sm" data-trules="1" title="套用到所有地圖的去處規則">${ic('settings-2')} 共用規則</button>
       <label class="sm" title="打到東西時，圖示沿著線飛到城鎮的建築"><input type="checkbox" id="facFx" ${ui.fac.fx !== 'off' ? 'checked' : ''}> 掉落動畫</label>
-      <span class="dim sm">點角色選取・拖到地圖派遣・點兩下或 i 看角色・拖地圖標題移動・拖空白處平移・滾輪縮放</span></div>`;
+      <span class="dim sm">點角色選取・拖到地圖派遣（同隊的一起走）・點兩下或 i 看角色・拖地圖標題移動・拖空白處平移・滾輪縮放</span></div>`;
   const sig = html.join('') + top + hud;
   if (ui.fac.sig === sig && $('#facWorld')) { requestAnimationFrame(() => { drawWires(); renderRecent(); }); return; }
   ui.fac.sig = sig;
@@ -4577,7 +4622,7 @@ function drawWires() {
   const dc = destCfg(), est = ui.fac.est || {};
   const el = k => document.querySelector(`.fnode[data-fn="${CSS.escape(k)}"]`);
   const R = n => ({ x: n.offsetLeft, y: n.offsetTop, w: n.offsetWidth, h: n.offsetHeight });
-  // A 組（左邊）、B 組（右邊）進城鎮的入口：從建築朝外的那一邊進去
+  // 左邊、右邊的地圖進城鎮的入口：從建築朝外的那一邊進去
   const ENTRY = { A: { bag: 'l', guild: 'l', shop: 't', forge: 'b' }, B: { shop: 'r', forge: 'r', bag: 't', guild: 'b' } };
   const side = (r, s) => s === 'l' ? [r.x, r.y + r.h / 2, -1, 0] : s === 'r' ? [r.x + r.w, r.y + r.h / 2, 1, 0] : s === 't' ? [r.x + r.w / 2, r.y, 0, -1] : [r.x + r.w / 2, r.y + r.h, 0, 1];
   let s = `<rect class="town-ring" x="${TOWN.cx - TOWN.ring}" y="${TOWN.cy - TOWN.ring}" width="${2 * TOWN.ring}" height="${2 * TOWN.ring}" rx="90"/>`;
@@ -4585,7 +4630,7 @@ function drawWires() {
   const wire = (d, cls, color, label, dur, key, at) => { s += `<path d="${d}" class="w-base" stroke="${color}"${key ? ` data-w="${esc(key)}"` : ''}/><path d="${d}" class="w ${cls}" stroke="${color}" style="--dur:${dur || 1.2}s"/>`; if (label && at) s += `<text x="${at[0]}" y="${at[1] - 6}" class="w-lbl" text-anchor="middle">${esc(label)}</text>`; };
   for (const [key, x] of Object.entries(est)) {
     const n = el(key); if (!n || x.empty) continue;
-    const r = R(n), g = x.g, a = g === 'A' ? [r.x + r.w, r.y + r.h / 2] : [r.x, r.y + r.h / 2], ad = g === 'A' ? 1 : -1;
+    const r = R(n), g = r.x + r.w / 2 < TOWN.cx ? 'A' : 'B', a = g === 'A' ? [r.x + r.w, r.y + r.h / 2] : [r.x, r.y + r.h / 2], ad = g === 'A' ? 1 : -1;
     const on = dc.board && x.x && !x.x.game && x.x.rows.length;
     const cnt = { bag: 0, shop: 0, guild: 0, forge: 0 };
     if (on) for (const d of Object.values(x.x.dest)) cnt[d]++;
@@ -4606,14 +4651,23 @@ function drawWires() {
   svg.innerHTML = s;
 }
 // ---- 角色：選取、拖曳派遣、點兩下／i 看角色 ----
-function townMove(ids, g, mapId) {
-  const cfg = boardCfg(g), m = mapOf(mapId), low = [];
-  for (const id of ids) { const c = DATA.chars[id]; if (c && m && c.char.lv < m.minLevel) { low.push(`${c.char.name}（Lv${c.char.lv}）`); continue; } cfg.assign[id] = mapId; }
-  if (low.length) alert(`等級不夠 ${m.name}（Lv${m.minLevel}＋），沒有派過去：${low.join('、')}`);
-  ui.fac.sel.clear(); saveBoard(cfg, g); ui.fac.sig = null; renderBoard();
+function townMove(ids, mapId) {
+  const m = mapOf(mapId), { of } = ui.fac.pt || { of: {} }, low = [], skip = new Set();
+  for (const id of ids) { const c = DATA.chars[id]; if (c && m && c.char.lv < m.minLevel) low.push(id); }
+  // 隊伍裡有人等級不夠：整隊都不動（不拆隊）
+  for (const id of low) { skip.add(id); if (of[id]) ids.filter(x => of[x] === of[id]).forEach(x => skip.add(x)); }
+  if (low.length) alert(`等級不夠 ${m.name}（Lv${m.minLevel}＋），沒有派過去：${low.map(id => `${DATA.chars[id].char.name}（Lv${DATA.chars[id].char.lv}）`).join('、')}${[...skip].some(x => !low.includes(x)) ? '\n同隊的也一起留在原地。' : ''}`);
+  for (const g of ['A', 'B']) {
+    const cfg = boardCfg(g), mine = ids.filter(id => !skip.has(id) && charGroup(id) === g);
+    if (!Object.values(cfg.lanes).flat().includes(mapId)) cfg.lanes.train = [...cfg.lanes.train, mapId]; // 兩組都放這張圖
+    for (const id of mine) cfg.assign[id] = mapId;
+    saveBoard(cfg, g);
+  }
+  ui.fac.sel.clear(); ui.fac.sig = null; renderBoard();
 }
 function townUnassign(ids) {
-  for (const g of ['A', 'B']) { const cfg = boardCfg(g); let ch = false; const on = new Set(Object.values(cfg.lanes).flat());
+  const on = townLanes();
+  for (const g of ['A', 'B']) { const cfg = boardCfg(g); let ch = false;
     for (const id of ids) { if (charGroup(id) !== g) continue; delete cfg.assign[id]; const c = DATA.chars[id]; if (c && on.has(c.char.map)) cfg.assign[id] = '__pool'; ch = true; }
     if (ch) saveBoard(cfg, g); }
   ui.fac.sel.clear(); ui.fac.sig = null; renderBoard();
@@ -4623,28 +4677,33 @@ document.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !e.target.closest) return;
   const info = e.target.closest('[data-tinfo]');
   if (info && info.closest('#bdFactory')) { e.preventDefault(); e.stopPropagation(); openCharDrawer(info.dataset.tinfo); return; }
+  const ph = e.target.closest('[data-tpdrag]');
+  if (ph && ph.closest('#bdFactory')) { e.preventDefault(); e.stopPropagation(); const p = (ui.fac.pt || { parties: {} }).parties[ph.dataset.tpdrag]; if (p) ui.fac.drag = { type: 'ava', id: p.ids[0], party: p.code, sx: e.clientX, sy: e.clientY, moved: false }; return; }
   const t = e.target.closest('[data-tav]'); if (!t || !t.closest('#bdFactory')) return;
   e.preventDefault(); e.stopPropagation();
-  ui.fac.drag = { type: 'ava', id: t.dataset.tav, g: t.dataset.tgrp, sx: e.clientX, sy: e.clientY, moved: false };
+  ui.fac.drag = { type: 'ava', id: t.dataset.tav, sx: e.clientX, sy: e.clientY, moved: false };
 }, true);
 function townDragMove(e, d) {
   if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 6) return;
   if (!d.moved) {
     d.moved = true;
-    d.ids = ui.fac.sel.has(d.id) ? [...ui.fac.sel].filter(id => charGroup(id) === d.g) : [d.id];
+    d.ids = townExpand(d.party ? ui.fac.pt.parties[d.party].ids : ui.fac.sel.has(d.id) ? [...ui.fac.sel] : [d.id]);
     d.ghost = document.createElement('div'); d.ghost.className = 'tav-ghost';
     d.ghost.textContent = d.ids.map(id => (DATA.chars[id] || { char: { name: id } }).char.name).join('、');
     document.body.appendChild(d.ghost);
-    document.querySelectorAll('.tmap').forEach(n => n.classList.toggle('nogo', n.dataset.fgrp !== d.g));
   }
   d.ghost.style.left = (e.clientX + 12) + 'px'; d.ghost.style.top = (e.clientY + 10) + 'px';
   document.querySelectorAll('.tmap.hot').forEach(n => n.classList.remove('hot'));
   const over = document.elementFromPoint(e.clientX, e.clientY), m = over && over.closest && over.closest('.tmap');
-  if (m && m.dataset.fgrp === d.g) m.classList.add('hot');
+  if (m) m.classList.add('hot');
 }
 function townDragEnd(e, d) {
   document.querySelectorAll('.tmap.hot, .tmap.nogo').forEach(n => n.classList.remove('hot', 'nogo'));
   if (d.ghost) d.ghost.remove();
+  if (!d.moved && d.party) { // 點一下隊伍框：選取（或取消）整隊
+    const ids = ui.fac.pt.parties[d.party].ids, all = ids.every(x => ui.fac.sel.has(x));
+    ids.forEach(x => all ? ui.fac.sel.delete(x) : ui.fac.sel.add(x)); ui.fac.sig = null; renderFactory(); return;
+  }
   if (!d.moved) {
     const now = Date.now(), lt = ui.fac.lastTap;
     if (lt.id === d.id && now - lt.at < 380) { ui.fac.lastTap = { id: null, at: 0 }; ui.fac.sel.delete(d.id); openCharDrawer(d.id); ui.fac.sig = null; renderFactory(); return; }
@@ -4653,20 +4712,22 @@ function townDragEnd(e, d) {
     ui.fac.sig = null; renderFactory(); return;
   }
   const over = document.elementFromPoint(e.clientX, e.clientY), m = over && over.closest && over.closest('.tmap');
-  if (m) { if (m.dataset.fgrp !== d.g) { alert(`${d.g} 組的角色只能派到左邊／右邊的 ${d.g} 組地圖`); return; } townMove(d.ids, d.g, m.dataset.fmap); return; }
+  if (m) { townMove(d.ids, m.dataset.fmap); return; }
   if (over && over.closest && over.closest('[data-tpool]')) { townUnassign(d.ids); return; }
 }
 document.addEventListener('click', async e => {
-  const t = e.target.closest && e.target.closest('[data-tmcfg],[data-trules],[data-tsink],[data-tselclear]'); if (!t || !t.closest('#board')) return;
+  const t = e.target.closest && e.target.closest('[data-tmcfg],[data-trules],[data-tsink],[data-tselclear],[data-tgf]'); if (!t || !t.closest('#board')) return;
+  if (t.dataset.tgf != null) { ui.fac.gf = t.dataset.tgf; try { localStorage.setItem('townGf', ui.fac.gf); } catch (_) {} ui.fac.sig = null; renderFactory(); return; }
   if (e.target.closest('a[data-goto]')) return;
   if (t.dataset.tselclear) { ui.fac.sel.clear(); ui.fac.sig = null; renderFactory(); return; }
-  if (t.dataset.tmcfg) { const [g, id] = t.dataset.tmcfg.split('|'); ui.board.destEdit = { g, map: id }; renderDestEditor(true); return; }
+  if (t.dataset.tmcfg) { const v = t.dataset.tmcfg; ui.board.destEdit = { map: v.includes('|') ? v.split('|')[1] : v }; renderDestEditor(true); return; }
   if (t.dataset.trules || t.dataset.tsink === 'bag' || t.dataset.tsink === 'shop') { ui.board.destEdit = { rules: true }; renderDestEditor(true); return; }
   if (t.dataset.tsink === 'guild' || t.dataset.tsink === 'forge') { ui.board.destEdit = { rules: true }; renderDestEditor(true); }
 });
 document.addEventListener('change', e => {
   const t = e.target; if (!t.dataset || !t.dataset.taddmap || !t.value) return;
-  const g = t.dataset.taddmap, cfg = boardCfg(g); cfg.lanes.train = [...cfg.lanes.train, t.value]; delete cfg.auto[t.value]; saveBoard(cfg, g); ui.fac.sig = null; renderBoard();
+  for (const g of ['A', 'B']) { const cfg = boardCfg(g); if (!Object.values(cfg.lanes).flat().includes(t.value)) cfg.lanes.train = [...cfg.lanes.train, t.value]; delete cfg.auto[t.value]; saveBoard(cfg, g); }
+  ui.fac.sig = null; renderBoard();
 });
 // ---- 去處設定（每張圖的自訂設定、共用規則）：畫在看板下方的卡片 ----
 function destBadge(src) { return { rule: '<span class="dim">沿用共用</span>', map: '<span class="warn">這張圖改過</span>', guild: '<span class="dim">公倉（全部地圖）</span>', forge: '<span class="dim">強化（全部地圖）</span>', boss: '<span class="dim">👑 王的掉落</span>' }[src] || ''; }
@@ -4688,12 +4749,12 @@ function renderDestEditor(scroll) {
   } else {
     const m = mapOf(ed.map); if (!m) { box.style.display = 'none'; return; }
     const x = destCalc(ed.map), ov = dc.over[ed.map] || {};
-    const here = boardChars().filter(c => c.map === ed.map && c.active && c.group === ed.g);
+    const here = boardChars().filter(c => c.map === ed.map && c.active);
     const groups = [['gear', '裝備'], ['scroll', '卷軸'], ['book', '技能書'], ['other', '其他道具']];
     const row = r => { const id = Number(r[0]), d = x.dest[id], src = x.from[id], img = itemImg(id);
       return `<div class="dst-row"><span class="dst-ic">${img ? `<img src="${esc(img)}" loading="lazy" alt="" onerror="this.remove()">` : ''}</span><span class="nm" title="${esc(r[2] + (r[3] ? `\n商店價 ${fmt(r[3])}` : '') + (r[4] ? '' : '\n不能賣') + (x.bd.has(id) ? '\n👑 王會掉的' : ''))}">${esc(r[2])}${x.bd.has(id) ? ' 👑' : ''}</span>
         <span class="seg dst-seg">${['bag', 'shop', 'guild', 'forge'].map(k => `<button data-dset="${id}|${k}" class="${d === k ? 'on d-' + k : ''}" ${k === 'shop' && !r[4] ? 'disabled title="不能賣"' : ''}>${DEST_NAME[k]}</button>`).join('')}</span><span class="dst-src">${destBadge(src)}</span></div>`; };
-    box.innerHTML = `<div class="bar"><h3 style="margin:0">${ic('settings-2')} ${esc(m.name)} 的自訂設定</h3><span class="dim sm">${ed.g} 組</span>
+    box.innerHTML = `<div class="bar"><h3 style="margin:0">${ic('settings-2')} ${esc(m.name)} 的自訂設定</h3><span class="dim sm">A、B 組共用</span>
       ${x.game ? '<span class="tag">沿用遊戲裡的設定（中控不動）</span>' : x.over ? '<span class="tag warn">這張圖有改過</span>' : '<span class="tag">照共用規則</span>'}<span style="flex:1"></span>
       ${x.game ? '<button class="btn primary" data-dgame="0">改用去處規則</button>' : `<button class="btn" data-dgame="1" title="中控不改這張圖的自動販售，照你在遊戲裡設的">沿用遊戲設定</button>${x.over ? '<button class="btn" data-dreset="1">全部恢復共用規則</button>' : ''}`}
       ${here.length && !x.game && dc.board ? `<button class="btn" data-dapply="1" title="現在就套用給目前在這張圖的角色">套用給目前在這裡的 ${here.length} 隻</button>` : ''}<button class="btn" data-dclose="1">關閉</button></div>
@@ -4740,7 +4801,7 @@ document.addEventListener('click', async e => {
     if (d.dgame) { const over = { ...dc.over }; if (d.dgame === '1') over[ed.map] = { game: true }; else delete over[ed.map]; await saveDest({ over }); }
     if (d.dreset) { const over = { ...dc.over }; delete over[ed.map]; await saveDest({ over }); }
     if (d.dapply) {
-      const m = mapOf(ed.map), sell = destSellFor(ed.map), here = boardChars().filter(c => c.map === ed.map && c.active && c.group === ed.g);
+      const m = mapOf(ed.map), sell = destSellFor(ed.map), here = boardChars().filter(c => c.map === ed.map && c.active);
       if (!sell) { alert('這張圖目前不會送設定給遊戲（沿用遊戲設定、規則沒開、或沒有掉落資料）'); return; }
       const r = await api('/api/idle', { targets: here.map(c => ({ charId: c.id, action: 'autosell', map: ed.map, mapName: m.name, sell })) });
       alert(`已送出給 ${here.length} 隻（${r.jobs.length} 個帳號），幾秒內生效。`); await poll(true);
@@ -4974,12 +5035,12 @@ function flyIcon(wireKey, sink, o) {
 // v0.71：飛到哪棟建築照去處規則：賣掉＝商店；留著的看去處（公倉、強化、其他＝背包）
 function flyLoot(ev) {
   if (ev.name === '楓幣' || ui.fac.flying > 30) return;
-  const id = idOfName(ev.name), g = charGroup(ev.charId);
+  const id = idOfName(ev.name);
   let sink = 'bag';
   if (ev.sold) sink = 'shop';
   else { const x = destCalc(ev.map), d = x && id && x.dest[Number(id)]; if (d === 'guild' || d === 'forge') sink = d; }
-  let path = document.querySelector(`#facWires path[data-w="${CSS.escape(`m:${g}:${ev.map}>${sink}`)}"]`);
-  if (!path && sink !== 'shop') { sink = 'bag'; path = document.querySelector(`#facWires path[data-w="${CSS.escape(`m:${g}:${ev.map}>bag`)}"]`); }
+  let path = document.querySelector(`#facWires path[data-w="${CSS.escape(`m:${ev.map}>${sink}`)}"]`);
+  if (!path && sink !== 'shop') { sink = 'bag'; path = document.querySelector(`#facWires path[data-w="${CSS.escape(`m:${ev.map}>bag`)}"]`); }
   const world = $('#facWorld'); if (!path || !world) return;
   const len = path.getTotalLength(); if (!len) return;
   const el = document.createElement('div');
@@ -5066,7 +5127,7 @@ function boardSyncFromGame() {
     const prev = seen[id];
     seen[id] = { map, sell: sells };
     if (!prev || prev.map !== map || JSON.stringify(prev.sell) !== JSON.stringify(sells)) seenChanged = true;
-    const g = charGroup(id), b = bd(g), onBoard = new Set(Object.values(b.lanes).flat());
+    const g = charGroup(id), b = bd(g), onBoard = new Set(['A', 'B'].flatMap(x => Object.values((all[x] || {}).lanes || {}).flat())); // v0.73：另一組已經有這張圖就不重複放
     const nm = sn.char.name, mn = m => (mapOf(m) || {}).name || m;
     let changed = false;
     // 角色所在的地圖不在看板上 → 放上去（第一次同步也做，等於自動匯入）
@@ -5111,16 +5172,17 @@ function boardPruneEmpty() {
   const all = { A: S.board || {}, ...(S.boards || {}) }, empty = JSON.parse(JSON.stringify(S.boardEmpty || {}));
   const ids = new Set(); for (const sn of snaps()) { ids.add(sn.char.id); for (const x of sn.accountChars || []) ids.add(x.id); }
   const logs = []; let changed = false, emptyChanged = false;
+  // v0.73：地圖 A、B 組共用 → 兩組的角色都算（B 組的角色在 A 組自動放上來的圖上，那張圖就有人）
+  const allOn = new Set(['A', 'B'].flatMap(g => Object.values((all[g] || {}).lanes || {}).flat())), used = new Set();
+  for (const g of ['A', 'B']) for (const m of Object.values((all[g] || {}).assign || {})) if (m && m !== '__pool') used.add(m);
+  for (const id of ids) {
+    const a = ((all[charGroup(id)] || {}).assign || {})[id], map = (DATA.chars[id] && DATA.chars[id].char.map) || null;
+    if (a !== '__pool' && map && allOn.has(map)) used.add(map);
+    if (bossHome[id]) used.add(bossHome[id]);
+  }
   for (const g of ['A', 'B']) {
     const b = all[g]; if (!b || !b.lanes) continue;
-    const lanes = b.lanes, assign = b.assign || {}, onBoard = new Set(Object.values(lanes).flat());
-    const used = new Set(Object.values(assign).filter(m => m && m !== '__pool')); // 看板上排的派工（不管是哪一組的角色）
-    for (const id of ids) {
-      if (charGroup(id) !== g) continue;
-      const a = assign[id], map = (DATA.chars[id] && DATA.chars[id].char.map) || null;
-      if (a && a !== '__pool') used.add(a); else if (a !== '__pool' && map && onBoard.has(map)) used.add(map);
-      if (bossHome[id]) used.add(bossHome[id]);
-    }
+    const lanes = b.lanes, onBoard = new Set(Object.values(lanes).flat());
     const e = empty[g] || (empty[g] = {});
     for (const m of Object.keys(e)) if (!onBoard.has(m) || used.has(m)) { delete e[m]; emptyChanged = true; }
     const drop = [];
