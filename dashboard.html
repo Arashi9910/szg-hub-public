@@ -306,6 +306,8 @@
   #charDrawer .cd-stat td { padding: 3px 4px; } #charDrawer .cd-stat button { padding: 0 6px; }
   #charDrawer .cdsk .cdg-hd button { padding: 0 6px; }
   #charDrawer .cd-sw { display: block; margin: 6px 0; }
+  .enforce-box { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin: 6px 0; flex-wrap: wrap; }
+  .enforce-log > div { margin-left: 10px; }
   .tparty { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: 4px; padding: 14px 4px 3px; margin: 2px; border: 1.5px solid #8a6cd8; border-radius: 10px; background: rgba(138,108,216,.08); position: relative; vertical-align: top; }
   .tparty .tp-hd { position: absolute; top: -1px; left: 6px; font-size: 11px; color: #b9a3f5; cursor: grab; white-space: nowrap; max-width: 95%; overflow: hidden; text-overflow: ellipsis; user-select: none; }
   .tparty .tp-hd:hover { color: #fff; }
@@ -3711,6 +3713,20 @@ async function saveBossSell(next) {
   await saveDest(patch);
 }
 function bossSellResync() {}
+// v0.74 照表操課：S.dest.enforce；伺服器每分鐘把角色所在地圖的自動販售對齊去處規則（DATA.destEnforce = {log, todo}）
+function enforceBox() {
+  const on = !!(S.dest || {}).enforce, info = DATA.destEnforce || { log: [], todo: 0 }, log = info.log || [], last = log[log.length - 1];
+  return `<div class="bar enforce-box"><label><input type="checkbox" class="sw" data-denforce="1" ${on ? 'checked' : ''}> <b>照表操課</b></label>
+    <span class="dim sm">不用再按「套用」：中控每分鐘檢查，角色在派工看板的地圖（「派工地圖套用」開著）或野王地圖（「野王地圖套用」開著）時，遊戲的自動販售跟這裡算出來的不一樣就自動改過去；以後的新角色也一樣。在遊戲裡手動改的會被改回來，要改請改這裡。</span>
+    ${on ? (info.todo ? `<span class="warn sm">還有 ${info.todo} 隻待對齊（每分鐘處理）</span>` : '<span class="good sm">目前全部一致</span>') : info.todo ? `<span class="dim sm">現在打開會先改 ${info.todo} 隻</span>` : ''}</div>
+    ${log.length ? `<details class="sm enforce-log"><summary class="dim">最近自動套用 ${clock(last.at)}：${esc(last.name)} ${esc(last.mapName)}</summary>${log.slice().reverse().map(l => `<div><span class="dim">${clock(l.at)}</span> ${esc(l.name)}・${esc(l.mapName)}：賣 ${l.was} 項 → ${l.now} 項</div>`).join('')}</details>` : ''}`;
+}
+document.addEventListener('change', async e => {
+  const t = e.target; if (!t.dataset || !t.dataset.denforce) return;
+  if (t.checked && !confirm(`開啟「照表操課」？${(DATA.destEnforce || {}).todo ? `（現在會先改 ${DATA.destEnforce.todo} 隻角色）` : ''}\n\n中控會每分鐘自動把角色所在地圖的自動販售改成去處規則算出來的結果（會賣掉規則設成「商店」的東西），不用再按套用，新角色也一樣。\n在遊戲裡手動改的自動販售會被改回來。`)) { t.checked = false; return; }
+  await saveDest({ enforce: t.checked });
+  if (ui.board.destEdit) renderDestEditor(); if (typeof renderBossSell === 'function') renderBossSell(); await poll(true);
+});
 function renderBossSell() {
   const box = $('#bossSellOut'); if (!box) return;
   if (!WORLD) { box.innerHTML = '<div class="dim">還沒有地圖資料</div>'; loadWorld().then(() => WORLD && renderBossSell()); return; }
@@ -3734,6 +3750,7 @@ function renderBossSell() {
   const restored = (bossCfg().sell || {}).restored;
   box.innerHTML = `${restored ? `<div class="card attn sm" style="margin:0 0 8px;padding:6px 10px">ℹ 你的掉落篩選之前被手機版清掉了，${clock(restored)} 已自動還原：每隻王都設成「個別調整」，要賣的東西和原本一樣。想改回共用規則，按王的「調整」→「恢復共用規則」。</div>` : ''}<div class="bar"><label><input type="checkbox" class="sw" id="bossSellOn" ${sc.on ? 'checked' : ''}> <b>到野王地圖時自動套用販售</b></label><span class="dim sm">（跟派工的「去處規則」是同一份設定）</span>
       <span class="dim sm">開啟後，打王的角色到了王的地圖，中控會把那張圖的自動販售設成下面的結果（撿到就賣給商店；回練功圖時練功圖用它自己原本的設定）。</span></div>
+    ${enforceBox()}
     <h4 style="margin:10px 0 2px">共用規則（套用到全部的王）</h4>
     <div class="bsell-rule">${opt('gear', '小怪掉的裝備')}${opt('scroll', '卷軸')}${opt('book', '技能書')}${opt('other', '其他道具（雜物）')}${opt('boss', '👑 王會掉的東西')}</div>
     <h4 style="margin:10px 0 4px">每隻王的結果 <span class="dim sm">要例外的按「調整」個別勾</span></h4>
@@ -4744,6 +4761,7 @@ function renderDestEditor(scroll) {
     box.innerHTML = `<div class="bar"><h3 style="margin:0">${ic('settings-2')} 共用規則（所有地圖）</h3><span style="flex:1"></span><button class="btn" data-dclose="1">關閉</button></div>
       <div class="bar"><label><input type="checkbox" class="sw" data-dscope="board" ${dc.board ? 'checked' : ''}> 派工地圖套用</label><span class="dim sm">按「套用派工」時，把每張圖算出來的結果設成遊戲的自動販售</span></div>
       <div class="bar"><label><input type="checkbox" class="sw" data-dscope="boss" ${dc.boss ? 'checked' : ''}> 野王地圖套用</label><span class="dim sm">打王的角色到了王的地圖時套用（＝野王分頁的「掉落篩選」）</span></div>
+      ${enforceBox()}
       <div class="bsell-rule">${DX.CATS.map(opt).join('')}<div>👑 王會掉的東西</div><div class="seg">${[['keep', '一律留著'], ['rule', '照上面的規則']].map(([v, n]) => `<button data-drule="boss|${v}" class="${R.boss === v ? 'on' : ''}">${n}</button>`).join('')}</div></div>
       <div class="dim sm">背包＝留著；商店＝撿到就賣（遊戲伺服器處理，分頁沒開也有效）；公倉＝留著，之後由公倉的「自動存入」存進去（${(S.guildAuto || {}).mode === 'deposit' ? '<span class="good">自動存入開著</span>' : '<span class="warn">自動存入現在關著</span>'}，<a data-goto="guild">公倉分頁</a>）；強化＝留著給強化工坊（在每張圖的自訂設定裡指定道具）。<br>某張圖要例外，按那張圖右下角的 ${ic('settings-2')}。</div>`;
   } else {
@@ -5139,7 +5157,7 @@ function boardSyncFromGame() {
     }
     // v0.71：你在遊戲裡改了某張派工地圖的自動販售 → 記成那張圖的自訂設定（去處規則是看板這邊的；第一次同步不匯入）
     for (const [m, k] of Object.entries(sells)) {
-      if (!mapOf(m) || !dcfg.board || !onBoard.has(m) || !prev) continue;
+      if (!mapOf(m) || !dcfg.board || !onBoard.has(m) || !prev || (S.dest || {}).enforce) continue; // 照表操課：以中控的規則為準，不把遊戲裡的改動記回來
       const ov = (destOver || dcfg.over)[m] || {}; if (ov.game) continue;
       const cur = sellKey(DX.sellOf(WORLD, { ...S, dest: { ...(S.dest || {}), over: destOver || dcfg.over } }, m, 'board'));
       if (cur === k || (prev.sell || {})[m] === k) continue;

@@ -552,6 +552,44 @@ function forgeAutoTick(force) {
   save();
 }
 setInterval(() => { try { forgeAutoTick(false); } catch (e) { console.warn('[自動強化]', e); } }, 60 * 1000);
+// ================= 照表操課（v0.74）：去處規則是唯一的標準 =================
+// settings.dest.enforce 開著時，每分鐘看一次：有遊戲分頁（含背景執行）的角色，在派工看板上的地圖（套用派工地圖開著）或野王地圖（野王地圖套用開著），
+// 遊戲裡那張圖的自動販售跟去處規則算出來的不一樣 → 自動送一個 autosell 工作（不用按「套用」；新角色到了那張圖也一樣）。
+// 「沿用遊戲設定」的圖、規則沒開的不動。同一隻同一張圖、遊戲裡同樣的設定改成同樣的內容，10 分鐘內只送一次（遊戲拒絕時不會一直重送；遊戲裡又被改過就再送）。
+const destEnforceSent = {};
+function sameSellSrv(a, b) { const x = (a.itemIds || []).map(Number).sort((p, q) => p - q), y = (b.itemIds || []).map(Number).sort((p, q) => p - q); return !!a.enabled === !!b.enabled && x.length === y.length && x.every((v, i) => v === y[i]); }
+function destEnforcePlan(preview) {
+  const dc = db.settings.dest || {}, w = worldFull(); if ((!dc.enforce && !preview) || !w || !w.maps) return [];
+  const bs = { A: db.settings.board || {}, ...(db.settings.boards || {}) }, onBoard = new Set();
+  for (const g of ['A', 'B']) for (const l of Object.values((bs[g] || {}).lanes || {})) for (const m of l || []) onBoard.add(String(m));
+  const busy = new Set();
+  for (const j of db.jobs) if (['pending', 'approved', 'running'].includes(j.status)) {
+    if (j.kind === 'boss') busy.add(j.fromCharId);
+    if (j.kind === 'idle') for (const t of (j.batches[0] || {}).targets || []) if (['map', 'autosell'].includes(t.action)) busy.add(t.charId);
+  }
+  const out = [];
+  for (const [id, s] of Object.entries(db.chars)) {
+    if (!s || !s.char || !s.char.map || busy.has(id) || !charHasTab(id)) continue;
+    const map = String(s.char.map), sa = s.autoSell;
+    if (!sa || String(sa.map) !== map) continue; // 還沒回報這張圖的設定
+    const sell = (D.isBossMap(w, map) ? destSellOf(map, 'boss') : null) || (onBoard.has(map) ? destSellOf(map, 'board') : null);
+    if (!sell || sameSellSrv(sa, sell)) continue;
+    out.push({ charId: id, name: s.char.name, map, mapName: s.char.mapName || map, sell, from: sa });
+  }
+  return out;
+}
+function destEnforceTick() {
+  const now = Date.now(), plan = destEnforcePlan().filter(t => { const k = t.charId + '|' + t.map, key = JSON.stringify([t.sell, !!t.from.enabled, (t.from.itemIds || []).map(Number).sort((x, y) => x - y)]), p = destEnforceSent[k]; if (p && p.key === key && now - p.at < 10 * 60e3) return false; destEnforceSent[k] = { key, at: now }; return true; });
+  if (!plan.length) return;
+  let jobs = [];
+  try { jobs = createIdleJobs({ targets: plan.map(t => ({ charId: t.charId, action: 'autosell', map: t.map, mapName: t.mapName, sell: t.sell })) }); } catch (e) { return; }
+  for (const j of jobs) { j.auto = true; jobLog(j, '照表操課：遊戲裡的自動販售跟去處規則不一樣，自動套用'); }
+  const lg = db.destEnforceLog || (db.destEnforceLog = []);
+  for (const t of plan) lg.push({ at: now, charId: t.charId, name: t.name, map: t.map, mapName: t.mapName, was: (t.from.enabled ? (t.from.itemIds || []).length : 0), now: t.sell.enabled ? t.sell.itemIds.length : 0 });
+  if (lg.length > 60) lg.splice(0, lg.length - 60);
+  save();
+}
+setInterval(() => { try { destEnforceTick(); } catch (e) { console.warn('[照表操課]', e); } }, Number(process.env.SZG_ENFORCE_MS) || 60 * 1000);
 
 // ================= 掛機控制 =================
 // 指令（開始／暫停／重新開始）依帳號分組，交給那個帳號目前在線的遊戲頁面執行；
@@ -1537,7 +1575,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/m/')) { const r = await mobileApi(req, url); if (r) return send(res, r[0], r[1]); }
     if (req.method === 'GET' && url.pathname === '/api/data') {
       const tabsOut = {}; for (const [code, m] of Object.entries(tabs)) for (const [id, t] of Object.entries(m)) if (Date.now() - t.at < TAB_LIVE_MS) tabsOut[id] = { code, at: t.at, hidden: t.hidden, off: t.off, bg: !!t.bg };
-      return send(res, 200, { now: Date.now(), tabs: tabsOut, chars: db.chars, dps: db.dps || {}, expLive: expLive(), avatars: Object.fromEntries(Object.entries(db.avatars || {}).map(([k, v]) => [k, v.at])), settings: db.settings, jobs: db.jobs.slice(-100), expTable: db.expTable || {}, idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo, alerts: alertSummary(), auto: automationInfo(), destSell: destSellBoard() });
+      return send(res, 200, { now: Date.now(), tabs: tabsOut, chars: db.chars, dps: db.dps || {}, expLive: expLive(), avatars: Object.fromEntries(Object.entries(db.avatars || {}).map(([k, v]) => [k, v.at])), settings: db.settings, jobs: db.jobs.slice(-100), expTable: db.expTable || {}, idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo, alerts: alertSummary(), auto: automationInfo(), destSell: destSellBoard(), destEnforce: { log: (db.destEnforceLog || []).slice(-30), todo: destEnforcePlan(true).length } });
     }
 
     if (req.method === 'POST' && url.pathname === '/api/push') {
