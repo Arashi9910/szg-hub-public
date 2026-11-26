@@ -481,6 +481,78 @@ function guildAutoTick(force) {
 }
 setInterval(() => { try { guildAutoTick(false); } catch (e) { console.warn('[公倉自動存入]', e); } }, 60 * 1000);
 
+// ================= 自動強化（v0.71.4） =================
+// settings.forgeAuto = { mode: 'off'|'confirm'|'auto', everyMin, dailyCap（楓幣；auto 模式每天最多自動花多少）, rules: [{id, on, charId, gearName, item, count, stopAfter, stopOnFail, minSucc}] }
+//   confirm：照規則建立強化工作，要在「工作」按確認才衝；auto：今天花的（含進行中的預估）加上這次最多會花的不超過上限就直接衝，超過的、詛咒卷軸一律等確認
+// 只衝「沒進過強化工坊」的裝備（衝過的不會再自動衝第二次）、只用那隻角色背包裡的卷軸，一次一個工作
+const FORGE_FEE = 100000;
+function forgeAutoCfg() {
+  const a = db.settings.forgeAuto || {};
+  return { mode: ['confirm', 'auto'].includes(a.mode) ? a.mode : 'off', everyMin: Math.max(10, Number(a.everyMin) || 30), dailyCap: Math.max(0, Number(a.dailyCap) || 0), rules: Array.isArray(a.rules) ? a.rules : [] };
+}
+function forgeAutoLog(msg) { (db.forgeAutoLog || (db.forgeAutoLog = [])).push({ at: Date.now(), msg }); if (db.forgeAutoLog.length > 100) db.forgeAutoLog.splice(0, db.forgeAutoLog.length - 100); }
+function dayStart() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
+// 今天強化花掉的楓幣（結果回報的）＋還在跑的強化工作的預估
+function forgeSpentToday() {
+  const t0 = dayStart();
+  const done = (db.forgeLog || []).filter(r => r.at >= t0).reduce((t, r) => t + (Number(r.fee) || 0), 0);
+  const running = db.jobs.filter(j => j.kind === 'forge' && ['approved', 'running'].includes(j.status) && (j.approvedAt || j.createdAt) >= t0).reduce((t, j) => t + (Number(j.estimate) || 0), 0);
+  return done + running;
+}
+// 照一條規則挑要衝的裝備；cap＝最多能花多少（null＝不限）
+function forgeAutoPlan(rule, cap) {
+  const snap = db.chars[rule.charId]; if (!snap) return { why: '找不到角色資料' };
+  const sc = (worldFull().scrolls || {})[rule.item]; if (!sc) return { why: '找不到這種卷軸的資料' };
+  const forged = new Set((db.forgeLog || []).flatMap(r => (r.results || []).map(x => x.uid)));
+  let scrolls = (snap.items || []).filter(i => i.key === rule.item && i.loc === '背包').reduce((t, i) => t + (Number(i.qty) || 0), 0);
+  let money = Number(snap.char.money) || 0;
+  const pieces = (snap.gear || []).filter(g => g.loc === '背包' && g.name === rule.gearName && !g.locked && g.slotsLeft > 0 && !forged.has(g.uid))
+    .sort((a, b) => (a.plus || 0) - (b.plus || 0) || b.slotsLeft - a.slotsLeft);
+  if (!pieces.length) return { why: '' };
+  const use = []; let maxAtt = 0;
+  for (const g of pieces) {
+    const n = Math.min(10, g.slotsLeft, rule.count === 'all' || !rule.count ? g.slotsLeft : Number(rule.count) || 1);
+    if (n > scrolls || n * FORGE_FEE > money || (cap != null && (maxAtt + n) * FORGE_FEE > cap)) continue;
+    use.push({ g, n }); scrolls -= n; money -= n * FORGE_FEE; maxAtt += n;
+  }
+  if (!use.length) return { why: scrolls < 1 ? '卷軸用完了' : '楓幣或今天的上限不夠', pieces: pieces.length };
+  const groups = [], bySlots = {};
+  for (const { g } of use) (bySlots[g.slotsLeft] || (bySlots[g.slotsLeft] = [])).push(g.uid);
+  for (const [sl, uids] of Object.entries(bySlots)) for (let i = 0; i < uids.length; i += 10) groups.push({ slots: Number(sl), uids: uids.slice(i, i + 10) });
+  return { snap, sc, use, groups, maxFee: maxAtt * FORGE_FEE, pieces: pieces.length };
+}
+function forgeAutoTick(force) {
+  const a = forgeAutoCfg();
+  if (a.mode === 'off') return;
+  if (!force && Date.now() - (db.forgeAutoAt || 0) < a.everyMin * 60e3) return;
+  db.forgeAutoAt = Date.now();
+  for (const rule of a.rules.filter(r => r && r.on !== false && r.charId && r.gearName && r.item)) {
+    const snap = db.chars[rule.charId], name = snap ? snap.char.name : rule.charId;
+    if (!snap || !snap.playerCode || !tabOf(snap.playerCode, snap.char.id)) continue; // 要有自己的遊戲分頁才衝得了
+    if (db.jobs.some(j => j.kind === 'forge' && j.fromCharId === rule.charId && ['pending', 'approved', 'running'].includes(j.status))) continue; // 一次一個
+    // 剛衝完、角色還沒回報新的背包：等下一次
+    const last = (db.forgeLog || []).filter(r => r.charId === rule.charId).slice(-1)[0];
+    if (last && (snap.receivedAt || 0) < last.at + 2000) continue;
+    const cursed = (((worldFull().scrolls || {})[rule.item]) || [])[3] > 0;
+    const left = a.dailyCap - forgeSpentToday();
+    let pl = forgeAutoPlan(rule, null), approve = false;
+    if (!pl.use) continue;
+    if (a.mode === 'auto' && !cursed) { const fit = forgeAutoPlan(rule, Math.max(0, left)); if (fit.use) { pl = fit; approve = true; } }
+    const forge = { item: rule.item, itemName: pl.sc[0], rate: pl.sc[2], cursed: pl.sc[3], count: rule.count || 'all', stopAfter: Number(rule.stopAfter) || 0, stopOnFail: !!rule.stopOnFail, minSucc: Number(rule.minSucc) || 0, groups: pl.groups };
+    let job;
+    try { job = createBagJob({ kind: 'forge', fromCharId: rule.charId, estimate: pl.maxFee, batches: [{ items: [], gear: pl.use.map(x => ({ uid: x.g.uid, name: x.g.name })), forge }] }); }
+    catch (e) { forgeAutoLog(`${name}：沒辦法建立工作（${e.message}）`); continue; }
+    job.auto = true;
+    if (approve) { job.status = 'approved'; job.approvedAt = Date.now(); }
+    const why = a.mode === 'auto' && !approve ? (cursed ? '（詛咒卷軸，一律等你確認）' : `（今天的上限只剩 ${Math.max(0, Math.round(left / 1e4))} 萬，等你確認）`) : '';
+    const msg = `${name}：${rule.gearName} ${pl.use.length} 件、${pl.sc[0]}、最多 ${Math.round(pl.maxFee / 1e4)} 萬楓幣 → ${approve ? '直接開始衝' : '建立工作，等你確認'}${why}`;
+    jobLog(job, '自動強化規則建立' + (approve ? '，在今天的楓幣上限內，直接排隊執行' : '，請確認後執行'));
+    forgeAutoLog(msg);
+  }
+  save();
+}
+setInterval(() => { try { forgeAutoTick(false); } catch (e) { console.warn('[自動強化]', e); } }, 60 * 1000);
+
 // ================= 掛機控制 =================
 // 指令（開始／暫停／重新開始）依帳號分組，交給那個帳號目前在線的遊戲頁面執行；
 // 同帳號的第二隻角色也可以直接控制（遊戲允許用 characterId 指定）。
@@ -1526,7 +1598,9 @@ const server = http.createServer(async (req, res) => {
       save();
       return send(res, 200, { ok: true });
     }
-    if (req.method === 'GET' && url.pathname === '/api/forge') return send(res, 200, { log: (db.forgeLog || []).slice(-40) });
+    if (req.method === 'GET' && url.pathname === '/api/forge') return send(res, 200, { log: (db.forgeLog || []).slice(-40), autoLog: (db.forgeAutoLog || []).slice(-40), spentToday: forgeSpentToday(), autoAt: db.forgeAutoAt || 0 });
+    // 自動強化：馬上照規則檢查一次（面板「立即檢查」）
+    if (req.method === 'POST' && url.pathname === '/api/forge/auto-run') { forgeAutoTick(true); return send(res, 200, { ok: true, autoLog: (db.forgeAutoLog || []).slice(-40), spentToday: forgeSpentToday() }); }
     // 分流：記下某筆強化結果已經處理過（及格／不及格各做了什麼）
     if (req.method === 'POST' && url.pathname === '/api/forge/split') {
       const b = JSON.parse(await readBody(req));

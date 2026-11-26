@@ -1005,6 +1005,15 @@
         <label><input type="checkbox" id="fgStopFail"> 失敗一次就停</label>
         <span style="margin-left:10px">及格：成功</span><input type="number" id="fgPass" min="0" max="10" style="width:56px"><span>次以上</span></div>
     </div>
+    <div class="card" id="faCard"><h3>自動強化</h3>
+      <div class="dim sm">照下面的規則，定時把背包裡<b>還沒衝過</b>的那種裝備用那隻角色背包裡的卷軸去衝（衝過的不會再自動衝）。「每次確認」會建立工作等你在「工作」按確認；「每日上限內自動」在今天花的楓幣不超過上限時直接衝，超過的、詛咒卷軸還是等你確認。要那隻角色有自己的遊戲分頁。</div>
+      <div class="bar" style="margin-top:6px"><span style="width:70px">模式</span><select id="faMode" data-seg><option value="off" data-short="關">關</option><option value="confirm" data-short="每次確認">每次確認</option><option value="auto" data-short="每日上限內自動">每日上限內自動</option></select>
+        <span>每</span><input type="number" id="faEvery" min="10" style="width:60px"><span>分鐘檢查</span>
+        <span style="margin-left:10px">每天最多自動花</span><input type="number" id="faCap" min="0" style="width:80px"><span>萬楓幣</span><span class="dim sm" id="faSpent"></span>
+        <span style="flex:1"></span><button class="btn sm" id="faRun">立即檢查</button></div>
+      <div id="faRules"></div>
+      <div class="bar"><button class="btn sm" id="faAdd" title="執行角色、裝備、卷軸、每件次數、及格條件照上面目前的設定">＋ 把上面的設定加成自動規則</button></div>
+      <details id="faLogBox"><summary class="dim sm">自動強化紀錄</summary><div id="faLog" class="sm" style="max-height:200px;overflow:auto"></div></details></div>
     <div class="card"><h3>試跑估算</h3><div id="fgPlan"></div>
       <div class="bar" style="margin-top:8px"><button class="btn primary" id="fgCreate">建立強化工作</button><span class="dim" id="fgMsg"></span></div></div>
     <div class="card"><h3>強化結果</h3><div id="fgLog"></div></div>
@@ -4536,7 +4545,7 @@ function renderFactory() {
   html.push(townSink('bag', `<div>留著的東西會在背包</div><div class="dim">點這裡設定共用規則</div>`));
   html.push(townSink('shop', `${dc.board ? `<div><b>${mapsOn}</b> 張圖有角色、會賣 <b>${sold}</b> 項</div>` : '<div class="dim">派工地圖的去處規則沒開</div>'}<div class="dim">撿到就賣，遊戲伺服器處理</div>`));
   html.push(townSink('guild', `${g0 ? `<div>道具 ${Object.values(g0.items || {}).filter(n => n > 0).length}/${(g0.capacity || {}).items || '?'} 格・共 <b>${short(Object.values(g0.items || {}).reduce((t, n) => t + (n > 0 ? n : 0), 0))}</b> 個</div><div>裝備 ${(g0.gear || []).length}/${(g0.capacity || {}).gear || '?'} 件</div>` : '<div class="dim">還沒讀過公倉</div>'}<div>自動存入：${ga.mode === 'deposit' ? `<span class="good">開</span>，每 ${Math.max(10, ga.everyMin || 30)} 分` : ga.mode === 'preview' ? '試跑中' : '<span class="warn">關</span>'}</div><div class="dim">存入規則：整類 ${gids.cats.size}・指定 ${gids.ids.size} 種</div>`));
-  html.push(townSink('forge', `${run ? `<div class="good">執行中：${esc(run.fromName)}</div>` : ''}${last ? `<div>上次 ${clock(last.at)}：衝 ${last.results.length} 件，<b class="good">及格 ${last.results.filter(x => x.pass).length}</b></div>` : '<div class="dim">還沒衝過</div>'}${todo ? `<div class="warn">等你分流：${todo} 件</div>` : ''}<div class="dim">送來強化的道具 ${forgeN} 種</div>`));
+  html.push(townSink('forge', `${run ? `<div class="good">執行中：${esc(run.fromName)}</div>` : ''}${last ? `<div>上次 ${clock(last.at)}：衝 ${last.results.length} 件，<b class="good">及格 ${last.results.filter(x => x.pass).length}</b></div>` : '<div class="dim">還沒衝過</div>'}${todo ? `<div class="warn">等你分流：${todo} 件</div>` : ''}<div>自動強化：${(() => { const fa = faCfg(), n = fa.rules.filter(r => r.on !== false).length; return fa.mode === 'off' ? '<span class="dim">關</span>' : `${fa.mode === 'auto' ? `<span class="good">上限內自動</span>（今天 ${short(FORGE.spentToday || 0)}／${short(fa.dailyCap)}）` : '每次確認'}・${n} 條規則`; })()}</div><div class="dim">送來強化的道具 ${forgeN} 種</div>`));
   html.push(`<button class="btn sm town-rule" data-trules="1" style="left:${T.cx - 70}px;top:${T.cy - T.ring - 18}px" title="套用到所有地圖的去處規則">${ic('settings-2')} 共用規則${dc.board ? '' : '（沒開）'}</button>`);
   html.push(`<div class="town-side" style="left:${T.cx - 900}px;top:${T.cy - 760}px">A 組</div><div class="town-side" style="left:${T.cx + 840}px;top:${T.cy - 760}px">B 組</div>`);
   if (!ui.fac.pan) { ui.fac.pan = { x: (box.clientWidth || 1200) / 2 - T.cx * ui.fac.zoom, y: (box.clientHeight || 700) / 2 - T.cy * ui.fac.zoom }; }
@@ -5308,8 +5317,52 @@ async function loadForge(force) {
   try { FORGE = await (await fetch('/api/forge')).json(); } catch (_) {}
   return FORGE;
 }
+// ---- 自動強化（v0.71.4）：settings.forgeAuto ----
+const faCfg = () => { const a = S.forgeAuto || {}; return { mode: a.mode || 'off', everyMin: a.everyMin || 30, dailyCap: a.dailyCap || 0, rules: Array.isArray(a.rules) ? a.rules : [] }; };
+async function saveFA(patch) { await saveSettings({ forgeAuto: { ...faCfg(), ...patch } }); renderForgeAuto(); }
+function renderForgeAuto() {
+  if (!$('#faCard')) return;
+  const a = faCfg(), card = $('#faCard');
+  if (!card.contains(document.activeElement)) { $('#faMode').value = a.mode; $('#faEvery').value = a.everyMin; $('#faCap').value = Math.round(a.dailyCap / 1e4); enhanceSegs(card); }
+  $('#faSpent').textContent = `（今天已花 ${short(FORGE.spentToday || 0)}${a.mode === 'auto' && a.dailyCap ? `，還能自動花 ${short(Math.max(0, a.dailyCap - (FORGE.spentToday || 0)))}` : ''}）`;
+  const sc = id => (WORLD && WORLD.scrolls && WORLD.scrolls[id]) || null;
+  $('#faRules').innerHTML = a.rules.length ? `<table class="tbl sm"><tr><th></th><th>角色</th><th>裝備</th><th>卷軸</th><th>每件</th><th>及格</th><th></th></tr>${a.rules.map((r, i) => { const x = sc(r.item);
+    return `<tr><td><input type="checkbox" data-faon="${i}" ${r.on !== false ? 'checked' : ''}></td><td>${esc(charNameOf(r.charId))}${hasTab(r.charId) ? '' : ' <span class="tag warn" title="沒有自己的遊戲分頁，不會自動衝">沒分頁</span>'}</td><td>${esc(r.gearName)}</td><td>${esc(x ? x[0] : r.item)}${x && x[3] ? ' <span class="tag warn">詛咒</span>' : ''}</td>
+      <td>${r.count === 'all' || !r.count ? '衝到格數用完' : r.count + ' 次'}${Number(r.stopAfter) ? `、成功 ${r.stopAfter} 次就停` : ''}${r.stopOnFail ? '、失敗就停' : ''}</td><td>成功 ${Number(r.minSucc) || 0} 次以上</td><td><button class="btn sm" data-fadel="${i}">✕</button></td></tr>`; }).join('')}</table>`
+    : '<div class="dim sm">還沒有自動規則：先在上面選好執行角色、裝備、卷軸，再按「把上面的設定加成自動規則」。</div>';
+  const log = (FORGE.autoLog || []).slice().reverse();
+  $('#faLog').innerHTML = log.length ? log.map(l => `<div><span class="dim">${clock(l.at)}</span> ${esc(l.msg)}</div>`).join('') : '<span class="dim">還沒有紀錄</span>';
+}
+document.addEventListener('change', async e => {
+  const t = e.target; if (!t.closest || !t.closest('#faCard')) return;
+  const a = faCfg();
+  if (t.id === 'faMode') {
+    if (t.value === 'auto' && !(a.dailyCap > 0)) { alert('先填「每天最多自動花」多少萬楓幣，再改成每日上限內自動'); t.value = a.mode; enhanceSegs($('#faCard')); return; }
+    if (t.value === 'auto' && !confirm(`開啟後，自動強化會在今天花的楓幣不超過 ${short(a.dailyCap)} 時直接衝、不再問你（詛咒卷軸還是會問）。確定開啟？`)) { t.value = a.mode; enhanceSegs($('#faCard')); return; }
+    await saveFA({ mode: t.value }); return;
+  }
+  if (t.id === 'faEvery') { await saveFA({ everyMin: Math.max(10, Math.round(Number(t.value) || 30)) }); return; }
+  if (t.id === 'faCap') { const v = Math.max(0, Math.round(Number(t.value) || 0)) * 1e4; await saveFA({ dailyCap: v, ...(a.mode === 'auto' && !v ? { mode: 'confirm' } : {}) }); return; }
+  if (t.dataset.faon) { const rules = a.rules.slice(); rules[Number(t.dataset.faon)] = { ...rules[Number(t.dataset.faon)], on: t.checked }; await saveFA({ rules }); }
+});
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('#faAdd, #faRun, [data-fadel]'); if (!t) return;
+  const a = faCfg();
+  try {
+    if (t.id === 'faAdd') {
+      const f = fgState();
+      if (!f.charId || !f.gearName || !f.item) { alert('先在上面選好執行角色、裝備、卷軸'); return; }
+      if (a.rules.some(r => r.charId === f.charId && r.gearName === f.gearName && r.item === f.item)) { alert('已經有一樣的規則了'); return; }
+      await saveFA({ rules: [...a.rules, { id: Date.now().toString(36), on: true, charId: f.charId, gearName: f.gearName, item: f.item, count: f.count, stopAfter: Number(f.stopAfter) || 0, stopOnFail: !!f.stopOnFail, minSucc: Number(f.minSucc) || 0 }] });
+      return;
+    }
+    if (t.dataset.fadel) { const rules = a.rules.slice(); rules.splice(Number(t.dataset.fadel), 1); await saveFA({ rules }); return; }
+    if (t.id === 'faRun') { const r = await api('/api/forge/auto-run', {}); FORGE.autoLog = r.autoLog; FORGE.spentToday = r.spentToday; $('#faLogBox').open = true; renderForgeAuto(); await poll(true); }
+  } catch (err) { alert('失敗：' + err.message); }
+});
 function renderForge() {
   if (!WORLD) loadWorld().then(() => WORLD && renderForge());
+  renderForgeAuto();
   // 強化工作剛做完：馬上重抓結果（不用等下一輪）
   const lastDone = Math.max(0, ...(DATA.jobs || []).filter(j => j.kind === 'forge' && ['done', 'failed'].includes(j.status)).map(j => ((j.log || []).slice(-1)[0] || {}).at || 0));
   loadForge(lastDone > forgeLoadAt).then(renderForgeLog);
