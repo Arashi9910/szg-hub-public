@@ -4806,6 +4806,7 @@ function renderCharDrawer() {
   box.innerHTML = `<div class="bar"><h3 style="margin:0">${esc(name)}</h3><span class="tag">${g} 組</span><span style="flex:1"></span><button class="btn sm" data-cdclose="1">✕</button></div>
     <div class="seg" style="margin-bottom:8px">${[['gear', '裝備'], ['info', '基本資料']].map(([k, n]) => `<button data-cdtab="${k}" class="${(ui.cd.tab === k && s) || (!s && k === 'info') ? 'on' : ''}">${n}</button>`).join('')}</div>${body}`;
 }
+document.addEventListener('toggle', e => { if (e.target.classList && e.target.classList.contains('ac-ev')) ui.acEvOpen = e.target.open; }, true);
 document.addEventListener('change', e => { if (e.target.dataset && e.target.dataset.cdwear) { ui.cd.wear = e.target.checked; renderCharDrawer(); } });
 document.addEventListener('click', async e => {
   const t = e.target.closest && e.target.closest('#charDrawer [data-cdclose], #charDrawer [data-goto], #charDrawer [data-bdmovegrp], #charDrawer [data-cdtab], #charDrawer [data-cdequip], #charDrawer [data-cdunequip], #charDrawer [data-cdopen]'); if (!t) return;
@@ -6687,6 +6688,9 @@ function drawAccts() {
       <td><input class="ac-ed" data-acf="note" data-id="${esc(p.id)}" value="${esc(p.note)}" placeholder="—"></td></tr>`;
   }
   h += '</tbody></table>';
+  // v0.71.3：背景執行的最近紀錄（啟動、接回、視窗關掉、分頁重開…），查問題用
+  const ev = (bgLast && bgLast.events) || [];
+  if (ev.length) h += `<details class="ac-ev" ${ui.acEvOpen ? 'open' : ''}><summary class="dim sm">背景執行的最近紀錄（${ev.length} 筆）</summary><div class="sm" style="max-height:240px;overflow:auto">${ev.slice().reverse().map(x => `<div><span class="dim">${clock(x.at)}</span> ${esc(x.msg)}</div>`).join('')}</div></details>`;
   $('#acTable').innerHTML = h;
   const all = $('#acAll'); if (all) all.checked = ps.length > 0 && ui.acSel.size === ps.length;
 }

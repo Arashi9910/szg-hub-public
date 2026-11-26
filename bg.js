@@ -84,7 +84,10 @@ const probeExpr = withAcct => `(async () => {
 
 module.exports = function makeBg(opt) {
   const { dataDir, hubUrl, getCfg, setCfg, userscript, agent } = opt;
-  const log = opt.log || (m => console.log('[背景] ' + m));
+  // 紀錄：印在中控視窗，也留最近 100 筆給「帳號」分頁看（v0.71.3，查視窗被關掉之類的問題）
+  const events = [];
+  const log0 = opt.log || (m => console.log('[背景] ' + m));
+  const log = m => { events.push({ at: Date.now(), msg: String(m).slice(0, 300) }); if (events.length > 100) events.splice(0, events.length - 100); log0(m); };
   const run = {}; // 設定檔 id -> 執行狀態
   const cfg = () => { const c = getCfg() || {}; return { chromePath: c.chromePath || '', lite: c.lite !== false, trimMin: c.trimMin === undefined ? 10 : Math.max(0, Number(c.trimMin) || 0), reloadHours: c.reloadHours === undefined ? 6 : Math.max(0, Number(c.reloadHours) || 0), profiles: Array.isArray(c.profiles) ? c.profiles : [] }; };
   const prof = id => cfg().profiles.find(p => p.id === id);
@@ -241,6 +244,7 @@ ${fixed}
     const r = R(id);
     if (r.busy || r.login) return;
     r.busy = true; r.state = 'starting'; r.msg = ''; r.needLogin = false;
+    let reattachTried = false;
     try {
       if (typeof WebSocket !== 'function') throw new Error('背景執行需要 Node.js 22 以上（目前 ' + process.version + '）');
       const chrome = findChrome(cfg().chromePath);
@@ -248,12 +252,13 @@ ${fixed}
       const dir = dirOf(id); prepDir(dir);
       // 中控重新啟動後，背景 Chrome 可能還在跑：直接接上
       let ws = opt.visible ? '' : await wsFromDir(dir, 0), reattach = !!ws;
+      reattachTried = reattach;
       // v0.71.2：接不上的時候先看這個資料夾是不是有 Chrome 開著，不要一律關掉（以前自動更新重開中控時，會把開著的視窗關掉）
       //   - 中控開的 Chrome（有遠端除錯）：多半是電腦正忙、一下子沒回應，多等一下再接
       //   - 不是中控開的（登入視窗、自己開的視窗）：不關，等它關掉再開始；按「開始」（opt.force）才會照舊關掉重開
       if (!ws && !opt.visible) {
         const mine = await chromeOf(id);
-        if (mine.some(x => /--remote-debugging-port/.test(x.cmd))) { ws = await wsFromDir(dir, 12000); reattach = !!ws; }
+        if (mine.some(x => /--remote-debugging-port/.test(x.cmd))) { ws = await wsFromDir(dir, 12000); reattach = reattachTried = !!ws; if (!ws) log(`${p.name}：背景 Chrome 等了 12 秒沒回應，關掉重開`); }
         else if (mine.length && !opt.force) {
           r.state = 'wait'; r.msg = '這個帳號的 Chrome 視窗開著（可能是登入視窗）：關掉後會自動開始背景執行';
           if (!r.waitLogged) { r.waitLogged = true; log(`${p.name}：${r.msg}`); }
@@ -307,9 +312,13 @@ ${fixed}
       const pagesT = (targetInfos || []).filter(t => t.type === 'page');
       const want = wantKeys(p);
       const extra = [];
+      // v0.71.3：接回時先看是不是看得到的視窗（以前要接完分頁才知道，看得到的視窗會被當成背景套用省資源模式、擋掉遊戲圖片）
+      if (reattach) { try { const v = await cdp.send('Browser.getVersion'); if (!/Headless/i.test(v.userAgent || '')) r.visible = r.visible || '_'; } catch (_) {} }
       for (const t of pagesT) {
         if (reattach && t.url.indexOf(GAME + '/game') === 0) {
           // 接回中控重新啟動前就開著的遊戲分頁：重新裝好代送與注入（之後重新整理也有腳本），不用重新整理
+          // 一頁接不上（例如遊戲跳出對話框卡住）不影響別頁，也不會因此把整個 Chrome 關掉（v0.71.3）
+          try {
           const { sessionId } = await cdp.send('Target.attachToTarget', { targetId: t.targetId, flatten: true });
           let key = '';
           // 分頁可能正在重新整理（例如剛好要換新版腳本）：多問幾次，問不到就當成第一個還沒接上的角色分頁，不要關掉它重開（v0.71.2）
@@ -323,18 +332,20 @@ ${fixed}
             r.pages[key] = { targetId: t.targetId, sessionId, scriptId, char: key === '_' ? '' : key, openedAt: Date.now(), info: null, fail: 0, acctAt: 0 };
             continue;
           }
+          } catch (e) { log(`${p.name}：接回分頁時出錯（${e.message}），這一頁先不管`); if (r.visible) continue; }
         }
         extra.push(t.targetId);
       }
-      if (reattach) { try { const v = await cdp.send('Browser.getVersion'); if (!/Headless/i.test(v.userAgent || '')) r.visible = r.visible || '_'; } catch (_) {} }
       for (const k of want) if (!r.pages[k]) await openPage(r, k);
       if (r.visible) { const pg = r.pages[r.visible] || r.pages[want[0]]; if (pg) await cdp.send('Target.activateTarget', { targetId: pg.targetId }).catch(() => {}); }
-      for (const t of extra) await cdp.send('Target.closeTarget', { targetId: t }).catch(() => {}); // 開機時的空白頁、上次留下的頁面
+      // 開機時的空白頁、上次留下的頁面；看得到的視窗是你在用的，不關它的分頁（v0.71.3）
+      if (!r.visible) for (const t of extra) await cdp.send('Target.closeTarget', { targetId: t }).catch(() => {});
       r.state = 'running'; r.startedAt = Date.now();
       log(`${p.name}：${reattach ? '接上執行中的' : '啟動'}${r.visible ? '看得到的' : '背景'} Chrome（${want.length} 個分頁）`);
     } catch (e) {
       r.state = 'error'; r.msg = e.message; r.fails.push(Date.now());
-      if (r.cdp) { try { await r.cdp.send('Browser.close'); } catch (_) {} r.cdp.close(); r.cdp = null; }
+      // 接回別人開著的 Chrome 出錯：只斷線、下次再接，不關掉它（以前會把看得到的遊戲視窗整個關掉，v0.71.3）
+      if (r.cdp) { if (!reattachTried) { try { await r.cdp.send('Browser.close'); } catch (_) {} } r.cdp.close(); r.cdp = null; }
       log(`${p.name}：${e.message}`);
     } finally { r.busy = false; }
   }
@@ -437,7 +448,13 @@ ${fixed}
       }
     } catch (e) {
       pg.fail++;
-      if (pg.crashed || pg.fail >= 3) { log(`${(prof(r.id) || {}).name}：分頁沒有回應，重新開啟（${e.message}）`); await closePage(r, key); await openPage(r, key).catch(() => {}); }
+      if (pg.crashed || pg.fail >= 3) {
+        // 看得到的視窗：先開新的再關舊的（以前先關，視窗只剩那一頁時整個視窗就關掉了）；沒當掉的只重新整理
+        if (r.visible && !pg.crashed) { log(`${(prof(r.id) || {}).name}：顯示中的分頁沒有回應，重新整理（${e.message}）`); pg.fail = 0; await r.cdp.send('Page.reload', {}, pg.sessionId).catch(() => {}); return; }
+        log(`${(prof(r.id) || {}).name}：分頁沒有回應，重新開啟（${e.message}）`);
+        if (r.visible) { const old = r.pages[key]; delete r.pages[key]; await openPage(r, key).catch(() => {}); if (old && r.cdp) await r.cdp.send('Target.closeTarget', { targetId: old.targetId }).catch(() => {}); }
+        else { await closePage(r, key); await openPage(r, key).catch(() => {}); }
+      }
     }
   }
 
@@ -556,6 +573,7 @@ ${fixed}
     return {
       all: allJob && (!allJob.end || Date.now() - allJob.end < 15000) ? { ...allJob } : null,
       batch: { cur: batch.cur, queue: [...batch.queue], done: batch.done.length, skipped: batch.skipped.length, total: batch.done.length + batch.skipped.length + batch.queue.length + (batch.cur ? 1 : 0) },
+      events: events.slice(-60),
       lite: c.lite, reloadHours: c.reloadHours, trimMin: c.trimMin, mem: { total: mem.total, page: mem.page || 0, base: mem.base || 0, at: mem.at, err: mem.err },
       chrome: findChrome(c.chromePath), chromePath: c.chromePath, nodeOk: typeof WebSocket === 'function', node: process.version, game: GAME,
       profiles: c.profiles.map(p => {
