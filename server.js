@@ -122,6 +122,21 @@ function bossSettingsFix() {
   return changed;
 }
 bossSettingsFix();
+// v0.71：去處規則（dest.js）。第一次啟動把野王掉落篩選、派工販售範本轉成去處規則（舊欄位保留不動，萬一要退回舊版還在）
+const D = require('./dest.js');
+function destMigrate() {
+  if (db.settings.dest) return false;
+  db.settings.dest = D.migrate(db.settings);
+  return true;
+}
+if (destMigrate()) { try { fs.writeFileSync(STATE_FILE, JSON.stringify(db)); } catch (_) {} }
+// 完整的 world.json（去處規則要用掉落資料）：檔案有改才重讀
+let _worldFull = { at: 0, w: {} };
+function worldFull() {
+  try { const st = fs.statSync(WORLD_FILE); if (st.mtimeMs !== _worldFull.at) _worldFull = { at: st.mtimeMs, w: JSON.parse(fs.readFileSync(WORLD_FILE, 'utf8')) }; } catch (_) {}
+  return _worldFull.w;
+}
+const destSellOf = (map, ctx) => { try { return D.sellOf(worldFull(), db.settings, map, ctx); } catch (e) { console.warn('[去處規則]', e); return null; } };
 
 // ---- 知識王題庫：隨程式更新的 quiz-bank.json ＋ 各帳號作答時自動學到的（存在 data/state.json） ----
 const QUIZ_FILE = path.join(__dirname, 'quiz-bank.json');
@@ -402,16 +417,17 @@ function bookIds() {
 const itemKind = it => (it.kind === '消耗' && bookIds().has(Number(it.itemId)) ? '技能書' : it.kind);
 function guildPlanFor(snap, dep) {
   const names = new Set(dep.names || []), cats = new Set(dep.cats || []), keep = Math.max(0, Number(dep.keep) || 0);
+  const ids = new Set((dep.ids || []).map(Number)); // v0.71：派工去處選「公倉」的道具（用道具編號）
   const items = [], gear = [];
   for (const it of snap.items || []) {
     if (it.loc !== '背包' || !(it.tradableQty > 0) || it.supply) continue;
-    if (!names.has('i:' + it.key) && !cats.has(itemKind(it))) continue;
+    if (!names.has('i:' + it.key) && !cats.has(itemKind(it)) && !ids.has(Number(it.itemId))) continue;
     const qty = it.tradableQty - keep;
     if (qty > 0) items.push({ key: it.key, name: it.name, qty });
   }
   for (const g of snap.gear || []) {
     if (g.loc !== '背包' || g.locked || !g.tradable) continue;
-    if (!names.has('g:' + g.name) && !cats.has('裝備')) continue;
+    if (!names.has('g:' + g.name) && !cats.has('裝備') && !ids.has(Number(g.itemId))) continue;
     if (guildRollPass(g, dep)) gear.push({ uid: g.uid, name: g.name });
   }
   return { items, gear };
@@ -427,7 +443,7 @@ function guildAutoTick(force) {
   if (!force && Date.now() - (db.guildAutoAt || 0) < every) return;
   db.guildAutoAt = Date.now();
   const dep = db.settings.guildDep || {};
-  if (!(dep.names || []).length && !(dep.cats || []).length) { guildLog('自動存入：存入規則還沒設定要存什麼，略過'); save(); return; }
+  if (!(dep.names || []).length && !(dep.cats || []).length && !(dep.ids || []).length) { guildLog('自動存入：存入規則還沒設定要存什麼，略過'); save(); return; }
   const g = db.guild && db.guild.data;
   const usedKeys = new Set(Object.keys((g && g.items) || {}));
   let gearUsed = ((g && g.gear) || []).length;
@@ -714,7 +730,7 @@ function bossCfg() {
     chain: b.chain !== false,                                    // 連續打：打完一隻直接去下一隻，全部打完才回練功圖
     estMax: Number(b.estMax) > 0 ? Number(b.estMax) : 15,
     stuckMin: Math.min(30, Math.max(1, Number(b.stuckMin) || 3)), maxMin: Math.min(600, Math.max(10, Number(b.maxMin) || 180)),
-    sellOn: !!(b.sell && b.sell.on), sellMaps: b.sellMaps && typeof b.sellMaps === 'object' ? b.sellMaps : {},
+    sellOn: !!(db.settings.dest || {}).boss, sellMaps: b.sellMaps && typeof b.sellMaps === 'object' ? b.sellMaps : {}, // v0.71：掉落篩選＝去處規則的「野王地圖套用」
     presetBoss: [1, 2, 3].includes(Number(b.presetBoss)) ? Number(b.presetBoss) : 0,   // 0＝不切換
     presetTrain: [1, 2, 3].includes(Number(b.presetTrain)) ? Number(b.presetTrain) : 0 }; // 0＝換回出發前用的那套
 }
@@ -892,12 +908,8 @@ function bossPick(ids, c, now, busyInst, mobOk, dpsIds, stateIds) {
 }
 // 出發（試跑只寫紀錄）：go 的每隻各一個 boss 工作；code＝隊伍代碼（一起打）或 null（自己打）
 // 野王地圖的自動販售（面板依「共用規則＋個別調整」算好存在 sellMaps）；沒開＝null（不動遊戲裡那張圖的設定）
-function bossSellOf(c, map) {
-  const x = c.sellOn && c.sellMaps[map];
-  if (!x || !Array.isArray(x.itemIds)) return null;
-  const ids = x.itemIds.map(Number).filter(n => n > 0).slice(0, 500);
-  return { enabled: !!x.enabled && ids.length > 0, itemIds: ids };
-}
+// v0.71：改用去處規則（野王地圖有開才套用）
+function bossSellOf(c, map) { return destSellOf(map, 'boss'); }
 function bossDispatch(c, charId, unitIds, code, go, r, busyInst, now) {
   const b = bossDb();
   const est = r.estSec != null ? `預估 ${Math.max(1, Math.round(r.estSec / 60))} 分鐘` : '還沒有實戰 DPS，無法預估';
@@ -1250,7 +1262,13 @@ function mobileSummary() {
     parties: (db.settings.parties || []).map(p => ({ ...p, sell: p.map ? boardSellOf(p.map) : undefined })), idleLog: (db.idleLog || []).slice(-15), update: updateInfo };
 }
 // 派工看板上那張圖的自動販售範本（組隊套用時一起送；和電腦面板 ptApply 同規則）
-function boardSellOf(map) { const bs = { A: db.settings.board || {}, ...(db.settings.boards || {}) }; for (const g of ['A', 'B']) { const x = ((bs[g] || {}).sell || {})[map]; if (x) return x; } return undefined; }
+// 派工看板上每張圖算好的自動販售（給面板比對「遊戲裡的設定跟去處規則一不一樣」）
+function destSellBoard() {
+  const bs = { A: db.settings.board || {}, ...(db.settings.boards || {}) }, out = {};
+  for (const g of ['A', 'B']) for (const l of Object.values((bs[g] || {}).lanes || {})) for (const m of l || []) if (!(m in out)) out[m] = destSellOf(m, 'board');
+  return out;
+}
+function boardSellOf(map) { return destSellOf(map, 'board') || undefined; } // v0.71：派工地圖的自動販售＝去處規則算出來的
 function mobileDevices() { return (db.mDevices || []).map(d => ({ id: d.id, name: d.name, at: d.at, seenAt: d.seenAt || 0 })); }
 async function mobileApi(req, url) {
   if (req.method === 'GET' && url.pathname === '/api/m/summary') return [200, mobileSummary()];
@@ -1314,6 +1332,7 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${HOST}`);
     if (req.method === 'OPTIONS') return send(res, 204, '');
     // 手機版頁面本身沒有資料，不用通行碼（資料 API 才要）；通行碼放在網址 # 後面，只有手機自己讀得到
+    if (req.method === 'GET' && url.pathname === '/dest.js') return send(res, 200, fs.readFileSync(path.join(__dirname, 'dest.js'), 'utf8'), 'application/javascript; charset=utf-8');
     if (req.method === 'GET' && (url.pathname === '/m' || url.pathname === '/m/')) return send(res, 200, fs.readFileSync(path.join(__dirname, 'm.html'), 'utf8'), 'text/html; charset=utf-8');
     // 加到主畫面後是另一個獨立的 App（iPhone 的儲存空間和 Safari 分開），所以啟動網址要帶著這支手機的通行碼（# 後面不會送到伺服器）
     if (req.method === 'GET' && url.pathname === '/m/manifest.webmanifest') return send(res, 200, { name: '上漲谷中控', short_name: '上漲谷', start_url: /^[0-9a-f]{16,64}$/.test(url.searchParams.get('t') || '') ? `/m#t=${url.searchParams.get('t')}` : '/m', scope: '/m', display: 'standalone', background_color: '#16181d', theme_color: '#16181d', icons: [{ src: '/m/icon.svg', sizes: 'any', type: 'image/svg+xml' }] }, 'application/manifest+json; charset=utf-8');
@@ -1409,7 +1428,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/m/')) { const r = await mobileApi(req, url); if (r) return send(res, r[0], r[1]); }
     if (req.method === 'GET' && url.pathname === '/api/data') {
       const tabsOut = {}; for (const [code, m] of Object.entries(tabs)) for (const [id, t] of Object.entries(m)) if (Date.now() - t.at < TAB_LIVE_MS) tabsOut[id] = { code, at: t.at, hidden: t.hidden, off: t.off, bg: !!t.bg };
-      return send(res, 200, { now: Date.now(), tabs: tabsOut, chars: db.chars, dps: db.dps || {}, expLive: expLive(), avatars: Object.fromEntries(Object.entries(db.avatars || {}).map(([k, v]) => [k, v.at])), settings: db.settings, jobs: db.jobs.slice(-100), expTable: db.expTable || {}, idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo, alerts: alertSummary(), auto: automationInfo() });
+      return send(res, 200, { now: Date.now(), tabs: tabsOut, chars: db.chars, dps: db.dps || {}, expLive: expLive(), avatars: Object.fromEntries(Object.entries(db.avatars || {}).map(([k, v]) => [k, v.at])), settings: db.settings, jobs: db.jobs.slice(-100), expTable: db.expTable || {}, idleLog: (db.idleLog || []).slice(-50), gearLog: (db.gearLog || []).slice(-80), scriptVersion: scriptVersion(), update: updateInfo, alerts: alertSummary(), auto: automationInfo(), destSell: destSellBoard() });
     }
 
     if (req.method === 'POST' && url.pathname === '/api/push') {
@@ -1450,6 +1469,9 @@ const server = http.createServer(async (req, res) => {
       const patch = JSON.parse(await readBody(req));
       // 打王設定一律合併（v0.69.6）：只改送來的欄位，沒送的（例如掉落篩選、隊伍打法）保留，哪個畫面存都不會清掉別的設定
       if (patch && patch.boss && typeof patch.boss === 'object') patch.boss = { ...(db.settings.boss || {}), ...patch.boss };
+      // 去處規則也合併（v0.71）：只改送來的欄位（例如只改共用規則，不會清掉每張圖的覆寫）
+      if (patch && patch.dest && typeof patch.dest === 'object') patch.dest = { ...(db.settings.dest || {}), ...patch.dest };
+      if (patch && 'dest' in patch && !patch.dest) delete patch.dest;
       db.settings = { ...db.settings, ...patch };
       bossSettingsFix();
       save();
@@ -1606,7 +1628,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/party/run') return send(res, 200, partyRunInfo(url.searchParams.get('id') || ''));
 
     // ---- 野王 ----
-    if (req.method === 'GET' && url.pathname === '/api/boss') return send(res, 200, bossSummary());
+    if (req.method === 'GET' && url.pathname === '/api/boss') {
+      // v0.71：野王地圖用去處規則算好的自動販售（給面板、手機顯示；打王工作出發時也是用同一個算法）
+      const destSell = {}; for (const m of worldFull().maps || []) if ((m.boss || []).length) destSell[m.id] = destSellOf(m.id, 'boss');
+      return send(res, 200, { ...bossSummary(), destSell });
+    }
     if (req.method === 'GET' && url.pathname === '/api/boss/need') {
       const c = bossCfg(), id = url.searchParams.get('charId') || '';
       return send(res, 200, { need: c.mode !== 'off' && !!c.chars[id] });
