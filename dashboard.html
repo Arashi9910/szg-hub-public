@@ -4119,8 +4119,13 @@ function boardMapCard(lane, m, here, cfg, all, where) {
   let estHtml = '';
   if (est) {
     if (lane === 'train') estHtml = `<div class="bd-est">估計經驗 <b>${short(est.total)}</b>/小時${est.partyMult > 1 ? `<span class="dim">（同圖 ${here.length} 人 ×${est.partyMult.toFixed(1)}，要組隊才有）</span>` : ''}</div>`;
-    else estHtml = goals.length ? `<div class="bd-est">${goals.map(id => { const r = dropRate(est, m, id); return `<span class="goal">${iname(id, wName(id))} ${r >= 10 ? `<b>${fmt(Math.round(r))}</b> 個/小時` : r >= 0.1 ? `<b>${r.toFixed(1)}</b> 個/小時` : r > 0 ? `約每 <b>${fmt(Math.round(1 / r))}</b> 小時 1 個` : '<span class="dim">不會掉</span>'}</span>`; }).join('')}</div>`
-      : `<div class="bd-est dim">還沒選目標 → 按「🎯 目標」</div>`;
+    else if (goals.length) {
+      // 目標很多時卡片只列每小時最多的 4 項，其他收起來（滑鼠移上去看）
+      const rows = goals.map(id => ({ id, r: dropRate(est, m, id) })).sort((a, b) => b.r - a.r);
+      const txt = x => x.r >= 10 ? `${fmt(Math.round(x.r))} 個/小時` : x.r >= 0.1 ? `${x.r.toFixed(1)} 個/小時` : x.r > 0 ? `約每 ${fmt(Math.round(1 / x.r))} 小時 1 個` : '不會掉';
+      const show = rows.slice(0, 4), rest = rows.slice(4);
+      estHtml = `<div class="bd-est">${show.map(x => `<span class="goal">${iname(x.id, wName(x.id))} ${x.r > 0 ? `<b>${txt(x)}</b>` : '<span class="dim">不會掉</span>'}</span>`).join('')}${rest.length ? `<span class="dim" title="${esc(rest.map(x => `${wName(x.id)}：${txt(x)}`).join('\n'))}">…還有 ${rest.length} 項</span>` : ''}</div>`;
+    } else estHtml = `<div class="bd-est dim">還沒選目標 → 按「🎯 目標」</div>`;
   }
   const moving = c => cfg.assign[c.id] && cfg.assign[c.id] !== c.map;
   const chips = here.map(c => {
