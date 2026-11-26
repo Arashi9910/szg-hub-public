@@ -107,6 +107,21 @@ try {
   const loaded = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
   db = { ...db, ...loaded, jobs: loaded.jobs || [], settings: { ...db.settings, ...(loaded.settings || {}) } };
 } catch (_) { /* 第一次啟動 */ }
+// v0.69.6：打王設定的修復。手機版以前存打王設定時，會用 /api/boss 整理過的 cfg（只有 sellOn、sellMaps，沒有 sell 規則）整個蓋掉，
+// 掉落篩選就被關掉、規則不見。被蓋過的設定還留著 sellOn＝true 和算好的 sellMaps：把每張圖的結果還原成「個別調整」，實際賣的東西跟原本一樣
+function bossSettingsFix() {
+  const b = db.settings && db.settings.boss; if (!b || typeof b !== 'object') return false;
+  let changed = false;
+  if (!b.sell && b.sellOn === true && b.sellMaps && typeof b.sellMaps === 'object') {
+    const over = {};
+    for (const [m, x] of Object.entries(b.sellMaps)) if (x && Array.isArray(x.itemIds)) over[m] = { itemIds: x.itemIds.map(Number).filter(n => n > 0) };
+    b.sell = { on: true, rule: {}, over, restored: Date.now() };
+    changed = true;
+  }
+  if ('sellOn' in b) { delete b.sellOn; changed = true; } // 只是 /api/boss 給面板看的整理欄位，不該存進設定
+  return changed;
+}
+bossSettingsFix();
 
 // ---- 知識王題庫：隨程式更新的 quiz-bank.json ＋ 各帳號作答時自動學到的（存在 data/state.json） ----
 const QUIZ_FILE = path.join(__dirname, 'quiz-bank.json');
@@ -1433,7 +1448,10 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && url.pathname === '/api/settings') {
       const patch = JSON.parse(await readBody(req));
+      // 打王設定一律合併（v0.69.6）：只改送來的欄位，沒送的（例如掉落篩選、隊伍打法）保留，哪個畫面存都不會清掉別的設定
+      if (patch && patch.boss && typeof patch.boss === 'object') patch.boss = { ...(db.settings.boss || {}), ...patch.boss };
       db.settings = { ...db.settings, ...patch };
+      bossSettingsFix();
       save();
       return send(res, 200, { ok: true, settings: db.settings });
     }

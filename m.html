@@ -360,8 +360,9 @@ function renderBoss() {
   }).join('') || '<div class="empty">沒有符合的角色</div>';
 }
 async function saveBoss(patch) {
-  const cfg = { ...BOSS.cfg, ...patch };
-  cfg.chars = Object.fromEntries(Object.keys(cfg.charMobs || {}).filter(k => (cfg.charMobs[k] || []).length).map(k => [k, true])); cfg.mobs = null;
+  // v0.69.6：只送有改的欄位（中控會合併）。以前送整份整理過的設定，會把電腦上設的掉落篩選清掉
+  const cfg = { ...patch };
+  if (patch.charMobs) { cfg.chars = Object.fromEntries(Object.keys(patch.charMobs).filter(k => (patch.charMobs[k] || []).length).map(k => [k, true])); cfg.mobs = null; }
   await api('/api/settings', { boss: cfg });
   await loadBoss(); render();
 }

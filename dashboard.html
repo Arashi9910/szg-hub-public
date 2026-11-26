@@ -3671,7 +3671,8 @@ function renderBossSell() {
     return;
   }
   const maps = bossMapsAll().map(m => ({ m, x: bossSellCalc(m.id, sc), names: (m.boss || []).map(id => (WORLD.mobIdx[id] || {}).name).filter(Boolean).join('、'), lv: Math.max(0, ...(m.boss || []).map(id => (WORLD.mobIdx[id] || {}).lv || 0)) })).sort((a, b) => a.lv - b.lv);
-  box.innerHTML = `<div class="bar"><label><input type="checkbox" class="sw" id="bossSellOn" ${sc.on ? 'checked' : ''}> <b>到野王地圖時自動套用販售</b></label>
+  const restored = (bossCfg().sell || {}).restored;
+  box.innerHTML = `${restored ? `<div class="card attn sm" style="margin:0 0 8px;padding:6px 10px">ℹ 你的掉落篩選之前被手機版清掉了，${clock(restored)} 已自動還原：每隻王都設成「個別調整」，要賣的東西和原本一樣。想改回共用規則，按王的「調整」→「恢復共用規則」。</div>` : ''}<div class="bar"><label><input type="checkbox" class="sw" id="bossSellOn" ${sc.on ? 'checked' : ''}> <b>到野王地圖時自動套用販售</b></label>
       <span class="dim sm">開啟後，打王的角色到了王的地圖，中控會把那張圖的自動販售設成下面的結果（撿到就賣給商店；回練功圖時練功圖用它自己原本的設定）。</span></div>
     <h4 style="margin:10px 0 2px">共用規則（套用到全部的王）</h4>
     <div class="bsell-rule">${opt('gear', '小怪掉的裝備')}${opt('scroll', '卷軸')}${opt('book', '技能書')}${opt('other', '其他道具（雜物）')}${opt('boss', '👑 王會掉的東西')}</div>
