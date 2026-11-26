@@ -1583,7 +1583,9 @@ function agentMain(ctx) {
       await postBossState(id, st);
       const bossMaps = new Set((st.bossRespawns || []).map(r => r.map).concat(b.map));
       const now0 = (st.character && st.character.map) || c.map;
-      const back = now0 && !bossMaps.has(now0) ? now0 : (b.back || '');
+      // 原本的地圖：現在在一般地圖就用現在的；現在在王的地圖（可能上次被留在這裡）就用中控記的練功圖。
+      // v0.69.2：練功圖本身也有野王時，中控現在也會記；都沒有的話，只要不是這次要打的那張王圖就用現在的
+      const back = now0 && !bossMaps.has(now0) ? now0 : (b.back || (now0 && now0 !== b.map ? now0 : ''));
       const backName = (catalog && catalog.mapsById[String(back)]) || b.backName || back;
       // 掛機設定組合（遊戲的 1／2／3，{type:'settingsPreset', slot}；沒設定過＝1）：打王用一套、練功用一套
       const slot0 = Number(st.character && st.character.settingsSlot) || 1;

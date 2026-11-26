@@ -677,7 +677,7 @@ function automationInfo() {
 // v0.69：visitMax（每次最多打 N 分鐘）不再用——打很久的王（海怒斯、噴火龍、格瑞芬多）會打到一半被時間到、連續打拉去別的王
 // db.boss = { state: {角色: {at, offset, list}}, hp: {instanceId: {hp, maxHp, at}}, last: {角色|mob: {at, result}}, home: {角色: map}, log, seen }
 // 0.43.0：換圖後開始掛機、掛機設定組合。舊腳本的分頁會先重新整理換新腳本再接工作（避免舊腳本打王不開掛機、站著發呆）
-BAG_KINDS.add('boss'); KIND_MIN_AGENT.boss = '0.69.1'; // 0.69.1：強制停止 // 0.69：血量有在掉就打到死、到王的地圖套用自動販售
+BAG_KINDS.add('boss'); KIND_MIN_AGENT.boss = '0.69.2'; // 0.69.1：強制停止；0.69.2：原本的地圖判斷 // 0.69：血量有在掉就打到死、到王的地圖套用自動販售
 const BOSS_RETRY_MS = 30 * 60 * 1000;   // 沒打成功（逾時、倒下、王不在）的同一隻王，30 分鐘內不再去
 const BOSS_STATE_STALE = 20 * 60 * 1000; // 王的狀態超過這麼久沒更新就先不派
 // 每隻角色各自要打的王：settings.boss.charMobs = {角色: ['*']（全部）| [王 id…]}，空的／沒有＝不打。
@@ -859,11 +859,41 @@ function bossDispatch(c, charId, unitIds, code, go, r, busyInst, now) {
       batches: [{ items: [], gear: [], money: 0, boss: { mob: r.mob, name: r.name, map: r.map, mapName: r.mapName, instanceId: r.instanceId, back: b.home[id] || '', backName: homeName, stuckMin: c.stuckMin, maxMin: c.maxMin, sell: bossSellOf(c, r.map), presetBoss: c.presetBoss, presetTrain: c.presetTrain, chain: c.chain, unit: code || '', party: code ? names : null } }],
       batchIndex: 0, log: [], lastMsg: '',
     };
+    job.bossMaps = [r.map];
     jobLog(job, `自動：${who}去 ${r.mapName} 打 ${r.name}（${est}）`);
     db.jobs.push(job);
   }
   bossLog(charId, `出發：${who}去 ${r.mapName} 打 ${r.name}（${est}${leftTxt}）`);
 }
+// 記住角色原本的練功圖（打完王要回去的地方）。v0.69.2：練功圖本身也有野王（例如海岸草叢3 的紅寶王）時以前不會記，
+// 打完王就「不知道原本的地圖」留在王那邊。現在只排除「正在打王」或「剛打完王（15 分鐘內）還停在那張王圖」的情況。
+function bossNoteHome(id, maps) {
+  const s = db.chars[id], sc = s && s.char, b = bossDb(); if (!sc || !sc.map) return;
+  if (db.jobs.some(j => j.kind === 'boss' && j.fromCharId === id && ACTIVE.has(j.status))) return;
+  if (maps.has(sc.map) && db.jobs.some(j => j.kind === 'boss' && j.fromCharId === id && Date.now() - (j.updatedAt || j.createdAt) < 15 * 60000 && (j.bossMaps || [j.batches[0].boss.map]).includes(sc.map))) return;
+  b.home[id] = sc.map; b.homeName[id] = sc.mapName || '';
+}
+// 保險：打王工作結束 1.5 分鐘後，角色還停在這次打過的王圖（遊戲分頁中途重新整理、回程換圖失敗等）→ 建一個工作帶回原本的地圖並開始掛機
+function bossReturnCheck() {
+  const b = bossDb(), now = Date.now();
+  for (const j of db.jobs) {
+    if (j.kind !== 'boss' || j.returnChecked || ACTIVE.has(j.status)) continue;
+    const end = j.updatedAt || j.createdAt;
+    if (now - end > 30 * 60000) { j.returnChecked = true; continue; }
+    if (now - end < 90000) continue;
+    const s = db.chars[j.fromCharId]; if (!s || !s.char) continue;
+    if ((s.receivedAt || 0) < end + 30000) continue;              // 等結束後的新快照
+    const visited = j.bossMaps || [j.batches[0].boss.map];
+    const home = j.batches[0].boss.back || b.home[j.fromCharId];
+    j.returnChecked = true;
+    if (!visited.includes(s.char.map) || !home || home === s.char.map) continue;
+    if (db.jobs.some(x => x.fromCharId === j.fromCharId && ACTIVE.has(x.status))) continue;
+    const name = worldMapNames[home] || b.homeName[j.fromCharId] || j.batches[0].boss.backName || home;
+    createPartyJob(j.fromCharId, { role: 'solo', ops: false, map: home, mapName: name }, `打完王還停在 ${s.char.mapName || s.char.map}：自動帶回 ${name} 並開始掛機`);
+    bossLog(j.fromCharId, `打完王還停在 ${s.char.mapName || s.char.map}，自動帶回 ${name} 並開始掛機`);
+  }
+}
+setInterval(() => { try { loadWorldIndex(); bossReturnCheck(); } catch (e) { console.warn('[野王 回程檢查]', e); } }, 30 * 1000);
 function bossTick(force) {
   const c = bossCfg(); if (c.mode === 'off') return;
   const b = bossDb(), maps = bossMapSet(), pm = partyMap(), handled = new Set(), now = Date.now();
@@ -877,7 +907,7 @@ function bossTick(force) {
     // 依王決定（mixed）：隊友各自先打「分開打」的王；全隊都空下來、而且沒有分開打的王可打了，才一起去打「一起打」的王
     if (c.partyMode === 'mixed' && party.code) {
       party.ids.forEach(id => handled.add(id));
-      for (const id of party.ids) { const sc = db.chars[id].char; if (sc.map && !maps.has(sc.map)) { b.home[id] = sc.map; b.homeName[id] = sc.mapName || ''; } }
+      for (const id of party.ids) bossNoteHome(id, maps);
       const sent = new Set();
       for (const id of party.ids) {
         if (!c.chars[id] || activeOf(id) || !bossAvail(id)) continue;
@@ -892,7 +922,7 @@ function bossTick(force) {
     }
     const unit = bossUnitFor(charId, pm, c);
     unit.ids.forEach(id => handled.add(id));
-    for (const id of unit.ids) { const sc = db.chars[id].char; if (sc.map && !maps.has(sc.map)) { b.home[id] = sc.map; b.homeName[id] = sc.mapName || ''; } }
+    for (const id of unit.ids) bossNoteHome(id, maps);
     // 隊伍裡還有人在打王：等大家都回來再一起挑下一隻
     if (unit.ids.some(activeOf)) continue;
     const go = unit.ids.filter(bossAvail);                       // 有自己的分頁、在掛機、沒有其他工作
@@ -945,6 +975,7 @@ function bossNext(e) {
   }
   if (!dec.boss) return { none: true, why: '沒有其他已重生的王' };
   Object.assign(job.batches[0].boss, dec.boss);
+  job.bossMaps = [...new Set([...(job.bossMaps || []), dec.boss.map])];
   jobLog(job, `連續打：接著去 ${dec.boss.mapName} 打 ${dec.boss.name}`);
   save();
   return { boss: dec.boss };
