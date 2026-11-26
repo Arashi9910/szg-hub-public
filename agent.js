@@ -239,7 +239,8 @@ function agentMain(ctx) {
       for (const sk of (Array.isArray(cat.skills) ? cat.skills : Object.values(cat.skills || {}))) if (sk && sk.msId != null) skillNames[sk.msId] = sk.name;
       const mobNames = {};
       for (const m of cat.mobs || []) if (m && m.id) mobNames[m.id] = m.name;
-      catalog = { equipment: cat.equipment || {}, items: cat.items || {}, scrolls: cat.scrolls || {}, jobs: cat.jobs || {}, statNames: cat.statNames || {}, mapsById, bossByMap, skillNames, mobNames };
+      catalog = { equipment: cat.equipment || {}, items: cat.items || {}, scrolls: cat.scrolls || {}, jobs: cat.jobs || {}, statNames: cat.statNames || {}, mapsById, bossByMap, skillNames, mobNames,
+        skills: (Array.isArray(cat.skills) ? cat.skills : Object.values(cat.skills || {})).filter(sk => sk && sk.id != null) };
       setTimeout(() => uploadWorld(cat).catch(e => console.warn('[szg-hub world]', e)), 5000);
       return catalog;
     }
@@ -370,6 +371,31 @@ function agentMain(ctx) {
       };
     }
 
+    // v0.72：角色抽屜用的能力點、技能、掛機開關（跟遊戲「技能」「能力值」「掛機設定」同一份資料）
+    // 中控傳來的技能 id 都是字串；換回遊戲 catalog 裡原本的型別（數字或字串）再送
+    function cfgIds(cmd) {
+      const real = id => { const sk = (catalog.skills || []).find(x => String(x.id) === String(id)); return sk ? sk.id : id; };
+      const c = { ...cmd };
+      if (c.skill != null) c.skill = real(c.skill);
+      if (c.type === 'learnBatch') c.allocations = c.allocations.map(a => ({ ...a, skill: real(a.skill) }));
+      if (c.type === 'skillPlan') c.plan = c.plan.map(r => ({ ...r, skill: real(r.skill) }));
+      return c;
+    }
+    function progOf(c) {
+      const pick = o => { const r = {}; for (const k of ['str', 'dex', 'int', 'luk']) r[k] = Number((o || {})[k]) || 0; return r; };
+      // 這個職業一路上來的技能（跟遊戲一樣：沿著職業的 parent 往上找）
+      const ids = []; for (let j = c.job, n = 0; j && catalog.jobs[j] && n < 10; j = catalog.jobs[j].parent, n++) ids.push(j);
+      const all = (catalog.skills || []).filter(sk => ids.includes(sk.job) && sk.tier > 0);
+      const byMs = {}; for (const sk of all) if (sk.msId != null) byMs[sk.msId] = sk.id;
+      const t1 = all.find(sk => sk.tier === 1), lv1 = t1 && catalog.jobs[t1.job] && catalog.jobs[t1.job].level != null ? catalog.jobs[t1.job].level : 10;
+      const need = t => (t <= 1 ? 0 : 1 + (30 - lv1) * 3 + (t >= 3 ? 121 : 0) + (t >= 4 ? 151 : 0)); // 遊戲的「前面的技能要先點幾點」
+      const skills = all.slice(0, 80).map(sk => ({ id: String(sk.id), name: sk.name || String(sk.id), tier: sk.tier, max: Number(sk.maxLevel) || (sk.levels || []).length || 0, lv: Number((c.skills || {})[sk.id]) || 0,
+        req: Object.fromEntries(Object.entries(sk.requirements || {}).map(([ms, n]) => [byMs[ms] || ms, Number(n) || 0])), type: sk.type || '', buff: !!sk.buffSupported && !sk.manualOnly }));
+      return { ap: Number(c.ap) || 0, sp: Number(c.sp) || 0, base: pick(c.stats), total: pick(c.totalStats || c.stats), skills, need: { 2: need(2), 3: need(3), 4: need(4) },
+        statPlan: Array.isArray(c.statPlan) ? c.statPlan.slice(0, 8) : [], skillPlan: Array.isArray(c.skillPlan) ? c.skillPlan.slice(0, 60) : [],
+        auto: { autoSkills: !!c.autoSkills, autoStats: !!c.autoStats, autoPotion: !!c.autoPotion, autoStartOnMap: !!c.autoStartOnMap },
+        autoBuffs: Array.isArray(c.autoBuffs) ? c.autoBuffs.map(String).slice(0, 40) : [], active: c.active != null ? String(c.active) : '' };
+    }
     function buildSnapshot(state) {
       const c = state.character;
       const meta = scrapeDom(c.id);
@@ -433,6 +459,7 @@ function agentMain(ctx) {
           hpItem: sup.hpItem ? itemInfo(sup.hpItem).name : null, hpQty: sup.hpItem ? (inv[sup.hpItem] || 0) : null,
           mpItem: sup.mpItem ? itemInfo(sup.mpItem).name : null, mpQty: sup.mpItem ? (inv[sup.mpItem] || 0) : null,
           stats: c.stats || {},
+          prog: (() => { try { return progOf(c); } catch (_) { return null; } })(),
           gearBagCount: (c.equipmentBag || []).length,
           itemStackCount: (c.inventoryStacks || []).length,
         },
@@ -484,7 +511,7 @@ function agentMain(ctx) {
         await loadCatalog();
         try { await loadAccount(); } catch (_) {}
         const snap = buildSnapshot(state);
-        const hash = JSON.stringify([snap.char, snap.playerCode, snap.eligibleKnown, snap.knowledge, snap.idleOffline, snap.party, snap.points, snap.autoSell, snap.autoSellAll, snap.gear.map(g => g.uid + g.plus + g.loc + g.locked).join('|'), snap.items.map(i => i.key + i.qty + i.loc + i.tradableQty + i.lockedQty).join('|')]);
+        const hash = JSON.stringify([snap.char.prog, snap.char, snap.playerCode, snap.eligibleKnown, snap.knowledge, snap.idleOffline, snap.party, snap.points, snap.autoSell, snap.autoSellAll, snap.gear.map(g => g.uid + g.plus + g.loc + g.locked).join('|'), snap.items.map(i => i.key + i.qty + i.loc + i.tradableQty + i.lockedQty).join('|')]);
         const now = Date.now();
         if (hash !== lastHash || now - lastSent > HEARTBEAT_MS) {
           lastHash = hash; lastSent = now;
@@ -667,6 +694,11 @@ function agentMain(ctx) {
               catch (e) { failed.push(`${t.name} 套用自動販售（${e.message}）`); }
             }
           } catch (e) { failed.push(`${t.name} 前往 ${t.mapName || t.map}（${e.message}）`); }
+          continue;
+        }
+        if (t.action === 'cfg') { // v0.72：角色抽屜的能力點、技能、掛機設定
+          try { setBadge(null, `${t.name}：${t.label || '設定'}…`); await gameRetry({ ...cfgIds(t.cmd), characterId: t.charId }); done.push(`${t.name} ${t.label || '設定完成'}`); }
+          catch (e) { if (e.gameUpdated) throw e; failed.push(`${t.name} ${t.label || '設定'}（${e.message}）`); }
           continue;
         }
         if (t.action === 'autosell') {

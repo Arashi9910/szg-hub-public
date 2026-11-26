@@ -303,6 +303,10 @@
   #charDrawer .cdg-hd { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   #charDrawer .cdg-slot { min-width: 34px; }
   #charDrawer .cdg-cmp { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); }
+  #charDrawer .cd-stat td { padding: 3px 4px; } #charDrawer .cd-stat button { padding: 0 6px; }
+  #charDrawer .cdsk .cdg-hd button { padding: 0 6px; }
+  #charDrawer .cd-sw { display: block; margin: 6px 0; }
+  #charDrawer .seg { flex-wrap: wrap; }
   @media (max-width: 1280px) {
     /* 欄位多的表格：維持可讀寬度，放不下時在卡片裡左右捲動，不再把整個頁面撐破 */
     main :has(> table) { overflow-x: auto; }
@@ -4776,6 +4780,95 @@ function cdGearRow(c, g, worn, forged) {
   }
   return `<div class="cdg ${ui.cd.open === g.uid ? 'open' : ''}" ${worn ? '' : `data-cdopen="${esc(g.uid)}"`}><div class="cdg-hd">${worn ? `<span class="dim sm cdg-slot">${esc(slotLabel(g.slot))}</span>` : ''}<b>${esc(g.name)}${g.plus ? ` <span class="good">+${g.plus}</span>` : ''}</b>${tags}<span style="flex:1"></span>${worn ? `<button class="btn sm" data-cdunequip="${esc(g.uid)}" title="脫下來放回背包">脫下</button>` : ''}</div><div class="dim sm">${info}</div>${cmp}</div>`;
 }
+// ---- 角色抽屜：能力點、技能、掛機設定（v0.72）。照遊戲的做法：先在草稿上加減，按「確認分配」才送出（加了退不回來） ----
+const CD_STATS = [['str', '力量'], ['dex', '敏捷'], ['int', '智力'], ['luk', '幸運']];
+const CD_AUTO = [['autoPotion', '自動喝水', 'HP／MP 低的時候自動喝藥水'], ['autoStartOnMap', '到圖自動開始掛機', '換地圖後自動開始掛機'], ['autoStats', '自動配點', '升級時照「自動配點計畫」分配能力點'], ['autoSkills', '自動配技能', '升級時照「自動配技能計畫」分配技能點']];
+function cdDraft(kind, id, sig) { const d = ui.cd[kind]; if (!d || d.id !== id || d.sig !== sig) ui.cd[kind] = { id, sig, pts: {} }; return ui.cd[kind]; }
+async function cdSend(id, cmd, label) {
+  try { await api('/api/idle', { targets: [{ charId: id, action: 'cfg', cmd, label }] }); ui.cd.msg = `已送出：${label}，幾秒內會更新`; await poll(true); }
+  catch (err) { alert('失敗：' + err.message); }
+}
+function cdSkillCheck(pr, draft) {
+  const lv = sk => sk.lv + (draft[sk.id] || 0), byId = Object.fromEntries(pr.skills.map(x => [x.id, x]));
+  const below = t => pr.skills.filter(x => x.tier < t).reduce((n, x) => n + lv(x), 0);
+  return sk => { const why = [];
+    if (sk.tier > 1 && below(sk.tier) < (pr.need[sk.tier] || 0)) why.push(`前面的技能要先點 ${pr.need[sk.tier]} 點（現在 ${below(sk.tier)}）`);
+    for (const [rid, n] of Object.entries(sk.req || {})) { const r = byId[rid]; if (!r || lv(r) < n) why.push(`要先學 ${r ? r.name : rid} Lv${n}`); }
+    return why; };
+}
+function cdProgBody(id, s) {
+  const pr = s.char.prog;
+  if (!pr) return '<div class="dim sm">這隻角色的資料還沒更新：它的遊戲分頁（或背景執行）換成新版中控腳本後約 1 分鐘會有。</div>';
+  const run = (DATA.jobs || []).filter(j => j.kind === 'idle' && ['pending', 'approved', 'running'].includes(j.status) && (j.batches[0].targets || []).some(t => t.action === 'cfg' && t.charId === id));
+  let h = (run.length ? `<div class="sm warn">處理中：${run.flatMap(j => j.batches[0].targets.filter(t => t.action === 'cfg' && t.charId === id).map(t => esc(t.label))).join('、')}</div>` : '') + (ui.cd.msg ? `<div class="sm">${esc(ui.cd.msg)}</div>` : '');
+  if (ui.cd.tab === 'stat') {
+    const d = cdDraft('stat', id, JSON.stringify([pr.ap, pr.base])), used = Object.values(d.pts).reduce((t, v) => t + v, 0), left = pr.ap - used;
+    h += `<h4 class="cd-h">可以分配的能力點 <b class="${left ? 'good' : ''}">${left}</b><span class="dim sm">／${pr.ap}</span></h4>
+      <table class="tbl sm cd-stat"><tr><th>能力</th><th>現在</th><th>含裝備</th><th></th><th>加</th></tr>${CD_STATS.map(([k, n]) => `<tr><td>${n}</td><td>${pr.base[k]}${d.pts[k] ? ` <span class="good">→ ${pr.base[k] + d.pts[k]}</span>` : ''}</td><td class="dim">${pr.total[k]}</td>
+        <td><button class="btn sm" data-cdst="${k}|-1" ${d.pts[k] ? '' : 'disabled'}>－</button><button class="btn sm" data-cdst="${k}|1" ${left ? '' : 'disabled'}>＋</button><button class="btn sm" data-cdst="${k}|5" ${left ? '' : 'disabled'}>+5</button><button class="btn sm" data-cdst="${k}|all" ${left ? '' : 'disabled'}>全部</button></td><td>${d.pts[k] ? '+' + d.pts[k] : ''}</td></tr>`).join('')}</table>
+      <div class="bar"><button class="btn sm primary" data-cdstok="1" ${used ? '' : 'disabled'}>確認分配（${used} 點）</button><button class="btn sm" data-cdstclr="1" ${used ? '' : 'disabled'}>取消</button><span class="dim sm">加了就退不回來</span></div>
+      <h4 class="cd-h">自動配點 <label class="sm" style="margin-left:auto"><input type="checkbox" data-cdauto="autoStats" ${pr.auto.autoStats ? 'checked' : ''}> 升級時自動分配</label></h4>
+      <div class="dim sm">照順序分配：每一列分到目標數值，再換下一列（跟遊戲的自動配點計畫一樣）。</div>
+      ${cdPlanRows('sp', (ui.cd.sp && ui.cd.sp.id === id ? ui.cd.sp.rows : (ui.cd.sp = { id, rows: pr.statPlan.map(r => ({ ...r })) }).rows), CD_STATS.map(([k, n]) => [k, n]), 4, 1999)}`;
+  } else if (ui.cd.tab === 'skill') {
+    const d = cdDraft('skill', id, JSON.stringify([pr.sp, pr.skills.map(x => x.lv)])), used = Object.values(d.pts).reduce((t, v) => t + v, 0), left = pr.sp - used, why = cdSkillCheck(pr, d.pts);
+    const tiers = [...new Set(pr.skills.map(x => x.tier))].sort();
+    h += `<h4 class="cd-h">可以分配的技能點 <b class="${left ? 'good' : ''}">${left}</b><span class="dim sm">／${pr.sp}</span></h4>
+      ${tiers.map(t => `<div class="dim sm" style="margin-top:6px">${t} 轉${pr.need[t] ? `（前面的技能要先點 ${pr.need[t]} 點）` : ''}</div>${pr.skills.filter(x => x.tier === t).map(sk => { const add = d.pts[sk.id] || 0, w = why(sk), lv = sk.lv + add, learned = sk.lv > 0;
+        return `<div class="cdg cdsk"><div class="cdg-hd"><b>${esc(sk.name)}</b><span class="dim sm">Lv ${sk.lv}${add ? ` <span class="good">→ ${lv}</span>` : ''}／${sk.max}</span>${w.length && !sk.lv ? `<span class="tag" title="${esc(w.join('\n'))}">還不能學</span>` : ''}<span style="flex:1"></span>
+          <button class="btn sm" data-cdsk="${esc(sk.id)}|-1" ${add ? '' : 'disabled'}>－</button><button class="btn sm" data-cdsk="${esc(sk.id)}|1" ${left && lv < sk.max && !w.length ? '' : 'disabled'}>＋</button><button class="btn sm" data-cdsk="${esc(sk.id)}|max" ${left && lv < sk.max && !w.length ? '' : 'disabled'}>點滿</button></div>
+          ${w.length && !add ? `<div class="dim sm">${w.map(esc).join('；')}</div>` : ''}
+          ${learned && ['attack', 'heal'].includes(sk.type) ? `<div class="sm">${pr.active === sk.id ? '<span class="good">掛機使用中</span>' : `<button class="btn sm" data-cdact="${esc(sk.id)}">掛機用這招</button>`}</div>` : ''}
+          ${learned && sk.buff ? `<label class="sm"><input type="checkbox" data-cdbuff="${esc(sk.id)}" ${pr.autoBuffs.includes(sk.id) ? 'checked' : ''}> 自動施放（Buff）</label>` : ''}</div>`; }).join('')}`).join('') || '<div class="dim sm">找不到這個職業的技能資料</div>'}
+      <div class="bar"><button class="btn sm primary" data-cdskok="1" ${used ? '' : 'disabled'}>確認分配（${used} 點）</button><button class="btn sm" data-cdskclr="1" ${used ? '' : 'disabled'}>取消</button><span class="dim sm">加了就退不回來；條件不合遊戲會拒絕</span></div>
+      <h4 class="cd-h">自動配技能 <label class="sm" style="margin-left:auto"><input type="checkbox" data-cdauto="autoSkills" ${pr.auto.autoSkills ? 'checked' : ''}> 升級時自動分配</label></h4>
+      <div class="dim sm">照順序把技能點到目標等級，再換下一列。</div>
+      ${cdPlanRows('kp', (ui.cd.kp && ui.cd.kp.id === id ? ui.cd.kp.rows : (ui.cd.kp = { id, rows: pr.skillPlan.map(r => ({ ...r })) }).rows), pr.skills.map(x => [x.id, x.name]), 1, 30, 'skill')}`;
+  } else {
+    h += `<h4 class="cd-h">掛機設定</h4>${CD_AUTO.map(([k, n, tip]) => `<label class="cd-sw" title="${esc(tip)}"><input type="checkbox" class="sw" data-cdauto="${k}" ${pr.auto[k] ? 'checked' : ''}> ${n} <span class="dim sm">${esc(tip)}</span></label>`).join('')}`;
+  }
+  return h;
+}
+function cdPlanRows(key, rows, opts, lo, hi, field = 'stat') {
+  return `<div class="cd-plan">${rows.map((r, i) => `<div class="bar"><span class="dim sm">${i + 1}.</span><select data-cdpl="${key}|${i}|${field}">${opts.map(([v, n]) => `<option value="${esc(v)}" ${String(r[field]) === String(v) ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select><span class="sm">到</span><input type="number" min="${lo}" max="${hi}" data-cdpl="${key}|${i}|target" value="${esc(r.target)}" style="width:70px"><button class="btn sm" data-cdpldel="${key}|${i}">✕</button></div>`).join('')}
+    <div class="bar"><button class="btn sm" data-cdpladd="${key}">＋ 加一列</button><button class="btn sm primary" data-cdplsave="${key}">儲存計畫</button></div></div>`;
+}
+document.addEventListener('change', async e => {
+  const t = e.target; if (!t.closest || !t.closest('#charDrawer')) return;
+  const id = ui.charDrawer, s = DATA.chars[id], pr = s && s.char.prog; if (!pr) return;
+  if (t.dataset.cdauto) { const k = t.dataset.cdauto, n = (CD_AUTO.find(x => x[0] === k) || [])[1] || k; await cdSend(id, { type: 'setting', key: k, value: t.checked }, `${t.checked ? '開啟' : '關閉'}${n}`); return; }
+  if (t.dataset.cdbuff) { const sk = pr.skills.find(x => x.id === t.dataset.cdbuff); await cdSend(id, { type: 'autoBuff', skill: t.dataset.cdbuff }, `${t.checked ? '開啟' : '關閉'} ${sk ? sk.name : ''} 自動施放`); return; }
+  if (t.dataset.cdpl) { const [k, i, f] = t.dataset.cdpl.split('|'); const r = ui.cd[k].rows[Number(i)]; r[f] = f === 'target' ? Math.round(Number(t.value) || 0) : t.value; }
+});
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('#charDrawer [data-cdst],#charDrawer [data-cdstok],#charDrawer [data-cdstclr],#charDrawer [data-cdsk],#charDrawer [data-cdskok],#charDrawer [data-cdskclr],#charDrawer [data-cdact],#charDrawer [data-cdpladd],#charDrawer [data-cdpldel],#charDrawer [data-cdplsave]'); if (!t) return;
+  const id = ui.charDrawer, s = DATA.chars[id], pr = s && s.char.prog; if (!pr) return;
+  const dd = t.dataset;
+  if (dd.cdst) { const [k, v] = dd.cdst.split('|'), d = ui.cd.stat, left = pr.ap - Object.values(d.pts).reduce((a, b) => a + b, 0);
+    const add = v === 'all' ? left : Math.min(Number(v), left); d.pts[k] = Math.max(0, Math.min(999 - pr.base[k], (d.pts[k] || 0) + add)); if (!d.pts[k]) delete d.pts[k]; renderCharDrawer(); return; }
+  if (dd.cdstclr) { ui.cd.stat.pts = {}; renderCharDrawer(); return; }
+  if (dd.cdstok) { const d = ui.cd.stat, al = Object.entries(d.pts).map(([stat, amount]) => ({ stat, amount, from: pr.base[stat] }));
+    const txt = al.map(a => `${(CD_STATS.find(x => x[0] === a.stat) || [])[1]} +${a.amount}`).join('、');
+    if (!confirm(`${s.char.name}：${txt}\n能力點加了就退不回來，確定分配？`)) return;
+    d.pts = {}; await cdSend(id, { type: 'statBatch', allocations: al }, `分配能力點（${txt}）`); return; }
+  if (dd.cdsk) { const [k, v] = dd.cdsk.split('|'), d = ui.cd.skill, sk = pr.skills.find(x => x.id === k), left = pr.sp - Object.values(d.pts).reduce((a, b) => a + b, 0);
+    const room = sk.max - sk.lv - (d.pts[k] || 0), add = v === 'max' ? Math.min(left, room) : Math.max(-(d.pts[k] || 0), Math.min(Number(v), left, room));
+    d.pts[k] = (d.pts[k] || 0) + add; if (!d.pts[k]) delete d.pts[k]; renderCharDrawer(); return; }
+  if (dd.cdskclr) { ui.cd.skill.pts = {}; renderCharDrawer(); return; }
+  if (dd.cdskok) { const d = ui.cd.skill, al = Object.entries(d.pts).map(([skill, amount]) => ({ skill, amount, from: (pr.skills.find(x => x.id === skill) || {}).lv || 0 }));
+    const txt = al.map(a => `${(pr.skills.find(x => x.id === a.skill) || {}).name} +${a.amount}`).join('、');
+    if (!confirm(`${s.char.name}：${txt}\n技能點加了就退不回來，確定分配？`)) return;
+    d.pts = {}; await cdSend(id, { type: 'learnBatch', allocations: al }, `分配技能點（${txt}）`); return; }
+  if (dd.cdact) { const sk = pr.skills.find(x => x.id === dd.cdact); await cdSend(id, { type: 'skill', skill: dd.cdact }, `掛機改用 ${sk ? sk.name : ''}`); return; }
+  if (dd.cdpladd) { const k = dd.cdpladd; ui.cd[k].rows.push(k === 'sp' ? { stat: 'str', target: 30 } : { skill: (pr.skills[0] || {}).id, target: 1 }); renderCharDrawer(); return; }
+  if (dd.cdpldel) { const [k, i] = dd.cdpldel.split('|'); ui.cd[k].rows.splice(Number(i), 1); renderCharDrawer(); return; }
+  if (dd.cdplsave) {
+    const k = dd.cdplsave, rows = ui.cd[k].rows;
+    if (k === 'sp') { if (rows.some(r => !(r.target >= 4 && r.target <= 1999))) { alert('目標要在 4～1999 之間'); return; } await cdSend(id, { type: 'statPlan', plan: rows, enabled: pr.auto.autoStats }, '儲存自動配點計畫'); }
+    else { const bad = rows.find(r => { const sk = pr.skills.find(x => x.id === r.skill); return !sk || !(r.target >= 1 && r.target <= sk.max); }); if (bad) { alert('目標等級要在 1 到那個技能的上限之間'); return; } await cdSend(id, { type: 'skillPlan', plan: rows, enabled: pr.auto.autoSkills }, '儲存自動配技能計畫'); }
+    ui.cd[k] = null; return;
+  }
+});
 function renderCharDrawer() {
   let box = $('#charDrawer');
   const id = ui.charDrawer;
@@ -4788,7 +4881,8 @@ function renderCharDrawer() {
   const name = c ? c.name : a.name || id;
   if (!forgeLoadAt) loadForge();
   let body = '';
-  if (ui.cd.tab === 'info' || !s) {
+  if (s && ['stat', 'skill', 'idle'].includes(ui.cd.tab)) body = cdProgBody(id, s);
+  else if (ui.cd.tab === 'info' || !s) {
     body = `<div class="cd-top">${avatarImg(id, 'cd')}<div class="sm">
       <div>Lv <b>${c ? c.lv : a.lv || '?'}</b>・${esc(c ? c.jobName || '' : a.job || '')}</div>
       <div>地圖：${esc(c ? c.mapName || (mapOf(c.map) || {}).name || c.map : '—')}</div>
@@ -4813,7 +4907,7 @@ function renderCharDrawer() {
       ${bag.map(x => cdGearRow(cc, x, false, forged)).join('') || '<div class="dim sm">背包裡沒有能穿的裝備</div>'}`;
   }
   box.innerHTML = `<div class="bar"><h3 style="margin:0">${esc(name)}</h3><span class="tag">${g} 組</span><span style="flex:1"></span><button class="btn sm" data-cdclose="1">✕</button></div>
-    <div class="seg" style="margin-bottom:8px">${[['gear', '裝備'], ['info', '基本資料']].map(([k, n]) => `<button data-cdtab="${k}" class="${(ui.cd.tab === k && s) || (!s && k === 'info') ? 'on' : ''}">${n}</button>`).join('')}</div>${body}`;
+    <div class="seg" style="margin-bottom:8px">${[['gear', '裝備'], ['stat', '能力點'], ['skill', '技能'], ['idle', '掛機設定'], ['info', '基本資料']].map(([k, n]) => `<button data-cdtab="${k}" class="${(ui.cd.tab === k && s) || (!s && k === 'info') ? 'on' : ''}">${n}</button>`).join('')}</div>${body}`;
 }
 document.addEventListener('toggle', e => { if (e.target.classList && e.target.classList.contains('ac-ev')) ui.acEvOpen = e.target.open; }, true);
 document.addEventListener('change', e => { if (e.target.dataset && e.target.dataset.cdwear) { ui.cd.wear = e.target.checked; renderCharDrawer(); } });

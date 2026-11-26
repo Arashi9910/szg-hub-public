@@ -556,7 +556,33 @@ setInterval(() => { try { forgeAutoTick(false); } catch (e) { console.warn('[自
 // ================= 掛機控制 =================
 // 指令（開始／暫停／重新開始）依帳號分組，交給那個帳號目前在線的遊戲頁面執行；
 // 同帳號的第二隻角色也可以直接控制（遊戲允許用 characterId 指定）。
-const IDLE_ACTIONS = new Set(['start', 'stop', 'restart', 'switch', 'wake', 'map', 'autosell']);
+const IDLE_ACTIONS = new Set(['start', 'stop', 'restart', 'switch', 'wake', 'map', 'autosell', 'cfg']);
+// v0.72：角色抽屜的能力點、技能、掛機設定（cfg）：只放行這幾種遊戲指令，欄位都檢查過；遊戲自己還會再檢查一次
+const CFG_STATS = ['str', 'dex', 'int', 'luk'], CFG_SETTINGS = ['autoSkills', 'autoStats', 'autoPotion', 'autoStartOnMap'];
+const int = (v, lo, hi) => { const n = Math.floor(Number(v)); return Number.isFinite(n) && n >= lo && n <= hi ? n : null; };
+const skillId = v => (typeof v === 'string' || typeof v === 'number') && /^[\w-]{1,40}$/.test(String(v)) ? String(v) : null;
+function cleanCfg(c) {
+  if (!c || typeof c !== 'object') return null;
+  if (c.type === 'statBatch') {
+    const al = (Array.isArray(c.allocations) ? c.allocations : []).map(a => ({ stat: CFG_STATS.includes(a.stat) ? a.stat : null, amount: int(a.amount, 1, 999), from: int(a.from, 0, 9999) })).filter(a => a.stat && a.amount && a.from != null);
+    return al.length ? { type: 'statBatch', includeSocial: false, allocations: al.slice(0, 4) } : null;
+  }
+  if (c.type === 'learnBatch') {
+    const al = (Array.isArray(c.allocations) ? c.allocations : []).map(a => ({ skill: skillId(a.skill), amount: int(a.amount, 1, 30), from: int(a.from, 0, 30) })).filter(a => a.skill && a.amount && a.from != null);
+    return al.length ? { type: 'learnBatch', allocations: al.slice(0, 60) } : null;
+  }
+  if (c.type === 'statPlan') {
+    const plan = (Array.isArray(c.plan) ? c.plan : []).map(r => ({ stat: CFG_STATS.includes(r.stat) ? r.stat : null, target: int(r.target, 4, 1999) })).filter(r => r.stat && r.target);
+    return { type: 'statPlan', plan: plan.slice(0, 8), enabled: !!c.enabled };
+  }
+  if (c.type === 'skillPlan') {
+    const plan = (Array.isArray(c.plan) ? c.plan : []).map(r => ({ skill: skillId(r.skill), target: int(r.target, 1, 30) })).filter(r => r.skill && r.target);
+    return { type: 'skillPlan', plan: plan.slice(0, 60), enabled: !!c.enabled };
+  }
+  if (c.type === 'setting') return CFG_SETTINGS.includes(c.key) ? { type: 'setting', key: c.key, value: !!c.value } : null;
+  if (c.type === 'autoBuff' || c.type === 'skill') return skillId(c.skill) ? { type: c.type, skill: skillId(c.skill) } : null;
+  return null;
+}
 // 遊戲的地圖自動販售設定：{ enabled, itemIds }（遊戲只接受角色「目前所在地圖」的設定）
 const cleanSell = x => x && typeof x === 'object' ? { enabled: !!x.enabled, itemIds: [...new Set((x.itemIds || []).map(Number).filter(n => Number.isFinite(n) && n > 0))].slice(0, 400) } : undefined;
 function accountOfChar(charId) {
@@ -606,6 +632,11 @@ function createIdleJobs(body) {
       (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'map', map: String(t.map), mapName: String(t.mapName || t.map).slice(0, 40), sell: cleanSell(t.sell) });
       continue;
     }
+    if (t.action === 'cfg') {
+      const cmd = cleanCfg(t.cmd); if (!cmd) throw new Error('設定的內容不正確');
+      (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'cfg', cmd, label: String(t.label || cmd.type).slice(0, 80) });
+      continue;
+    }
     if (t.action === 'autosell') {
       if (!t.map || !t.sell) continue;
       (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'autosell', map: String(t.map), mapName: String(t.mapName || t.map).slice(0, 40), sell: cleanSell(t.sell) });
@@ -639,8 +670,9 @@ function createIdleJobs(body) {
       toCharId: route.char.id, toName: route.char.name, toCode: route.playerCode,
       needChar: own || null,
       batches: [{ targets: list, items: [], gear: [], money: 0 }], batchIndex: 0, log: [], lastMsg: '',
+      ...(list.some(t => t.action === 'cfg') ? { minAgent: '0.72.0' } : {}),
     };
-    jobLog(job, '已送出：' + list.map(t => `${t.name} ${({ start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換為目前角色', wake: '領取離線掛機收益', map: '前往 ' + (t.mapName || '') + (t.sell ? '（套用自動販售）' : ''), autosell: '套用 ' + (t.mapName || '') + ' 的自動販售' })[t.action]}`).join('、'));
+    jobLog(job, '已送出：' + list.map(t => `${t.name} ${({ start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換為目前角色', wake: '領取離線掛機收益', cfg: t.label || '', map: '前往 ' + (t.mapName || '') + (t.sell ? '（套用自動販售）' : ''), autosell: '套用 ' + (t.mapName || '') + ' 的自動販售' })[t.action]}`).join('、'));
     db.jobs.push(job);
     jobs.push(job);
   }
