@@ -6607,7 +6607,7 @@ setInterval(poll, 10000);
 setInterval(() => { if (!document.hidden && (DATA.jobs || []).some(j => ['approved', 'running'].includes(j.status))) poll(); }, 3000);
 // ---- 手機配對（只在家裡電腦上能用）：產生裝置通行碼、顯示 QR code、撤銷 ----
 // ---------- 🖥 背景執行（bg.js）：「帳號」分頁 ----------
-const BG_STATE = { off: ['已停止', ''], stopping: ['停止中…', 'warn'], starting: ['啟動中…', 'warn'], running: ['執行中', 'ok'], login: ['登入視窗開著', 'warn'], error: ['有問題', 'bad'] };
+const BG_STATE = { off: ['已停止', ''], stopping: ['停止中…', 'warn'], starting: ['啟動中…', 'warn'], running: ['執行中', 'ok'], login: ['登入視窗開著', 'warn'], wait: ['等視窗關掉', 'warn'], error: ['有問題', 'bad'] };
 let bgLast = null;
 ui.acSel = new Set();
 async function loadBg() { const r = await fetch('/api/bg'); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status); bgLast = j; renderBgSum(); return j; }

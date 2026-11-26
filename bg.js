@@ -248,6 +248,19 @@ ${fixed}
       const dir = dirOf(id); prepDir(dir);
       // 中控重新啟動後，背景 Chrome 可能還在跑：直接接上
       let ws = opt.visible ? '' : await wsFromDir(dir, 0), reattach = !!ws;
+      // v0.71.2：接不上的時候先看這個資料夾是不是有 Chrome 開著，不要一律關掉（以前自動更新重開中控時，會把開著的視窗關掉）
+      //   - 中控開的 Chrome（有遠端除錯）：多半是電腦正忙、一下子沒回應，多等一下再接
+      //   - 不是中控開的（登入視窗、自己開的視窗）：不關，等它關掉再開始；按「開始」（opt.force）才會照舊關掉重開
+      if (!ws && !opt.visible) {
+        const mine = await chromeOf(id);
+        if (mine.some(x => /--remote-debugging-port/.test(x.cmd))) { ws = await wsFromDir(dir, 12000); reattach = !!ws; }
+        else if (mine.length && !opt.force) {
+          r.state = 'wait'; r.msg = '這個帳號的 Chrome 視窗開著（可能是登入視窗）：關掉後會自動開始背景執行';
+          if (!r.waitLogged) { r.waitLogged = true; log(`${p.name}：${r.msg}`); }
+          return;
+        }
+      }
+      r.waitLogged = false;
       r.visible = opt.visible ? String(opt.visible) : '';
       if (!ws) {
         // 先清掉殘留：還佔著這個資料夾的 Chrome（登入視窗關了但程式沒結束）、上次沒清乾淨的鎖定檔
@@ -299,7 +312,12 @@ ${fixed}
           // 接回中控重新啟動前就開著的遊戲分頁：重新裝好代送與注入（之後重新整理也有腳本），不用重新整理
           const { sessionId } = await cdp.send('Target.attachToTarget', { targetId: t.targetId, flatten: true });
           let key = '';
-          try { const v = await cdp.send('Runtime.evaluate', { expression: 'window.__szgBg ? window.__szgBg.key : ""', returnByValue: true }, sessionId); key = (v.result && v.result.value) || ''; } catch (_) {}
+          // 分頁可能正在重新整理（例如剛好要換新版腳本）：多問幾次，問不到就當成第一個還沒接上的角色分頁，不要關掉它重開（v0.71.2）
+          for (let i = 0; i < 6 && !key; i++) {
+            try { const v = await cdp.send('Runtime.evaluate', { expression: 'window.__szgBg ? window.__szgBg.key : ""', returnByValue: true }, sessionId); key = (v.result && v.result.value) || ''; } catch (_) {}
+            if (!key) await sleep(500);
+          }
+          if (!key) key = want.find(k => !r.pages[k]) || '';
           if (key && want.includes(key) && !r.pages[key]) {
             const scriptId = await setupSession(r, key, sessionId);
             r.pages[key] = { targetId: t.targetId, sessionId, scriptId, char: key === '_' ? '' : key, openedAt: Date.now(), info: null, fail: 0, acctAt: 0 };
@@ -494,6 +512,8 @@ ${fixed}
   // 只用「data\bg\<帳號編號>」比對（編號是英數字），不受資料夾路徑的中文、大小寫影響
   const dirRe = id => new RegExp('[\\\\/]bg[\\\\/]' + String(id).replace(/[^\w-]/g, '') + '(["\\s\\\\/]|$)', 'i');
   // 找出還佔著這個帳號資料夾的 Chrome（例如登入視窗關了但程式沒結束），全部結束掉
+  // 這個帳號資料夾的 Chrome 主程序（不含子程序）
+  async function chromeOf(id) { const re = dirRe(id); try { return (await listChrome()).filter(x => !/--type=/.test(x.cmd) && re.test(x.cmd)); } catch (_) { return []; } }
   async function killStale(id) {
     const re = dirRe(id), find = async () => (await listChrome()).filter(x => !/--type=/.test(x.cmd) && re.test(x.cmd));
     let hit = await find(); const n = hit.length;
@@ -634,7 +654,7 @@ ${fixed}
     }
     else if (name === 'hide') { const r = R(p.id); if (r.visible) { r.busy = true; try { await stopBrowser(p.id); } finally { r.busy = false; } r.visible = ''; await start(p.id); } }
     else if (name === 'remove') { await stop(p.id); delete run[p.id]; setCfg({ ...c, profiles: list.filter(x => x.id !== p.id) }); }
-    else if (name === 'start') { patchProf(p.id, { on: true }); R(p.id).fails = []; await start(p.id); }
+    else if (name === 'start') { patchProf(p.id, { on: true }); R(p.id).fails = []; await start(p.id, { force: true }); }
     else if (name === 'stop') { patchProf(p.id, { on: false }); await stop(p.id); }
     else if (name === 'login') { patchProf(p.id, { on: true }); await login(p.id); }
     else if (name === 'login-done') await loginDone(p.id);
