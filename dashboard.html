@@ -2785,8 +2785,8 @@ document.addEventListener('click', async e => {
     }
     if (t.dataset && t.dataset.switch) {
       t.disabled = true; t.textContent = '切換中…';
-      await api('/api/idle', { targets: [{ charId: t.dataset.switch, action: 'switch' }] });
-      setIdleMsg('已送出切換，該帳號的遊戲分頁會自動重新整理（約 10 秒）');
+      const r = await api('/api/idle', { targets: [{ charId: t.dataset.switch, action: 'switch' }] });
+      setIdleMsg((r.skipped || []).length && !(r.jobs || []).length ? r.skipped.join('、') : '已送出切換，該帳號的遊戲分頁會自動重新整理（約 10 秒）');
       await poll(true);
     }
     if (t.dataset && t.dataset.idle) {

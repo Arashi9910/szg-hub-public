@@ -199,6 +199,59 @@ ${fixed}
     r.pages[key] = { targetId, sessionId, scriptId, char, openedAt: Date.now(), info: null, fail: 0, acctAt: 0 };
     await r.cdp.send('Page.navigate', { url }, sessionId);
   }
+  // 分頁顯示的角色跑掉了（v0.74.2）：遊戲在某些情況（同帳號另一頁切換角色、伺服器「目前角色」變了…）會把分頁換成另一隻，
+  // 結果兩頁都是同一隻、另一隻沒有分頁（面板出現「切換」、不會自動續掛）。這裡把「多出來的那頁」換回它該顯示的角色。
+  // 只在兩頁都載入完成、那頁沒有工作在跑、不是讓位中時做；同一頁 3 分鐘內最多一次
+  function pageToHeal(r, p, charId) {
+    const pages = Object.entries(r.pages), shown = k => ((r.pages[k] || {}).info || {}).char || '';
+    if (!charId || pages.some(([, pg]) => (pg.info || {}).char === charId)) return null; // 已經有分頁顯示這隻
+    const cnt = {}; for (const [, pg] of pages) { const c = (pg.info || {}).char; if (c) cnt[c] = (cnt[c] || 0) + 1; }
+    const ok = k => { const i = (r.pages[k] || {}).info || {}; return i.hasState && i.char && !i.busy && !(i.bg && i.bg.standby); };
+    // 優先換「本來就該顯示這隻」的那頁（它現在顯示的是重複的角色）；沒有的話換任何一頁重複的
+    if (r.pages[charId] && ok(charId) && cnt[shown(charId)] > 1) return charId;
+    const dup = pages.find(([k, pg]) => ok(k) && cnt[(pg.info || {}).char] > 1 && !(r.pages[(pg.info || {}).char] === pg));
+    return dup ? dup[0] : null;
+  }
+  async function repinPage(r, p, key, charId, why) {
+    const pg = r.pages[key]; if (!pg || !r.cdp) return false;
+    pg.healAt = Date.now();
+    const nm = n => { try { return (opt.charName && opt.charName(n)) || n; } catch (_) { return n; } };
+    log(`${p.name}：分頁顯示的角色跑掉了（兩頁都是 ${nm(pg.info.char)}），換回 ${nm(charId)}${why ? '（' + why + '）' : ''}`);
+    (r.logs || (r.logs = [])).push({ at: Date.now(), page: key, msg: `分頁換回 ${charId}（原本兩頁顯示同一隻）` });
+    pg.char = charId; pg.openedAt = Date.now(); pg.info = { ...pg.info, char: charId, hasState: false };
+    await r.cdp.send('Page.navigate', { url: GAME + '/game/?szgChar=' + encodeURIComponent(charId) }, pg.sessionId);
+    return true;
+  }
+  async function healPages(r, p) {
+    if (r.visible || r.state !== 'running') return;
+    const pages = Object.values(r.pages); if (pages.length < 2) return;
+    for (const want of Object.keys(r.pages).filter(k => k !== '_')) {
+      const key = pageToHeal(r, p, want); if (!key) continue;
+      if (Date.now() - (r.pages[key].healAt || 0) < 3 * 60000) continue;
+      await repinPage(r, p, key, want);
+      return; // 一輪只換一頁
+    }
+  }
+  // 這隻角色是不是背景執行中某個帳號的分頁該顯示的，現在有沒有分頁顯示它（同步，給伺服器判斷用）
+  function charPage(charId) {
+    for (const p of cfg().profiles) {
+      const r = run[p.id]; if (!r || !r.cdp || r.state !== 'running' || !wantKeys(p).includes(charId)) continue;
+      return { name: p.name, shown: Object.values(r.pages).some(pg => (pg.info || {}).char === charId) };
+    }
+    return null;
+  }
+  // 面板按「切換」：這隻在背景執行、有它自己的背景分頁 → 換那一頁就好（不要用遊戲的切換，會讓同帳號的另一頁跟著跑掉）
+  async function repinChar(charId) {
+    for (const p of cfg().profiles) {
+      const r = run[p.id]; if (!r || !r.cdp || r.state !== 'running' || !wantKeys(p).includes(charId)) continue;
+      if (Object.values(r.pages).some(pg => (pg.info || {}).char === charId)) return { ok: true, already: true, name: p.name };
+      const key = pageToHeal(r, p, charId) || (r.pages[charId] ? charId : null);
+      if (!key) return null;
+      await repinPage(r, p, key, charId, '面板按切換');
+      return { ok: true, name: p.name };
+    }
+    return null;
+  }
   async function closePage(r, key) {
     const pg = r.pages[key]; delete r.pages[key];
     if (pg && r.cdp && !r.cdp.closed) await r.cdp.send('Target.closeTarget', { targetId: pg.targetId }).catch(() => {});
@@ -503,6 +556,7 @@ ${fixed}
         for (const k of Object.keys(r.pages)) if (!want.includes(k)) await closePage(r, k);
         for (const k of want) if (!r.pages[k]) await openPage(r, k).catch(e => { r.msg = e.message; });
         for (const [k, pg] of Object.entries(r.pages)) await probe(r, k, pg);
+        await healPages(r, p).catch(e => log(`${p.name}：換回分頁的角色失敗（${e.message}）`));
       }
       // 定時記憶體整理：一輪只整理一個帳號，輪流
       const TM = cfg().trimMin;
@@ -812,5 +866,5 @@ ${fixed}
     await Promise.all(cfg().profiles.map(p => (run[p.id] && run[p.id].cdp) ? stopBrowser(p.id).catch(() => {}) : null));
   }
 
-  return { boot, tick, status, action, shutdown, exportCsv, gameSrc, GAME };
+  return { boot, tick, status, action, shutdown, exportCsv, gameSrc, GAME, repinChar, charPage };
 };

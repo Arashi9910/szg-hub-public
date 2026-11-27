@@ -71,6 +71,9 @@ function agentMain(ctx) {
   let becoming = false;
   async function becomeOther() {
     if (becoming || performance.now() > 90000) return; // 只處理剛開的分頁；開很久的分頁不自動換
+    // 背景執行的分頁是中控指定角色開的（window.__szgBg.key）：不自己換。以前背景分頁沒回應被重開時，舊分頁的標記還沒過期，
+    // 新分頁以為「這隻已經有人負責」就換成同帳號另一隻 → 兩頁同一隻、另一隻沒有分頁（v0.74.2）
+    if (BG && BG.key && BG.key !== '_') return;
     const last = Number(sessionStorage.getItem('szgAutoOther') || 0);
     if (Date.now() - last < 60000) return; // 剛換過還是重複：不要一直重新整理
     becoming = true;

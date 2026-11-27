@@ -645,13 +645,25 @@ function routeForAccount(accountId, preferChar) {
   const lt = liveTabs(code).map(id => db.chars[id]).filter(Boolean);
   return lt[0] || list[0];
 }
+// 背景執行的角色：同步檢查有沒有它的背景分頁可以換（實際換頁是非同步的）
+function bgRepin(charId) {
+  try {
+    const cp = bg.charPage(charId);
+    if (!cp || cp.shown) return false; // 不是背景執行的、或已經有分頁顯示它：照原本的做法
+    bg.repinChar(charId).catch(e => console.warn('[背景執行] 換回分頁失敗', e));
+    return true;
+  } catch (_) { return false; }
+}
 function createIdleJobs(body) {
+  let repinned = 0;
   const targets = (body.targets || []).filter(t => t && t.charId && IDLE_ACTIONS.has(t.action));
   if (!targets.length) throw new Error('沒有選擇角色');
   const byAcc = {}, skipped = [];
   for (const t of targets) {
     const acc = accountOfChar(t.charId);
     if (!acc) continue;
+    // v0.74.2：背景執行、有自己背景分頁的角色 → 換回它的背景分頁（不用遊戲的切換：會讓同帳號另一頁的角色跟著跑掉）
+    if (t.action === 'switch' && bgRepin(t.charId)) { skipped.push(`${charName(t.charId)} 在背景執行：已把它的背景分頁換回這隻（幾秒後會有分頁）`); repinned++; continue; }
     // 已經有自己分頁的角色不用切換（切了反而會讓兩個分頁變成同一隻）
     if (t.action === 'switch' && charHasTab(t.charId)) { skipped.push(`${charName(t.charId)} 已經有自己的分頁`); continue; }
     if (t.action === 'switch') {
@@ -714,6 +726,7 @@ function createIdleJobs(body) {
     db.jobs.push(job);
     jobs.push(job);
   }
+  if (!jobs.length && repinned) { jobs.skipped = skipped; return jobs; }
   if (!jobs.length) throw new Error(skipped.length ? skipped.join('、') + '，不用切換' : '找不到可執行的遊戲頁面（那些帳號的遊戲分頁要開著）');
   if (skipped.length) jobs.skipped = skipped;
   save();
@@ -1473,6 +1486,7 @@ const bg = makeBg({
   dataDir: DATA_DIR, hubUrl: `http://127.0.0.1:${PORT}`,
   getCfg: () => db.settings.bg || {}, setCfg: c => { db.settings.bg = c; save(); },
   userscript: userscriptSource, agent: agentSource, log: m => console.log('[背景執行] ' + m),
+  charName: id => (db.chars[id] && db.chars[id].char && db.chars[id].char.name) || '',
 });
 const server = http.createServer(async (req, res) => {
   try {
