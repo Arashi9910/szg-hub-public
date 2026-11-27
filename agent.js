@@ -407,7 +407,7 @@ function agentMain(ctx) {
         catch (e) { if (e.gameUpdated || i >= 3 || !/忙碌|稍後|503|busy/i.test(e.message)) throw e; await sleepP(1500 + i * 1500 + Math.random() * 1000); }
       }
     }
-    const raidMem = m => m && { id: m.id, name: m.name, job: m.job, lv: m.lv, leader: !!m.leader, ready: !!m.ready, online: m.online !== false, ok: m.ok !== false, issues: (m.issues || []).slice(0, 6).map(String), left: m.left, mage: !!m.mage };
+    const raidMem = m => m && { id: m.id, name: m.name, job: m.job, lv: m.lv, leader: !!m.leader, ready: !!m.ready, online: m.online !== false, ok: m.ok !== false, issues: (m.issues || []).slice(0, 6).map(String), left: m.left, mage: !!m.mage || /mage|wizard|cleric|priest|bishop|magician/i.test(String(m.job || '')) };
     function raidReportView(charId, r) {
       const v = r && r.raid; if (!v && !(r && ('raidTeam' in r))) return;
       const team = v && v.team;
@@ -422,7 +422,7 @@ function agentMain(ctx) {
         team: team ? { code: team.code, name: team.name ? String(team.name).slice(0, 30) : '', locked: !!team.locked, isLeader: !!team.isLeader, members: (team.members || []).slice(0, 12).map(raidMem) } : null, battle: !!(v && v.battle) || !!r.raidBattle } }).catch(() => {});
     }
     // 即時：在副本隊伍或戰鬥中時回報（每 1 秒）。中控指定的「回報者」（隊長）戰鬥中自己多同步一次拿王的血量；其他人讀頁面上的資料，不另外打遊戲
-    let raidLiveBusy = false, raidWas = false, raidLastPush = 0, raidReporter = false;
+    let raidLiveBusy = false, raidWas = false, raidLastPush = 0, raidReporter = false, raidViewAt = 0;
     async function raidLiveTick() {
       if (raidLiveBusy || passive()) return;
       let st = readState(); const c = st && st.character; if (!c) return;
@@ -441,6 +441,8 @@ function agentMain(ctx) {
           me: { hp: ch.hp, maxhp: ch.maxhp || ch.maxHp, mp: ch.mp, maxmp: ch.maxmp || ch.maxMp, diseases: ch.diseases || null, lockUntil: (st.raid && st.raid.lockUntil) || ch.lockUntil || 0, map: ch.map } }).catch(() => null);
         raidReporter = !!(r && r.reporter);
         raidLastPush = now; raidWas = inRaid;
+        // 還沒開打時，回報者每 5 秒讀一次隊伍（誰加入了、誰準備好了），中控的隊伍表才會跟遊戲一樣
+        if (raidReporter && inRaid && !st.raidBattle && now - raidViewAt > 5000) { raidViewAt = now; raidGame({ type: 'sync' }, c.id).then(j => raidReportView(c.id, j)).catch(() => {}); }
       } finally { raidLiveBusy = false; }
     }
     function progOf(c) {

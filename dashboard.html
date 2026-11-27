@@ -7048,7 +7048,15 @@ function raidRules(kind) { for (const v of Object.values((RAID && RAID.views) ||
 const raidSelf = id => { const v = RAID && RAID.views[id]; return v && v.view && v.view.self; };
 const raidAll = p => [p.leader, ...p.members].filter(Boolean);
 async function loadRaid() { if (raidLoading) return; raidLoading = true; try { RAID = await (await fetch('/api/raid')).json(); } finally { raidLoading = false; } }
-function raidLeaderView() { const p = raidPlan(), v = RAID && RAID.views[p.leader]; return v && v.view; }
+// 隊伍表用「最新的」那份：隊長的資料可能是建立時的舊資料，隊員加入／準備後他們自己回報的比較新（v0.77.2）
+function raidLeaderView() {
+  const p = raidPlan(); if (!RAID) return null; const lead = RAID.views[p.leader];
+  const code = lead && lead.view && lead.view.team && lead.view.team.code;
+  let best = lead;
+  for (const id of raidAll(p)) { const v = RAID.views[id]; if (!v || !v.view || !v.view.team) continue; if (code && v.view.team.code !== code) continue; if (!best || !best.view || !best.view.team || v.at > best.at) best = v; }
+  if (!best || !best.view) return null;
+  return best === lead ? lead.view : { ...best.view, raid: best.view.raid || (lead && lead.view && lead.view.raid), raids: (lead && lead.view && lead.view.raids) || best.view.raids };
+}
 const secLeft = (t, now) => Math.max(0, Math.ceil((Number(t) - now) / 1000));
 function hpBar(v, max, cls = '') { const pct = max > 0 ? Math.max(0, Math.min(100, v / max * 100)) : 0; return `<div class="rd-bar ${cls}"><i style="width:${pct.toFixed(1)}%"></i><span>${max ? `${short(v)} / ${short(max)}（${pct.toFixed(1)}%）` : '—'}</span></div>`; }
 function renderRaid() {
