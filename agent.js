@@ -41,7 +41,9 @@ function agentMain(ctx) {
   const ck = k => k + ':' + myChar(); // 每隻角色（每個分頁）各自一份的設定鍵；同設定檔的分頁共用 GM 儲存空間
   // 這隻角色由哪個分頁負責：{page, at, hidden}。同一隻角色開了兩個分頁時，後開的那個暫停中控功能，避免同一件事做兩次
   const tabKey = id => 'charTab:' + id;
-  const tabFresh = v => v && Date.now() - v.at < (v.hidden ? 100000 : 20000);
+  // 背景執行：bg.js 每次開 Chrome 給一個 boot 編號；上一次 Chrome（例如剛關掉的無頭背景、換成「顯示」的視窗）留下的標記不算（v0.74.3）
+  const bgBoot = () => { try { return (W && W.__szgBg && W.__szgBg.boot) || ''; } catch (_) { return ''; } };
+  const tabFresh = v => v && Date.now() - v.at < (v.hidden ? 100000 : 20000) && !(bgBoot() && v.boot && v.boot !== bgBoot());
   const isMe = v => v && (v.page === PAGE_ID || (v.tab && v.tab === TAB_ID)); // 同一個分頁重新整理前的自己
   let dupTab = false;
   function tabBeat() {
@@ -53,7 +55,7 @@ function agentMain(ctx) {
       return;
     }
     if (dupTab) { dupTab = false; setBadge('ok'); }
-    GM_setValue(tabKey(id), { page: PAGE_ID, tab: TAB_ID, at: Date.now(), hidden: document.hidden });
+    GM_setValue(tabKey(id), { page: PAGE_ID, tab: TAB_ID, at: Date.now(), hidden: document.hidden, boot: bgBoot() || undefined });
   }
   // 別的分頁是否正在負責某隻角色（同帳號的另一隻有自己的分頁時，這個分頁就不幫它做事）
   const otherTabHas = id => { const v = GM_getValue(tabKey(id), null); return !!(v && !isMe(v) && tabFresh(v)); };

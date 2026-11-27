@@ -108,13 +108,13 @@ module.exports = function makeBg(opt) {
   const sandboxArgs = () => (process.platform === 'linux' && process.getuid && process.getuid() === 0 ? ['--no-sandbox'] : []);
 
   // ---------- 分頁裡注入的程式（等於背景版的竄改猴＋中控腳本） ----------
-  function injected(id, key, lite) {
+  function injected(id, key, lite, boot) {
     const us = userscript(); const body = us.split('// ==/UserScript==')[1] || us;
     const fixed = body.replace(/const HUB = '[^']*';/, `const HUB = ${JSON.stringify(hubUrl)};`);
     return `(function(){
 if (location.origin !== ${JSON.stringify(GAME)} || location.pathname.indexOf('/game') !== 0) return;
 if (window.__szgBg) return; // 防止重複注入
-window.__szgBg = { profile: ${JSON.stringify(id)}, key: ${JSON.stringify(key)}, standby: false, lite: ${lite ? 'true' : 'false'} };
+window.__szgBg = { profile: ${JSON.stringify(id)}, key: ${JSON.stringify(key)}, standby: false, lite: ${lite ? 'true' : 'false'}, boot: ${JSON.stringify(boot || '')} };
 ${lite ? `// 省資源模式：背景分頁沒人看，動畫每 0.5 秒畫一格就好（遊戲資料照常同步），關掉 CSS 動畫
 (function(){ try { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = cb => setTimeout(() => raf(cb), 500); } catch (_) {}
   const st = () => { try { const e = document.createElement('style'); e.textContent = '*,*::before,*::after{animation:none!important;transition:none!important}'; (document.head || document.documentElement).appendChild(e); } catch (_) {} };
@@ -162,7 +162,7 @@ ${fixed}
     await cdp.send('Runtime.addBinding', { name: '__szgGmx' }, sid);
     await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true }, sid).catch(() => {}); // 背景分頁也當成「看得到」，不會掉進離線掛機
     await applyLiteNet(r, sid);
-    const { identifier } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: injected(r.id, key, liteFor(r)) }, sid);
+    const { identifier } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: injected(r.id, key, liteFor(r), r.boot) }, sid);
     return identifier;
   }
   // 「帳號目前的角色」那頁（key '_'）改成固定那隻角色：不重開分頁，只換注入的 key（重新整理、中控重啟後也認得）
@@ -172,7 +172,7 @@ ${fixed}
       try {
         if (pg.scriptId) await r.cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: pg.scriptId }, pg.sessionId).catch(() => {});
         await applyLiteNet(r, pg.sessionId);
-        pg.scriptId = (await r.cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: injected(r.id, key, liteFor(r)) }, pg.sessionId)).identifier;
+        pg.scriptId = (await r.cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: injected(r.id, key, liteFor(r), r.boot) }, pg.sessionId)).identifier;
         await r.cdp.send('Page.reload', {}, pg.sessionId);
         pg.openedAt = Date.now();
       } catch (_) {}
@@ -182,7 +182,7 @@ ${fixed}
     const pg = r.pages[from]; if (!pg || r.pages[to] || !r.cdp) return false;
     try {
       if (pg.scriptId) await r.cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: pg.scriptId }, pg.sessionId).catch(() => {});
-      const { identifier } = await r.cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: injected(r.id, to, liteFor(r)) }, pg.sessionId);
+      const { identifier } = await r.cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: injected(r.id, to, liteFor(r), r.boot) }, pg.sessionId);
       await r.cdp.send('Runtime.evaluate', { expression: `window.__szgBg && (window.__szgBg.key = ${JSON.stringify(to)})` }, pg.sessionId).catch(() => {});
       pg.scriptId = identifier; pg.char = to;
       delete r.pages[from]; r.pages[to] = pg;
@@ -251,6 +251,15 @@ ${fixed}
       return { ok: true, name: p.name };
     }
     return null;
+  }
+  async function closeForeign(r, cdp) {
+    if (r.cdp !== cdp || cdp.closed) return;
+    const mine = new Set(Object.values(r.pages).map(pg => pg.targetId));
+    const { targetInfos } = await cdp.send('Target.getTargets');
+    const foreign = (targetInfos || []).filter(t => t.type === 'page' && !mine.has(t.targetId));
+    if (!foreign.length || foreign.length >= (targetInfos || []).filter(t => t.type === 'page').length) return; // 不會把中控的分頁也關掉、不會關到一頁都不剩
+    for (const t of foreign) await cdp.send('Target.closeTarget', { targetId: t.targetId }).catch(() => {});
+    log(`${(prof(r.id) || {}).name}：關掉 Chrome 自己開回來的 ${foreign.length} 個舊分頁`);
   }
   async function closePage(r, key) {
     const pg = r.pages[key]; delete r.pages[key];
@@ -359,7 +368,7 @@ ${fixed}
         }
       }
       const cdp = new Cdp(ws); await cdp.ready;
-      r.cdp = cdp; r.pages = {};
+      r.cdp = cdp; r.pages = {}; r.boot = Date.now().toString(36) + Math.random().toString(36).slice(2, 6); // 這次 Chrome 的編號（分頁標記用，v0.74.3）
       cdp.on(m => onEvent(r, m, cdp));
       const { targetInfos } = await cdp.send('Target.getTargets');
       const pagesT = (targetInfos || []).filter(t => t.type === 'page');
@@ -391,8 +400,12 @@ ${fixed}
       }
       for (const k of want) if (!r.pages[k]) await openPage(r, k);
       if (r.visible) { const pg = r.pages[r.visible] || r.pages[want[0]]; if (pg) await cdp.send('Target.activateTarget', { targetId: pg.targetId }).catch(() => {}); }
-      // 開機時的空白頁、上次留下的頁面；看得到的視窗是你在用的，不關它的分頁（v0.71.3）
-      if (!r.visible) for (const t of extra) await cdp.send('Target.closeTarget', { targetId: t }).catch(() => {});
+      // 開機時的空白頁、上次留下的頁面；看得到的視窗是你在用的，不關它的分頁（v0.71.3）——
+      // 但中控剛開的「顯示」視窗（不是接回）一開始那頁空白頁要關掉（遊戲分頁已經開好了，視窗不會跟著關，v0.74.3）
+      if (!r.visible || !reattach) for (const t of extra) await cdp.send('Target.closeTarget', { targetId: t }).catch(() => {});
+      // 中控剛開的 Chrome：Chrome 會「繼續上次的工作階段」把上次的分頁也開回來（會晚一點才出現），那些不是中控的分頁
+      // （沒有中控腳本、可能跟我們的分頁同一隻角色）→ 開好後再清兩次（v0.74.3：「顯示」的視窗多出空白頁、同一隻角色開兩頁）
+      if (!reattach) for (const ms of [2500, 7000]) setTimeout(() => closeForeign(r, cdp).catch(() => {}), ms);
       r.state = 'running'; r.startedAt = Date.now();
       log(`${p.name}：${reattach ? '接上執行中的' : '啟動'}${r.visible ? '看得到的' : '背景'} Chrome（${want.length} 個分頁）`);
     } catch (e) {
