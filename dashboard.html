@@ -312,7 +312,7 @@
   .tparty .tp-hd { position: absolute; top: -1px; left: 6px; font-size: 11px; color: #b9a3f5; cursor: grab; white-space: nowrap; max-width: 95%; overflow: hidden; text-overflow: ellipsis; user-select: none; }
   .tparty .tp-hd:hover { color: #fff; }
   .tav.tdim { opacity: .28; }
-  .rd-mems { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0; }
+  .rd-mems { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0; } .rd-rule { margin: 4px 0; padding: 4px 8px; border-left: 3px solid var(--accent); background: var(--panel2); }
   .rd-bar { position: relative; height: 16px; background: var(--panel2); border-radius: 4px; overflow: hidden; min-width: 140px; }
   .rd-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: #3e9c5a; transition: width .5s; } .rd-bar.boss i { background: #c0392b; } .rd-bar.mp i { background: #2f6fbf; }
   .rd-bar span { position: relative; font-size: 11px; padding-left: 6px; line-height: 16px; white-space: nowrap; }
@@ -7042,7 +7042,10 @@ function toastMsg(m) { let el = $('#lbToast'); if (!el) { el = document.createEl
 const RAID_NAME = { papulatus: '拉圖斯', zakum: '殘暴炎魔' };
 const AIL_NAME = { seal: '封印', darkness: '黑暗', stun: '暈眩', curse: '詛咒', poison: '中毒', weakness: '虛弱', slow: '緩慢' };
 let RAID = null, raidLoading = false;
-function raidPlan() { const p = S.raid || {}; return { kind: RAID_NAME[p.kind] ? p.kind : 'papulatus', leader: p.leader || '', members: (p.members || []).filter(x => x && x !== p.leader).slice(0, 5) }; }
+function raidPlan() { const p = S.raid || {}; return { kind: RAID_NAME[p.kind] ? p.kind : 'papulatus', leader: p.leader || '', members: (p.members || []).filter(x => x && x !== p.leader).slice(0, 11), lock: !!p.lock, password: String(p.password || '').slice(0, 12) }; }
+// 遊戲回的副本規則（等級、人數、法師、費用、時間、每週場數）：任一隻角色讀過就有
+function raidRules(kind) { for (const v of Object.values((RAID && RAID.views) || {})) { const r = v.view && (v.view.raids || []).find(x => x && x.id === kind); if (r) return r; } return null; }
+const raidSelf = id => { const v = RAID && RAID.views[id]; return v && v.view && v.view.self; };
 const raidAll = p => [p.leader, ...p.members].filter(Boolean);
 async function loadRaid() { if (raidLoading) return; raidLoading = true; try { RAID = await (await fetch('/api/raid')).json(); } finally { raidLoading = false; } }
 function raidLeaderView() { const p = raidPlan(), v = RAID && RAID.views[p.leader]; return v && v.view; }
@@ -7050,18 +7053,29 @@ const secLeft = (t, now) => Math.max(0, Math.ceil((Number(t) - now) / 1000));
 function hpBar(v, max, cls = '') { const pct = max > 0 ? Math.max(0, Math.min(100, v / max * 100)) : 0; return `<div class="rd-bar ${cls}"><i style="width:${pct.toFixed(1)}%"></i><span>${max ? `${short(v)} / ${short(max)}（${pct.toFixed(1)}%）` : '—'}</span></div>`; }
 function renderRaid() {
   if (document.querySelector('nav button.on').dataset.tab !== 'raid') return;
+  { const p = raidPlan(); if (!ui.rdAuto && RAID && p.leader && !raidRules(p.kind) && hasTab(p.leader)) { ui.rdAuto = true; api('/api/raid/act', { targets: raidAll(p).filter(hasTab).map(id => ({ charId: id, cmd: { type: 'sync', raid: p.kind }, label: '讀取副本資料' })) }).catch(() => {}); } }
   loadRaid().then(drawRaid).catch(e => { $('#rdMsg').textContent = '讀不到副本資料：' + e.message; });
 }
 function drawRaid() {
   if (!RAID) return;
   const p = raidPlan(), all = raidAll(p), chars = snaps().map(s => s.char).sort((a, b) => b.lv - a.lv), now = Date.now() + ((RAID.now || Date.now()) - Date.now());
   const opt = (id, sel) => `<option value="${esc(id)}" ${sel ? 'selected' : ''}>${esc(charNameOf(id))}${hasTab(id) ? '' : '（沒分頁）'}</option>`;
-  const typing = document.activeElement && document.activeElement.closest && document.activeElement.closest('#rdSetup');
+  const ae = document.activeElement, typing = ae && ae.closest && ae.closest('#rdSetup') && ae.tagName === 'INPUT' && ae.type !== 'checkbox'; // 打字中不重畫（勾選框照常）
   if (!typing) $('#rdSetup').innerHTML = `<div class="bar"><span class="seg">${Object.entries(RAID_NAME).map(([k, n]) => `<button data-rdkind="${k}" class="${p.kind === k ? 'on' : ''}">${n}</button>`).join('')}</span>
       <label>隊長 <select id="rdLeader"><option value="">選一隻</option>${chars.map(c => opt(c.id, c.id === p.leader)).join('')}</select></label>
-      <span class="dim sm">隊員最多 5 隻（隊長之外）；要有自己的遊戲分頁或背景執行</span></div>
-    <div class="rd-mems">${chars.filter(c => c.id !== p.leader).map(c => `<label class="${hasTab(c.id) ? '' : 'dim'}"><input type="checkbox" data-rdmem="${esc(c.id)}" ${p.members.includes(c.id) ? 'checked' : ''}> ${esc(c.name)} <span class="dim sm">Lv${c.lv} ${esc(c.jobName || '')}</span></label>`).join('')}</div>`;
+      <label title="上鎖的隊伍要密碼才能加入；中控會幫自己的隊員帶上密碼"><input type="checkbox" id="rdLock" ${p.lock ? 'checked' : ''}> 上鎖</label>${p.lock ? `<input id="rdPw" value="${esc(p.password)}" placeholder="密碼（最多 12 字）" maxlength="12" style="width:140px">` : ''}
+      <span class="dim sm">要有自己的遊戲分頁或背景執行；按「↻ 重新整理」讀每隻本週剩幾場、是不是法師</span></div>
+    ${(() => { const R = raidRules(p.kind); return R ? `<div class="sm rd-rule">參加等級 <b>${R.minLevel}</b> 以上・隊伍 <b>${R.minMembers}～${R.maxMembers}</b> 人${R.requireMage ? '・<b>至少 1 名法師系列</b>' : ''}・每人入場 <b>${short(R.feeMesos)}</b> 楓幣${R.feePoints ? `＋<b>${R.feePoints}</b> 商城點數` : ''}・挑戰 ${R.minutes} 分鐘・每週最多 ${R.weeklyRuns} 場<span class="dim">（開始時才扣費；入場次數通關才扣）</span></div>` : '<div class="dim sm">按「↻ 重新整理」讀副本規則</div>'; })()}
+    <div class="rd-mems">${chars.filter(c => c.id !== p.leader).map(c => { const sf = raidSelf(c.id), R = raidRules(p.kind), low = R && c.lv < R.minLevel;
+      return `<label class="${hasTab(c.id) && !low ? '' : 'dim'}" title="${low ? `等級不到 ${R.minLevel}` : ''}"><input type="checkbox" data-rdmem="${esc(c.id)}" ${p.members.includes(c.id) ? 'checked' : ''}> ${esc(c.name)} <span class="dim sm">Lv${c.lv} ${esc(c.jobName || '')}${sf && sf.mage ? ' 🔮法師' : ''}${sf && sf.left != null ? `・本週剩 ${sf.left}` : ''}</span></label>`; }).join('')}</div>`;
   const lv = raidLeaderView(), team = lv && lv.team, inTeam = new Set(((team && team.members) || []).map(m => m.id));
+  { const R = raidRules(p.kind), warn = [];
+    if (R && all.length && all.length < R.minMembers) warn.push(`至少要 ${R.minMembers} 人（現在 ${all.length}）`);
+    if (R && all.length > R.maxMembers) warn.push(`最多 ${R.maxMembers} 人`);
+    if (R && R.requireMage && all.length && all.every(id => raidSelf(id)) && !all.some(id => (raidSelf(id) || {}).mage)) warn.push('沒有法師系列職業（拉圖斯至少要 1 名）');
+    if (R) { const low = all.filter(id => (DATA.chars[id] && DATA.chars[id].char.lv) < R.minLevel); if (low.length) warn.push(`等級不到 ${R.minLevel}：${low.map(charNameOf).join('、')}`); }
+    const zero = all.filter(id => (raidSelf(id) || {}).left === 0); if (zero.length) warn.push(`本週場數用完：${zero.map(charNameOf).join('、')}`);
+    if (!typing) $('#rdSetup').insertAdjacentHTML('beforeend', warn.length ? `<div class="sm warn">⚠ ${warn.map(esc).join('；')}</div>` : ''); }
   const live = Object.entries(RAID.live || {}), battleLive = (RAID.live[p.leader] && RAID.live[p.leader].battle) ? RAID.live[p.leader] : (live.find(([, v]) => v.battle) || [])[1];
   const fighting = !!battleLive;
   $('#rdBtns').innerHTML = !p.leader ? '<span class="dim sm">先選隊長</span>' : fighting
@@ -7071,10 +7085,12 @@ function drawRaid() {
        <button class="btn" data-rdact="refresh">↻ 重新整理</button><button class="btn" data-rdact="leave" ${team ? '' : 'disabled'}>解散／離開隊伍</button>`;
   // 隊伍
   $('#rdTeam').innerHTML = !p.leader ? '<div class="dim">選好隊長和隊員後按「建立隊伍」。</div>' : !team ? `<div class="dim">${esc(charNameOf(p.leader))} 還沒有副本隊伍${lv && lv.notice ? `（${esc(lv.notice)}）` : ''}。</div>`
-    : `<div class="bar"><b>${esc(RAID_NAME[lv.raid] || lv.raid || '')}</b><span class="tag">隊伍代碼 ${esc(team.code)}</span>${lv.notice ? `<span class="warn sm">${esc(lv.notice)}</span>` : ''}</div>
+    : `<div class="bar"><b>${esc(RAID_NAME[lv.raid] || lv.raid || '')}</b><span class="tag">隊伍代碼 ${esc(team.code)}</span>${team.locked ? '<span class="tag">🔒 上鎖</span>' : ''}<span class="dim sm">${team.members.length} 人</span>${lv.notice ? `<span class="warn sm">${esc(lv.notice)}</span>` : ''}</div>
       <table class="tbl sm"><tr><th>角色</th><th>Lv</th><th>狀態</th><th>進場條件</th><th>本週剩</th></tr>${team.members.map(m => `<tr><td>${m.leader ? '👑 ' : ''}${esc(m.name)}</td><td>${m.lv}</td><td>${m.leader ? '隊長' : m.ready ? '<span class="good">已準備</span>' : '<span class="warn">未準備</span>'}${m.online ? '' : ' <span class="bad">離線</span>'}</td>
         <td>${m.ok ? '<span class="good">符合</span>' : `<span class="bad">${esc((m.issues || []).join('、') || '不符合')}</span>`}</td><td>${m.left != null ? m.left + ' 場' : '—'}</td></tr>`).join('')}</table>
       ${all.filter(id => !inTeam.has(id)).length ? `<div class="sm warn">還沒加入：${all.filter(id => !inTeam.has(id)).map(charNameOf).map(esc).join('、')}</div>` : ''}`;
+  { const others = ((lv && lv.teams) || []).filter(t => !team || t.code !== team.code);
+    if (others.length) $('#rdTeam').insertAdjacentHTML('beforeend', `<details class="sm" style="margin-top:6px"><summary class="dim">遊戲裡其他招募中的隊伍（${others.length}）</summary>${others.map(t => `<div>${t.locked ? '🔒 ' : ''}${esc(t.name || t.code)} <span class="dim">(${t.count}/${t.max})${t.full ? ' 滿了' : ''}</span></div>`).join('')}</details>`); }
   // 戰況
   if (!battleLive) { $('#rdBattle').innerHTML = '<div class="dim">還沒開打。開始後這裡每秒更新王的血量、階段、隊員狀態。</div>'; return; }
   const b = battleLive.battle, flags = [];
@@ -7099,7 +7115,9 @@ async function raidSavePlan(patch) { await saveSettings({ raid: { ...raidPlan(),
 document.addEventListener('change', e => {
   const t = e.target; if (!t.closest || !t.closest('#raid')) return;
   if (t.id === 'rdLeader') { const p = raidPlan(); raidSavePlan({ leader: t.value, members: p.members.filter(x => x !== t.value) }); return; }
-  if (t.dataset.rdmem) { const p = raidPlan(); let m = p.members.filter(x => x !== t.dataset.rdmem); if (t.checked) { if (m.length >= 5) { alert('隊長之外最多 5 隻'); t.checked = false; return; } m.push(t.dataset.rdmem); } raidSavePlan({ members: m }); }
+  if (t.id === 'rdLock') { raidSavePlan({ lock: t.checked }); return; }
+  if (t.id === 'rdPw') { raidSavePlan({ password: t.value.trim().slice(0, 12) }); return; }
+  if (t.dataset.rdmem) { const p = raidPlan(), max = ((raidRules(p.kind) || {}).maxMembers || 12) - 1; let m = p.members.filter(x => x !== t.dataset.rdmem); if (t.checked) { if (m.length >= max) { alert(`隊長之外最多 ${max} 隻`); t.checked = false; return; } m.push(t.dataset.rdmem); } raidSavePlan({ members: m }); }
 });
 document.addEventListener('click', async e => {
   const t = e.target.closest && e.target.closest('#raid [data-rdkind],#raid [data-rdact]'); if (!t) return;
@@ -7108,10 +7126,10 @@ document.addEventListener('click', async e => {
   const send = async (targets, msg) => { try { await api('/api/raid/act', { targets }); $('#rdMsg').textContent = msg + '（幾秒內更新）'; } catch (err) { alert('失敗：' + err.message); } };
   const noTab = all.filter(id => !hasTab(id));
   if (act === 'refresh') return send(all.map(id => ({ charId: id, cmd: { type: 'sync', raid: p.kind }, label: '讀取副本隊伍' })), '已重新整理');
-  if (act === 'create') { if (!confirm(`用 ${charNameOf(p.leader)} 建立「${RAID_NAME[p.kind]}」副本隊伍？\n（建立／進場可能會花費楓幣或道具，照遊戲的規則）`)) return; return send([{ charId: p.leader, cmd: { type: 'raidCreate', raid: p.kind }, label: `建立${RAID_NAME[p.kind]}副本隊伍` }], '已送出建立'); }
-  if (act === 'join') { if (!team) return; const ids = all.filter(id => id !== p.leader && !team.members.some(m => m.id === id)); if (!ids.length) { alert('隊員都已經在隊伍裡了'); return; } if (noTab.length) alert(`這幾隻沒有分頁，加入不了：${noTab.map(charNameOf).join('、')}`); return send(ids.filter(hasTab).map(id => ({ charId: id, cmd: { type: 'raidJoin', code: team.code }, label: '加入副本隊伍' })), `已送出 ${ids.length} 隻加入`); }
+  if (act === 'create') { if (p.lock && !p.password) { alert('上鎖的隊伍要先填密碼'); return; } if (!confirm(`用 ${charNameOf(p.leader)} 建立「${RAID_NAME[p.kind]}」副本隊伍${p.lock ? '（上鎖）' : ''}？\n（建立不扣費；開始時才向每人扣入場費）`)) return; return send([{ charId: p.leader, cmd: { type: 'raidCreate', raid: p.kind, ...(p.lock ? { password: p.password } : {}) }, label: `建立${RAID_NAME[p.kind]}副本隊伍` }], '已送出建立'); }
+  if (act === 'join') { if (!team) return; const ids = all.filter(id => id !== p.leader && !team.members.some(m => m.id === id)); if (!ids.length) { alert('隊員都已經在隊伍裡了'); return; } if (noTab.length) alert(`這幾隻沒有分頁，加入不了：${noTab.map(charNameOf).join('、')}`); return send(ids.filter(hasTab).map(id => ({ charId: id, cmd: { type: 'raidJoin', code: team.code, ...(team.locked && p.password ? { password: p.password } : {}) }, label: '加入副本隊伍' })), `已送出 ${ids.length} 隻加入`); }
   if (act === 'ready') { if (!team) return; const ids = team.members.filter(m => !m.leader && !m.ready).map(m => m.id); if (!ids.length) { alert('隊員都已經準備好了'); return; } return send(ids.map(id => ({ charId: id, cmd: { type: 'raidReady', ready: true }, label: '副本準備' })), '已送出準備'); }
-  if (act === 'start') { if (!team) return; const bad = team.members.filter(m => !m.ok); if (bad.length && !confirm(`${bad.map(m => m.name).join('、')} 不符合進場條件，還是要開始？`)) return; if (!confirm(`開始「${RAID_NAME[lv.raid] || ''}」？\n隊員：${team.members.map(m => m.name).join('、')}\n（會用掉本週場數，照遊戲的規則可能扣費）`)) return; return send([{ charId: p.leader, cmd: { type: 'raidStart', memberIds: team.members.map(m => m.id) }, label: '開始副本' }], '已送出開始'); }
+  if (act === 'start') { if (!team) return; const bad = team.members.filter(m => !m.ok); if (bad.length && !confirm(`${bad.map(m => m.name).join('、')} 不符合進場條件，還是要開始？`)) return; const R = raidRules(lv.raid) || {}, n = team.members.length; if (!confirm(`開始「${RAID_NAME[lv.raid] || ''}」？\n隊員（${n} 人）：${team.members.map(m => m.name).join('、')}\n\n每人扣入場費 ${R.feeMesos != null ? short(R.feeMesos) + ' 楓幣' : '（未知）'}${R.feePoints ? `＋${R.feePoints} 商城點數` : ''}，合計 ${R.feeMesos != null ? short(R.feeMesos * n) + ' 楓幣' : '?'}${R.feePoints ? `＋${R.feePoints * n} 點` : ''}。\n通關才扣本週場數。`)) return; return send([{ charId: p.leader, cmd: { type: 'raidStart', memberIds: team.members.map(m => m.id) }, label: '開始副本' }], '已送出開始'); }
   if (act === 'leave') { if (!confirm('解散／離開副本隊伍？（隊長離開＝解散）')) return; const ids = team ? team.members.map(m => m.id).filter(id => id !== p.leader) : []; return send([...ids, p.leader].filter(hasTab).map(id => ({ charId: id, cmd: { type: 'raidLeave' }, label: '離開副本隊伍' })), '已送出離開'); }
   if (act === 'surrender') { if (!confirm('全部投降？（全隊都投降才會結束）')) return; return send(all.filter(hasTab).map(id => ({ charId: id, cmd: { type: 'surrenderRaid' }, label: '副本投降' })), '已送出投降'); }
   if (act === 'leaveRaid') { if (!confirm('全部離開副本？（離開就拿不到這場的獎勵）')) return; return send(all.filter(hasTab).map(id => ({ charId: id, cmd: { type: 'leaveRaid' }, label: '離開副本' })), '已送出離開副本'); }

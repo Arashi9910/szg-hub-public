@@ -650,7 +650,7 @@ const raidViews = {}, raidLive = {}; // 副本：角色 → 最近一次的隊�
 const RAID_KINDS = ['papulatus', 'zakum'];
 function cleanRaidCmd(c) {
   if (!c || typeof c !== 'object') return null;
-  const id = v => (typeof v === 'string' && /^[\w-]{1,60}$/.test(v) ? v : null), ids = a => (Array.isArray(a) ? a.map(id).filter(Boolean).slice(0, 8) : []);
+  const id = v => (typeof v === 'string' && /^[\w-]{1,60}$/.test(v) ? v : null), ids = a => (Array.isArray(a) ? a.map(id).filter(Boolean).slice(0, 12) : []);
   switch (c.type) {
     case 'sync': return { type: 'sync', ...(RAID_KINDS.includes(c.raid) ? { raid: c.raid } : {}) };
     case 'raidCreate': return { type: 'raidCreate', raid: RAID_KINDS.includes(c.raid) ? c.raid : 'papulatus', ...(c.password ? { password: String(c.password).slice(0, 12) } : {}) };

@@ -407,12 +407,19 @@ function agentMain(ctx) {
         catch (e) { if (e.gameUpdated || i >= 3 || !/忙碌|稍後|503|busy/i.test(e.message)) throw e; await sleepP(1500 + i * 1500 + Math.random() * 1000); }
       }
     }
-    const raidMem = m => m && { id: m.id, name: m.name, job: m.job, lv: m.lv, leader: !!m.leader, ready: !!m.ready, online: m.online !== false, ok: m.ok !== false, issues: (m.issues || []).slice(0, 6).map(String), left: m.left };
+    const raidMem = m => m && { id: m.id, name: m.name, job: m.job, lv: m.lv, leader: !!m.leader, ready: !!m.ready, online: m.online !== false, ok: m.ok !== false, issues: (m.issues || []).slice(0, 6).map(String), left: m.left, mage: !!m.mage };
     function raidReportView(charId, r) {
       const v = r && r.raid; if (!v && !(r && ('raidTeam' in r))) return;
       const team = v && v.team;
+      // 真實遊戲（2026-11-28 讀到的 raidOnly sync）：raid＝{raid, raids:[{id,name,left,requireMage,open,minLevel,minMembers,maxMembers,feeMesos,feePoints,weeklyRuns,minutes}], rules, self:{characterId,name,job,lv,left,resetAt,mage}, team, teams:[{code,name,count,max,full,locked}], battle}
+      const num = x => (Number.isFinite(Number(x)) ? Number(x) : null);
+      const rule = x => x && { id: x.id, name: x.name, left: num(x.left), requireMage: !!x.requireMage, open: x.open !== false, minLevel: num(x.minLevel), minMembers: num(x.minMembers), maxMembers: num(x.maxMembers), feeMesos: num(x.feeMesos), feePoints: num(x.feePoints), weeklyRuns: num(x.weeklyRuns), minutes: num(x.minutes) };
+      const self = v && v.self;
       hub('POST', '/api/raid/view', { charId, view: { raid: (v && v.raid) || (r.raidTeam && r.raidTeam.raid) || null, held: v && v.held, notice: v && v.notice ? String(v.notice).slice(0, 200) : '',
-        team: team ? { code: team.code, isLeader: !!team.isLeader, members: (team.members || []).slice(0, 8).map(raidMem) } : null, battle: !!(v && v.battle) || !!r.raidBattle } }).catch(() => {});
+        raids: v && Array.isArray(v.raids) ? v.raids.slice(0, 6).map(rule) : null, rules: v && v.rules ? rule(v.rules) : null,
+        self: self ? { lv: num(self.lv), job: self.job, left: num(self.left), resetAt: num(self.resetAt), mage: !!self.mage } : null,
+        teams: v && Array.isArray(v.teams) ? v.teams.slice(0, 30).map(t => ({ code: t.code, name: String(t.name || '').slice(0, 30), count: num(t.count), max: num(t.max), full: !!t.full, locked: !!t.locked })) : null,
+        team: team ? { code: team.code, name: team.name ? String(team.name).slice(0, 30) : '', locked: !!team.locked, isLeader: !!team.isLeader, members: (team.members || []).slice(0, 12).map(raidMem) } : null, battle: !!(v && v.battle) || !!r.raidBattle } }).catch(() => {});
     }
     // 即時：在副本隊伍或戰鬥中時回報（每 1 秒）。中控指定的「回報者」（隊長）戰鬥中自己多同步一次拿王的血量；其他人讀頁面上的資料，不另外打遊戲
     let raidLiveBusy = false, raidWas = false, raidLastPush = 0, raidReporter = false;
