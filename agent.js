@@ -1547,20 +1547,6 @@ function agentMain(ctx) {
       const log = msg => report(job, { event: 'log', msg });
       const partyCode = j => (j && j.party && j.party.code) || '';
       try {
-        // 組隊大廳：踢出謊報資料的隊員（隊長自己的頁面執行）
-        if (p.role === 'leave') { // 組隊大廳：退出隊伍
-          setBadge(null, '組隊：退出隊伍…');
-          await gameRetry({ type: 'partyLeave', characterId: id });
-          await log('已退出隊伍'); lastHash = '';
-          return report(job, { event: 'batchDone' });
-        }
-        if (p.role === 'kick') {
-          setBadge(null, `組隊：踢出 ${p.memberName || ''}…`);
-          await gameRetry({ type: 'partyKick', memberId: p.memberId, characterId: id });
-          await log(`已把 ${p.memberName || p.memberId} 踢出隊伍${p.why ? `（${p.why}）` : ''}`);
-          lastHash = '';
-          return report(job, { event: 'batchDone' });
-        }
         if (p.ops) {
           const s0 = await gameRetry({ type: 'sync', characterId: id });
           if (partyCode(s0)) { setBadge(null, '組隊：離開原本的隊伍…'); await gameRetry({ type: 'partyLeave', characterId: id }); await log('已離開原本的隊伍'); await sleepP(800); }
@@ -1573,7 +1559,7 @@ function agentMain(ctx) {
             if (p.runId) await hub('POST', '/api/party/code', { runId: p.runId, code });
             await log(`已建立隊伍（代碼 ${code}）`);
           } else if (p.role === 'member') {
-            let code = p.code || ''; // 組隊大廳核准後直接拿到代碼
+            let code = '';
             const t0 = Date.now();
             while (!code && Date.now() - t0 < 150000) {
               const r = await hub('GET', '/api/party/run?id=' + encodeURIComponent(p.runId)).catch(() => null);
@@ -1594,7 +1580,6 @@ function agentMain(ctx) {
           try { await gameRetry({ type: 'partyKick', memberId: k.id, characterId: id }); await log(`已把 ${k.name || k.id} 踢出隊伍`); }
           catch (e) { if (e.gameUpdated) throw e; await log(`踢出 ${k.name || k.id} 失敗（${e.message}）`); }
         }
-        if (p.noStart) { lastHash = ''; return report(job, { event: 'batchDone' }); } // 組隊大廳：只建隊伍，不換圖、不重新開始
         const s1 = await gameRetry({ type: 'sync', characterId: id });
         const here = s1 && s1.character && s1.character.map;
         let moved = false;

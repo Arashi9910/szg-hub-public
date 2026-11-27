@@ -28,7 +28,6 @@ const updater = require('./update');
 const makeMarket = require('./market');
 const makeExtDb = require('./extdb');
 const makeBg = require('./bg');
-const makeLobby = require('./lobbyhub');
 
 const PORT = Number(process.env.PORT) || 8787;
 // 只接受本機連線
@@ -1542,10 +1541,35 @@ function createPartyJob(charId, party, label) {
   jobLog(job, label); db.jobs.push(job); save();
   return job;
 }
-const lobby = makeLobby({
-  getDb: () => db, save, charName, charDps, expLive: () => expLive(), worldFile: WORLD_FILE, avatarDir: AVATAR_DIR, dataDir: DATA_DIR,
-  createPartyJob, isActiveJob: fn => db.jobs.some(j => ACTIVE.has(j.status) && fn(j)),
-});
+// v0.76：組隊大廳拿掉了（使用者：沒人用）。留下「隊長換圖時，原本跟著隊長、正在掛機的隊員自動跟過去」（以前放在大廳模組裡，settings.lobbyFollow，預設開）
+const followLead = {};
+function partyFollowTick() {
+  if (db.settings.lobbyFollow === false) return;
+  const w = worldFull(), now = Date.now();
+  for (const snap of Object.values(db.chars)) {
+    const c = snap.char; if (!c || now - (snap.receivedAt || 0) > 3 * 60 * 1000) continue;
+    const party = snap.party && snap.party.party, mem = (party && party.members) || [], lead = mem.find(m => m.leader);
+    if (!party || mem.length < 2 || !lead || lead.id === c.id) { delete followLead[c.id]; continue; }
+    const prev = followLead[c.id], cur = lead.map; followLead[c.id] = cur;
+    if (!prev || !cur || prev === cur || c.map !== prev || !c.auto) continue;
+    if (w && D.isBossMap(w, cur)) continue;
+    if (db.jobs.some(j => ACTIVE.has(j.status) && (j.kind === 'party' || j.kind === 'boss') && j.fromCharId === c.id)) continue;
+    const mapName = (((w && w.maps) || []).find(m => String(m.id) === String(cur)) || {}).name || cur;
+    createPartyJob(c.id, { role: 'follow', ops: false, map: cur, mapName, leaderName: lead.name }, `組隊：隊長 ${lead.name} 換到 ${mapName}，跟著過去`);
+  }
+}
+setInterval(() => { try { partyFollowTick(); } catch (e) { console.warn('[跟隨隊長]', e); } }, 10 * 1000);
+// 舊版架設的組隊大廳伺服器（lobby.js，預設 port 8790）還在跑的話關掉，設定也清掉
+async function lobbyCleanup() {
+  const h = db.settings.lobbyHost || {}, port = Number(h.port) || 8790, pidFile = path.join(DATA_DIR, 'lobby', 'lobby.pid');
+  let up = false; try { up = (await fetch(`http://127.0.0.1:${port}/api/ping`, { signal: AbortSignal.timeout(2000) })).ok; } catch (_) {}
+  if (up) { try { const pid = Number(fs.readFileSync(pidFile, 'utf8')); if (pid) { process.kill(pid); console.log('[組隊大廳] 已關掉大廳伺服器（組隊大廳功能已移除）'); } } catch (e) { console.warn('[組隊大廳] 關不掉大廳伺服器：' + e.message); } }
+  let ch = false; for (const k of ['lobby', 'lobbyHost', 'lobbyPub']) if (k in db.settings) { delete db.settings[k]; ch = true; }
+  if (db.lobbyState) { delete db.lobbyState; ch = true; }
+  if (ch) save();
+  // 程式檔也拿掉（自動更新只會更新清單上的檔案，不會刪舊的）；data/lobby（紀錄）留著
+  for (const f of ['lobbyhub.js', 'lobby.js', 'lobby.html']) { try { if (fs.existsSync(path.join(__dirname, f))) fs.unlinkSync(path.join(__dirname, f)); } catch (_) {} }
+}
 const bg = makeBg({
   dataDir: DATA_DIR, hubUrl: `http://127.0.0.1:${PORT}`,
   getCfg: () => db.settings.bg || {}, setCfg: c => { db.settings.bg = c; save(); },
@@ -1572,10 +1596,9 @@ const server = http.createServer(async (req, res) => {
     // 記憶體診斷（中控本身、組隊大廳伺服器）
     if (req.method === 'GET' && url.pathname === '/api/sys') {
       const mb = n => Math.round(n / 1048576);
-      const m = process.memoryUsage(); let lobbyMem = null;
-      try { const h = (db.settings.lobbyHost || {}); if (h.on) { const j = await (await fetch(`http://127.0.0.1:${Number(h.port) || 8790}/api/ping`, { signal: AbortSignal.timeout(2000) })).json(); lobbyMem = j.mem || null; } } catch (_) {}
+      const m = process.memoryUsage();
       let stateKB = 0; try { stateKB = Math.round(fs.statSync(STATE_FILE).size / 1024); } catch (_) {}
-      return send(res, 200, { pid: process.pid, node: process.version, uptimeMin: Math.round(process.uptime() / 60), rss: mb(m.rss), heapUsed: mb(m.heapUsed), heapTotal: mb(m.heapTotal), external: mb(m.external), arrayBuffers: mb(m.arrayBuffers), stateKB, execArgv: process.execArgv, lobby: lobbyMem,
+      return send(res, 200, { pid: process.pid, node: process.version, uptimeMin: Math.round(process.uptime() / 60), rss: mb(m.rss), heapUsed: mb(m.heapUsed), heapTotal: mb(m.heapTotal), external: mb(m.external), arrayBuffers: mb(m.arrayBuffers), stateKB, execArgv: process.execArgv,
         counts: { chars: Object.keys(db.chars).length, jobs: db.jobs.length, tabs: Object.values(tabs).reduce((a, t) => a + Object.keys(t).length, 0) } });
     }
     // 更新公告（version.json 的 changelog，最近 5 次）
@@ -1605,23 +1628,6 @@ const server = http.createServer(async (req, res) => {
       const act = url.pathname.slice('/api/bg/'.length);
       if (req.method === 'POST' && /^(config|add|rename|edit|remove|start|stop|login|login-done|login-batch|login-skip|login-cancel|reload|pages|order|all|import|show|hide|trim)$/.test(act)) {
         return send(res, 200, await bg.action(act, JSON.parse((await readBody(req)) || '{}')));
-      }
-      return send(res, 404, { error: 'not found' });
-    }
-    // 組隊大廳
-    if (url.pathname === '/api/lobby' || url.pathname.startsWith('/api/lobby/')) {
-      if (req.method === 'GET' && url.pathname === '/api/lobby') return send(res, 200, await lobby.view());
-      if (url.pathname.startsWith('/api/lobby/admin')) { // 大廳主人管理（只限這台電腦）
-        if (!isLocal(req)) return send(res, 403, { error: '只能在大廳主機上操作' });
-        if (req.method === 'GET') return send(res, 200, await lobby.adminCall('GET', '/api/admin/state'));
-        const op = url.pathname.split('/').pop();
-        if (!/^(delist|ban|unban)$/.test(op)) return send(res, 404, { error: 'not found' });
-        return send(res, 200, await lobby.adminCall('POST', '/api/admin/' + op, JSON.parse((await readBody(req)) || '{}')));
-      }
-      const act = url.pathname.slice('/api/lobby/'.length);
-      if (req.method === 'POST' && /^(cfg|pub|request|decide|cancel|host|follow|leave|kick)$/.test(act)) {
-        if (act === 'host' && !isLocal(req)) return send(res, 403, { error: '只能在這台電腦上設定' });
-        return send(res, 200, await lobby.action(act, JSON.parse((await readBody(req)) || '{}')));
       }
       return send(res, 404, { error: 'not found' });
     }
@@ -2171,7 +2177,7 @@ server.listen(PORT, HOST, () => {
   checkUpdate();
   setInterval(checkUpdate, 2 * 60 * 1000);
   bg.boot();
-  lobby.boot();
+  lobbyCleanup().catch(e => console.warn('[組隊大廳] 清理失敗', e));
 });
 // 正常關閉中控（Ctrl+C、關掉視窗）時一起關掉背景 Chrome；自動更新重新啟動（exit 3）不會經過這裡，背景 Chrome 會繼續跑、中控起來後接回去
 let shuttingDown = false;
