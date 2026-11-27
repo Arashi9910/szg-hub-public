@@ -640,11 +640,28 @@ setInterval(() => { try { destEnforceTick(); } catch (e) { console.warn('[照表
 // ================= 掛機控制 =================
 // 指令（開始／暫停／重新開始）依帳號分組，交給那個帳號目前在線的遊戲頁面執行；
 // 同帳號的第二隻角色也可以直接控制（遊戲允許用 characterId 指定）。
-const IDLE_ACTIONS = new Set(['start', 'stop', 'restart', 'switch', 'wake', 'map', 'autosell', 'cfg']);
+const IDLE_ACTIONS = new Set(['raid', 'start', 'stop', 'restart', 'switch', 'wake', 'map', 'autosell', 'cfg']);
 // v0.72：角色抽屜的能力點、技能、掛機設定（cfg）：只放行這幾種遊戲指令，欄位都檢查過；遊戲自己還會再檢查一次
 const CFG_STATS = ['str', 'dex', 'int', 'luk'], CFG_SETTINGS = ['autoSkills', 'autoStats', 'autoPotion', 'autoStartOnMap'];
 const int = (v, lo, hi) => { const n = Math.floor(Number(v)); return Number.isFinite(n) && n >= lo && n <= hi ? n : null; };
 const skillId = v => (typeof v === 'string' || typeof v === 'number') && /^[\w-]{1,40}$/.test(String(v)) ? String(v) : null;
+const raidViews = {}, raidLive = {}; // 副本：角色 → 最近一次的隊伍資料／即時戰況（只放記憶體）
+// ---- 副本（v0.77）：指令白名單 ----
+const RAID_KINDS = ['papulatus', 'zakum'];
+function cleanRaidCmd(c) {
+  if (!c || typeof c !== 'object') return null;
+  const id = v => (typeof v === 'string' && /^[\w-]{1,60}$/.test(v) ? v : null), ids = a => (Array.isArray(a) ? a.map(id).filter(Boolean).slice(0, 8) : []);
+  switch (c.type) {
+    case 'sync': return { type: 'sync', ...(RAID_KINDS.includes(c.raid) ? { raid: c.raid } : {}) };
+    case 'raidCreate': return { type: 'raidCreate', raid: RAID_KINDS.includes(c.raid) ? c.raid : 'papulatus', ...(c.password ? { password: String(c.password).slice(0, 12) } : {}) };
+    case 'raidJoin': return id(c.code) ? { type: 'raidJoin', code: c.code, ...(c.password ? { password: String(c.password).slice(0, 12) } : {}) } : null;
+    case 'raidReady': return { type: 'raidReady', ready: !!c.ready };
+    case 'raidStart': { const m = ids(c.memberIds); return m.length ? { type: 'raidStart', memberIds: m } : null; }
+    case 'raidKick': return id(c.memberId) ? { type: 'raidKick', memberId: c.memberId } : null;
+    case 'raidLeave': case 'surrenderRaid': case 'leaveRaid': return { type: c.type };
+    default: return null;
+  }
+}
 function cleanCfg(c) {
   if (!c || typeof c !== 'object') return null;
   if (c.type === 'statBatch') {
@@ -745,6 +762,11 @@ function createIdleJobs(body) {
       (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'map', map: String(t.map), mapName: String(t.mapName || t.map).slice(0, 40), sell: cleanSell(t.sell) });
       continue;
     }
+    if (t.action === 'raid') {
+      const cmd = cleanRaidCmd(t.cmd); if (!cmd) throw new Error('副本指令不正確');
+      (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'raid', cmd, label: String(t.label || cmd.type).slice(0, 60) });
+      continue;
+    }
     if (t.action === 'cfg') {
       const cmd = cleanCfg(t.cmd); if (!cmd) throw new Error('設定的內容不正確');
       (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'cfg', cmd, label: String(t.label || cmd.type).slice(0, 80) });
@@ -783,9 +805,9 @@ function createIdleJobs(body) {
       toCharId: route.char.id, toName: route.char.name, toCode: route.playerCode,
       needChar: own || null,
       batches: [{ targets: list, items: [], gear: [], money: 0 }], batchIndex: 0, log: [], lastMsg: '',
-      ...(list.some(t => t.action === 'cfg') ? { minAgent: '0.72.0' } : {}),
+      ...(list.some(t => t.action === 'raid') ? { minAgent: '0.77.0' } : list.some(t => t.action === 'cfg') ? { minAgent: '0.72.0' } : {}),
     };
-    jobLog(job, '已送出：' + list.map(t => `${t.name} ${({ start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換為目前角色', wake: '領取離線掛機收益', cfg: t.label || '', map: '前往 ' + (t.mapName || '') + (t.sell ? '（套用自動販售）' : ''), autosell: '套用 ' + (t.mapName || '') + ' 的自動販售' })[t.action]}`).join('、'));
+    jobLog(job, '已送出：' + list.map(t => `${t.name} ${({ start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換為目前角色', wake: '領取離線掛機收益', cfg: t.label || '', raid: t.label || '副本', map: '前往 ' + (t.mapName || '') + (t.sell ? '（套用自動販售）' : ''), autosell: '套用 ' + (t.mapName || '') + ' 的自動販售' })[t.action]}`).join('、'));
     db.jobs.push(job);
     jobs.push(job);
   }
@@ -1582,6 +1604,31 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') return send(res, 204, '');
     // 手機版頁面本身沒有資料，不用通行碼（資料 API 才要）；通行碼放在網址 # 後面，只有手機自己讀得到
     if (req.method === 'POST' && url.pathname === '/api/dest/apply-now') return send(res, 200, destApplyNow());
+    // ---- 副本（v0.77）：agent 回報隊伍（view）和即時戰況（live），面板讀 /api/raid、下指令 /api/raid/act ----
+    if (url.pathname.startsWith('/api/raid')) {
+      if (req.method === 'GET' && url.pathname === '/api/raid') {
+        const now = Date.now(), fresh = (o, ms) => Object.fromEntries(Object.entries(o).filter(([, v]) => now - v.at < ms));
+        return send(res, 200, { now, plan: db.settings.raid || {}, views: fresh(raidViews, 30 * 60e3), live: fresh(raidLive, 15000) });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/raid/view') {
+        const e = JSON.parse((await readBody(req)) || '{}'); if (!e.charId) return send(res, 400, { error: 'charId' });
+        raidViews[e.charId] = { at: Date.now(), view: e.view || null };
+        return send(res, 200, { ok: true });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/raid/live') {
+        const e = JSON.parse((await readBody(req)) || '{}'); if (!e.charId) return send(res, 400, { error: 'charId' });
+        if (e.inRaid) raidLive[e.charId] = { at: Date.now(), team: e.team, battle: e.battle, enemies: e.enemies || [], me: e.me || {} }; else delete raidLive[e.charId];
+        // 回報者：計畫裡的隊長；隊長沒在回報就由第一個在副本裡的隊員負責（戰鬥中多同步一次拿王的血量）
+        const plan = db.settings.raid || {}, inLive = id => raidLive[id] && Date.now() - raidLive[id].at < 5000;
+        const rep = inLive(plan.leader) ? plan.leader : (plan.members || []).find(inLive) || e.charId;
+        return send(res, 200, { ok: true, reporter: rep === e.charId });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/raid/act') {
+        const e = JSON.parse((await readBody(req)) || '{}');
+        const jobs = createIdleJobs({ targets: (e.targets || []).map(t => ({ charId: t.charId, action: 'raid', cmd: t.cmd, label: t.label })) });
+        return send(res, 200, { ok: true, jobs: jobs.length });
+      }
+    }
     if (req.method === 'GET' && url.pathname === '/dest.js') return send(res, 200, fs.readFileSync(path.join(__dirname, 'dest.js'), 'utf8'), 'application/javascript; charset=utf-8');
     if (req.method === 'GET' && (url.pathname === '/m' || url.pathname === '/m/')) return send(res, 200, fs.readFileSync(path.join(__dirname, 'm.html'), 'utf8'), 'text/html; charset=utf-8');
     // 加到主畫面後是另一個獨立的 App（iPhone 的儲存空間和 Safari 分開），所以啟動網址要帶著這支手機的通行碼（# 後面不會送到伺服器）

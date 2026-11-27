@@ -397,6 +397,45 @@ function agentMain(ctx) {
       const a = c.autoSell || {}, x = a.rule === 2 && a.maps && a.maps[map];
       return x ? { map, v2: 1, enabled: !!x.enabled, keep: (x.itemIds || []).slice(0, 500), hi: !!x.keepAboveBase } : { map, v2: a.rule === 2 ? 1 : 0, enabled: false, keep: [], itemIds: [] };
     }
+    // ---------- 副本（v0.77）----------
+    // 遊戲的副本請求跟主控台分開走「快路徑」：raidOnly、不帶社交／休閒資料；伺服器忙碌（503）時用同一個 requestId 重送（不會重複扣費）
+    async function raidGame(cmd, charId) {
+      const payload = { ...cmd, characterId: charId, raidOnly: true, includeSocial: false, includeLeisure: false };
+      if (cmd.type !== 'sync') payload.requestId = newRequestId();
+      for (let i = 0; ; i++) {
+        try { return await game(payload); }
+        catch (e) { if (e.gameUpdated || i >= 3 || !/忙碌|稍後|503|busy/i.test(e.message)) throw e; await sleepP(1500 + i * 1500 + Math.random() * 1000); }
+      }
+    }
+    const raidMem = m => m && { id: m.id, name: m.name, job: m.job, lv: m.lv, leader: !!m.leader, ready: !!m.ready, online: m.online !== false, ok: m.ok !== false, issues: (m.issues || []).slice(0, 6).map(String), left: m.left };
+    function raidReportView(charId, r) {
+      const v = r && r.raid; if (!v && !(r && ('raidTeam' in r))) return;
+      const team = v && v.team;
+      hub('POST', '/api/raid/view', { charId, view: { raid: (v && v.raid) || (r.raidTeam && r.raidTeam.raid) || null, held: v && v.held, notice: v && v.notice ? String(v.notice).slice(0, 200) : '',
+        team: team ? { code: team.code, isLeader: !!team.isLeader, members: (team.members || []).slice(0, 8).map(raidMem) } : null, battle: !!(v && v.battle) || !!r.raidBattle } }).catch(() => {});
+    }
+    // 即時：在副本隊伍或戰鬥中時回報（每 1 秒）。中控指定的「回報者」（隊長）戰鬥中自己多同步一次拿王的血量；其他人讀頁面上的資料，不另外打遊戲
+    let raidLiveBusy = false, raidWas = false, raidLastPush = 0, raidReporter = false;
+    async function raidLiveTick() {
+      if (raidLiveBusy || passive()) return;
+      let st = readState(); const c = st && st.character; if (!c) return;
+      const inRaid = !!(st.raidBattle || st.raidTeam);
+      if (!inRaid && !raidWas) return;
+      const now = Date.now();
+      if (!st.raidBattle && inRaid && now - raidLastPush < 5000) return; // 還沒開打：5 秒一次就好
+      raidLiveBusy = true;
+      try {
+        let enemies = st.enemies;
+        if (st.raidBattle && raidReporter) { const j = await game({ type: 'sync', characterId: c.id }).catch(() => null); if (j) { if (j.raidBattle !== undefined) st = { ...st, raidBattle: j.raidBattle, raidTeam: j.raidTeam }; if (j.enemies) enemies = j.enemies; if (j.character) st = { ...st, character: { ...c, ...j.character } }; } }
+        const ch = st.character, b = st.raidBattle;
+        const r = await hub('POST', '/api/raid/live', { charId: c.id, inRaid: !!(st.raidBattle || st.raidTeam), team: st.raidTeam || null,
+          battle: b ? { code: b.code, raid: b.raid, phase: b.phase, prepUntil: b.prepUntil, deadline: b.deadline, surrender: b.surrender || [], bloodAt: b.bloodAt, invulnerable: !!b.invulnerable, orbs: b.orbs, windupAt: b.windupAt, immuneUntil: b.immuneUntil, arms: b.arms, minions: b.minions, guardUntil: b.guardUntil } : null,
+          enemies: b ? (Array.isArray(enemies) ? enemies : []).slice(0, 12).map(e => e && { id: e.id, hp: e.hp, maxHp: e.maxHp }).filter(Boolean) : [],
+          me: { hp: ch.hp, maxhp: ch.maxhp || ch.maxHp, mp: ch.mp, maxmp: ch.maxmp || ch.maxMp, diseases: ch.diseases || null, lockUntil: (st.raid && st.raid.lockUntil) || ch.lockUntil || 0, map: ch.map } }).catch(() => null);
+        raidReporter = !!(r && r.reporter);
+        raidLastPush = now; raidWas = inRaid;
+      } finally { raidLiveBusy = false; }
+    }
     function progOf(c) {
       const pick = o => { const r = {}; for (const k of ['str', 'dex', 'int', 'luk']) r[k] = Number((o || {})[k]) || 0; return r; };
       // 這個職業一路上來的技能（跟遊戲一樣：沿著職業的 parent 往上找）
@@ -711,6 +750,11 @@ function agentMain(ctx) {
               catch (e) { failed.push(`${t.name} 套用自動販售（${e.message}）`); }
             }
           } catch (e) { failed.push(`${t.name} 前往 ${t.mapName || t.map}（${e.message}）`); }
+          continue;
+        }
+        if (t.action === 'raid') { // v0.77 副本：建立／加入／準備／開始／離開…（遊戲的副本請求：raidOnly 快路徑）
+          try { setBadge(null, `${t.name}：${t.label || '副本'}…`); const r = await raidGame(t.cmd, t.charId); done.push(`${t.name} ${t.label || '副本'}`); raidReportView(t.charId, r); }
+          catch (e) { if (e.gameUpdated) throw e; failed.push(`${t.name} ${t.label || '副本'}（${e.message}）`); raidGame({ type: 'sync' }, t.charId).then(r => raidReportView(t.charId, r)).catch(() => {}); }
           continue;
         }
         if (t.action === 'cfg') { // v0.72：角色抽屜的能力點、技能、掛機設定
@@ -2218,6 +2262,7 @@ function agentMain(ctx) {
       setInterval(agentTick, AGENT_MS);
       setTimeout(idleTick, 15000);
       setInterval(idleTick, 30000);
+      setInterval(() => raidLiveTick().catch(() => {}), 1000);
       setTimeout(() => stallTick().catch(() => {}), 40000);
       setInterval(() => { if (!mktBusy) stallTick().catch(() => {}); }, 20000);
       setInterval(marketScanTick, 31000);
