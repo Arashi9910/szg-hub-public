@@ -642,7 +642,7 @@ function agentMain(ctx) {
       return offlineSince;
     }
     // 幫忙按「點一下繼續」，等遊戲把最新資料同步回來
-    async function wakePage(why) {
+    async function wakePage(why, quiet) {
       if (!isIdleOffline()) return false;
       const before = sessionStorage.getItem('mapleSessionView') || '';
       const btn = document.getElementById('idleOfflineResume') || document.getElementById('idleOffline');
@@ -653,7 +653,8 @@ function agentMain(ctx) {
       await new Promise(r => setTimeout(r, 1500));
       trackOffline();
       const st = readState();
-      hub('POST', '/api/idle-log', { charId: st && st.character && st.character.id, msg: `${why}，已按「繼續」領取離線掛機的收益` }).catch(() => {});
+      if (!quiet) hub('POST', '/api/idle-log', { charId: st && st.character && st.character.id, msg: `${why}，已按「繼續」領取離線掛機的收益` }).catch(() => {});
+      else GM_setValue('keepOnlineN', (GM_getValue('keepOnlineN', 0) || 0) + 1); // 保持在線每小時每隻都會按一次，不寫掛機紀錄（會洗版）
       lastHash = ''; // 下次立刻回報最新資料
       return true;
     }
@@ -715,7 +716,7 @@ function agentMain(ctx) {
           continue;
         }
         if (t.action === 'wake') {
-          try { done.push((await wakePage('從面板要求')) ? `${t.name} 已領取離線收益` : `${t.name} 不在離線掛機狀態`); } catch (e) { failed.push(`${t.name} 領取（${e.message}）`); }
+          try { done.push((await wakePage(t.why || '從面板要求')) ? `${t.name} 已領取離線收益` : `${t.name} 不在離線掛機狀態`); } catch (e) { failed.push(`${t.name} 領取（${e.message}）`); }
           continue;
         }
         if (t.action === 'switch') {
@@ -817,7 +818,9 @@ function agentMain(ctx) {
         const r = await hub('GET', '/api/idle-policy');
         const p = r.policy, excluded = r.excluded || {}, last = r.last || {};
         const since = trackOffline();
-        if (p.wakeHours > 0 && since && Date.now() - since >= p.wakeHours * H) await wakePage(`離線掛機已 ${p.wakeHours} 小時`);
+        // v0.74.4 保持在線：遊戲 1 小時沒有滑鼠鍵盤操作就進入離線掛機（畫面不再更新）。背景執行的分頁（預設）或全部分頁：一進入就按「繼續」
+        if (since && (p.keepOnline === 'all' || (p.keepOnline !== 'off' && BG))) await wakePage('保持在線', true);
+        else if (p.wakeHours > 0 && since && Date.now() - since >= p.wakeHours * H) await wakePage(`離線掛機已 ${p.wakeHours} 小時`);
         if (p.autoRevive) await reviveTick(state, p, excluded);
         if (!p.autoRenew && !p.stopAfterHours) return;
         const skew = (state.serverTime || Date.now()) - Date.now();

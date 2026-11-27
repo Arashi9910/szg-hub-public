@@ -436,29 +436,28 @@ function guildLog(msg) {
   (db.guildLog || (db.guildLog = [])).push({ at: Date.now(), msg });
   if (db.guildLog.length > 120) db.guildLog.splice(0, db.guildLog.length - 120);
 }
-function guildAutoTick(force) {
-  const a = db.settings.guildAuto || {};
-  if (!a.mode || a.mode === 'off') return;
-  const every = Math.max(10, Number(a.everyMin) || 30) * 60e3;
-  if (!force && Date.now() - (db.guildAutoAt || 0) < every) return;
-  db.guildAutoAt = Date.now();
-  const dep = db.settings.guildDep || {};
-  if (!(dep.names || []).length && !(dep.cats || []).length && !(dep.ids || []).length) { guildLog('自動存入：存入規則還沒設定要存什麼，略過'); save(); return; }
+// v0.74.4：遊戲 11/21 起 1 小時沒有滑鼠鍵盤操作就進入「離線掛機」（畫面不再更新，角色照常掛機，按「繼續」時一次補算）。
+// 背景分頁一定會進入離線。自動存入到期時，符合條件但在離線的角色先按「繼續」（wake），等它回報補算後的背包再存；
+// 只叫醒「要存的時候」需要的角色（勾選的角色、有自己分頁、沒有公倉工作在跑）。db.guildWake = {角色: 按繼續的時間}
+const GUILD_WAKE_WAIT_MS = Number(process.env.SZG_GUILD_WAKE_WAIT_MS) || 15000, GUILD_WAKE_GIVEUP_MS = 10 * 60e3;
+function guildAutoEligible(snap, dep) {
+  if (!snap.playerCode || Date.now() - (snap.receivedAt || 0) > ONLINE_MS) return false;
+  if (!tabOf(snap.playerCode, snap.char.id)) return false; // 沒有自己分頁的角色（背景掛機）資料是舊的，也沒有人能替它存
+  if (Array.isArray(dep.chars) && !dep.chars.includes(snap.char.id)) return false;
+  const mine = db.jobs.filter(j => String(j.kind).startsWith('guild') && j.fromCharId === snap.char.id);
+  if (mine.some(j => ['pending', 'approved', 'running'].includes(j.status))) return false;
+  // 剛做完公倉工作、角色還沒回報新的背包資料：這份資料是舊的，等下一次
+  const lastDone = Math.max(0, ...mine.filter(j => j.kind !== 'guildView').map(j => ((j.log || []).slice(-1)[0] || {}).at || 0));
+  if (lastDone && (snap.receivedAt || 0) < lastDone + 2000) return false;
+  return true;
+}
+function guildAutoRun(snaps, a, dep, head) {
   const g = db.guild && db.guild.data;
   const usedKeys = new Set(Object.keys((g && g.items) || {}));
   let gearUsed = ((g && g.gear) || []).length;
   let made = 0, nItem = 0, nGear = 0;
   const lines = [];
-  for (const snap of Object.values(db.chars)) {
-    if (!snap.playerCode || Date.now() - (snap.receivedAt || 0) > ONLINE_MS) continue;
-    if (!tabOf(snap.playerCode, snap.char.id)) continue; // 沒有自己分頁的角色（背景掛機）資料是舊的，也沒有人能替它存
-
-    if (Array.isArray(dep.chars) && !dep.chars.includes(snap.char.id)) continue;
-    const mine = db.jobs.filter(j => String(j.kind).startsWith('guild') && j.fromCharId === snap.char.id);
-    if (mine.some(j => ['pending', 'approved', 'running'].includes(j.status))) continue;
-    // 剛做完公倉工作、角色還沒回報新的背包資料：這份資料是舊的，等下一次
-    const lastDone = Math.max(0, ...mine.filter(j => j.kind !== 'guildView').map(j => ((j.log || []).slice(-1)[0] || {}).at || 0));
-    if (lastDone && (snap.receivedAt || 0) < lastDone + 2000) continue;
+  for (const snap of snaps) {
     const plan = guildPlanFor(snap, dep);
     if (!plan.items.length && !plan.gear.length) continue;
     if (g && g.capacity) {
@@ -475,11 +474,47 @@ function guildAutoTick(force) {
       made++;
     }
   }
-  if (lines.length) guildLog(`${a.mode === 'deposit' ? '自動存入' : '試跑（不會存）'}：${lines.join('、')}，共道具 ${nItem} 個、裝備 ${nGear} 件${a.mode === 'deposit' ? `，建立 ${made} 個工作` : ''}`);
-  else if (force) guildLog('自動存入：目前沒有符合的東西');
+  if (lines.length) guildLog(`${head || ''}${a.mode === 'deposit' ? '自動存入' : '試跑（不會存）'}：${lines.join('、')}，共道具 ${nItem} 個、裝備 ${nGear} 件${a.mode === 'deposit' ? `，建立 ${made} 個工作` : ''}`);
+  return lines.length;
+}
+function guildAutoTick(force) {
+  const a = db.settings.guildAuto || {};
+  if (!a.mode || a.mode === 'off') { db.guildWake = {}; return; }
+  const dep = db.settings.guildDep || {};
+  // 先處理之前叫醒的角色：回到線上、回報了補算後的資料就存；等太久就放棄（下一次到期再試）
+  const wake = db.guildWake || (db.guildWake = {});
+  if (Object.keys(wake).length) {
+    const ready = [];
+    for (const [id, at] of Object.entries(wake)) {
+      const snap = db.chars[id];
+      if (!snap || Date.now() - at > GUILD_WAKE_GIVEUP_MS) { delete wake[id]; guildLog(`自動存入：${snap ? snap.char.name : id} 按了「繼續」但 10 分鐘內沒回到線上，下次再試`); continue; }
+      if (snap.idleOffline || (snap.receivedAt || 0) < at + GUILD_WAKE_WAIT_MS) continue;
+      delete wake[id];
+      if (guildAutoEligible(snap, dep)) ready.push(snap);
+    }
+    if (ready.length && !guildAutoRun(ready, a, dep, '（離線叫醒後）')) guildLog(`自動存入：${ready.map(s => s.char.name).join('、')} 叫醒後沒有要存的東西`);
+    save();
+  }
+  const every = Math.max(10, Number(a.everyMin) || 30) * 60e3;
+  if (!force && Date.now() - (db.guildAutoAt || 0) < every) return;
+  db.guildAutoAt = Date.now();
+  if (!(dep.names || []).length && !(dep.cats || []).length && !(dep.ids || []).length) { guildLog('自動存入：存入規則還沒設定要存什麼，略過'); save(); return; }
+  const list = Object.values(db.chars).filter(snap => guildAutoEligible(snap, dep) && !wake[snap.char.id]);
+  const off = list.filter(snap => snap.idleOffline), on = list.filter(snap => !snap.idleOffline);
+  const n = guildAutoRun(on, a, dep);
+  // 離線掛機的角色：資料停在離線那一刻、新拿到的東西按「繼續」才會補算 → 先叫醒（試跑模式不叫醒，只記錄）
+  if (off.length) {
+    if (a.mode === 'deposit') {
+      let woke = [];
+      try { createIdleJobs({ targets: off.map(snap => ({ charId: snap.char.id, action: 'wake', why: '公倉自動存入前' })) }).forEach(j => { j.auto = true; jobLog(j, '公倉自動存入：先按「繼續」領取離線掛機的收益'); }); woke = off; } catch (e) { guildLog(`自動存入：叫醒離線的角色失敗（${e.message}）`); }
+      for (const snap of woke) wake[snap.char.id] = Date.now();
+      if (woke.length) guildLog(`自動存入：${woke.map(s => s.char.name).join('、')} 在離線掛機，先按「繼續」，回到線上後再存`);
+    } else guildLog(`試跑：${off.map(s => s.char.name).join('、')} 在離線掛機（真的存入時會先按「繼續」再存）`);
+  }
+  if (!n && !off.length && force) guildLog('自動存入：目前沒有符合的東西');
   save();
 }
-setInterval(() => { try { guildAutoTick(false); } catch (e) { console.warn('[公倉自動存入]', e); } }, 60 * 1000);
+setInterval(() => { try { guildAutoTick(false); } catch (e) { console.warn('[公倉自動存入]', e); } }, Number(process.env.SZG_GUILD_TICK_MS) || 60 * 1000);
 
 // ================= 自動強化（v0.71.4） =================
 // settings.forgeAuto = { mode: 'off'|'confirm'|'auto', everyMin, dailyCap（楓幣；auto 模式每天最多自動花多少）, rules: [{id, on, charId, gearName, item, count, stopAfter, stopOnFail, minSucc}] }
@@ -674,7 +709,7 @@ function createIdleJobs(body) {
     }
     if (t.action === 'wake') {
       // 領取離線收益是整個頁面的動作：每個分頁（每隻有分頁的角色）做一次
-      if (!(byAcc[acc] || []).some(x => x.action === 'wake' && x.charId === t.charId)) (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'wake' });
+      if (!(byAcc[acc] || []).some(x => x.action === 'wake' && x.charId === t.charId)) (byAcc[acc] || (byAcc[acc] = [])).push({ charId: t.charId, name: charName(t.charId), action: 'wake', ...(t.why ? { why: String(t.why).slice(0, 40) } : {}) });
       continue;
     }
     if (t.action === 'map') {
@@ -1980,7 +2015,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/idle-policy') {
       const p = db.settings.idlePolicy || {};
-      return send(res, 200, { policy: { autoRenew: !!p.autoRenew, renewBeforeMin: Number(p.renewBeforeMin) || 30, stopAfterHours: Number(p.stopAfterHours) || 0, wakeHours: Number(p.wakeHours) || 0,
+      return send(res, 200, { policy: { autoRenew: !!p.autoRenew, renewBeforeMin: Number(p.renewBeforeMin) || 30, stopAfterHours: Number(p.stopAfterHours) || 0, wakeHours: Number(p.wakeHours) || 0, keepOnline: ['all', 'off'].includes(p.keepOnline) ? p.keepOnline : 'bg',
         autoRevive: p.autoRevive !== false, reviveMaxPerHour: Number(p.reviveMaxPerHour) || 6 }, // 死掉自動原地復活：預設開
         excluded: db.settings.idleExcluded || {}, last: db.settings.idleLast || {} });
     }

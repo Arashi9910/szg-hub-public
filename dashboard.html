@@ -692,6 +692,7 @@
         <div class="rules-body">
           <div class="bar"><label><input type="checkbox" class="sw" id="ipRenew"> 自動續掛：到期前</label><input type="number" id="ipRenewMin" min="5" max="600" style="width:64px"><span>分鐘自動重新開始；已到期停掉的也會自動開始</span></div>
           <div class="bar"><label><input type="checkbox" class="sw" id="ipStop"> 掛滿</label><input type="number" id="ipStopH" min="1" max="24" step="0.5" style="width:64px"><span>小時後自動暫停</span><span class="dim">（開啟後不會自動續掛）</span></div>
+          <div class="bar"><span>保持在線：離線掛機時馬上按「繼續」</span><select id="ipKeep"><option value="bg">背景執行的分頁</option><option value="all">全部分頁（含你自己開的）</option><option value="off">不要</option></select><span class="dim">（遊戲 1 小時沒有滑鼠鍵盤操作就會進入離線掛機、畫面停止更新；背景分頁沒人操作，一定會進入）</span></div>
           <div class="bar"><label><input type="checkbox" class="sw" id="ipWake"> 離線掛機每滿</label><input type="number" id="ipWakeH" min="1" max="23" style="width:64px"><span>小時自動按「繼續」領取一次</span><span class="dim">（遊戲閒置 60 分鐘會進入離線掛機、暫停更新，累積上限 24 小時；交易、背包、自動上架執行前也會自動領取）</span></div>
           <div class="bar"><label><input type="checkbox" class="sw" id="ipRevive"> 死掉自動原地復活</label><span>，每隻每小時最多</span><input type="number" id="ipReviveMax" min="1" max="9999" style="width:72px"><span>次</span><span class="dim">（遊戲自己的自動復活每輪只有 3 次，用完會停在「原地復活／暫時等待」；每次死亡扣本級經驗 5%，超過次數就停下來列在「需要處理」）</span></div>
           <div class="dim">自動規則套用在表格「自動」有勾的角色。從這裡按「暫停」的角色不會被自動續掛重新開始。需要那個帳號的遊戲分頁開著才會執行。</div>
@@ -1294,9 +1295,10 @@ function renderIdleCard() {
   $('#ipStop').checked = !!p.stopAfterHours;
   if (document.activeElement !== $('#ipWakeH')) $('#ipWakeH').value = p.wakeHours || 12;
   $('#ipWake').checked = !!p.wakeHours;
+  if (document.activeElement !== $('#ipKeep')) $('#ipKeep').value = ['all', 'off'].includes(p.keepOnline) ? p.keepOnline : 'bg';
   $('#ipRevive').checked = p.autoRevive !== false;
   if (document.activeElement !== $('#ipReviveMax')) $('#ipReviveMax').value = p.reviveMaxPerHour || 6;
-  $('#ipSummary').textContent = [p.autoRenew ? `自動續掛：到期前 ${p.renewBeforeMin || 30} 分` : '自動續掛：關', p.stopAfterHours ? `掛滿 ${p.stopAfterHours} 小時暫停` : '', p.wakeHours ? `離線每 ${p.wakeHours} 小時領取` : '', p.autoRevive !== false ? '死掉自動復活' : ''].filter(Boolean).join('・');
+  $('#ipSummary').textContent = [p.autoRenew ? `自動續掛：到期前 ${p.renewBeforeMin || 30} 分` : '自動續掛：關', p.stopAfterHours ? `掛滿 ${p.stopAfterHours} 小時暫停` : '', p.keepOnline === 'off' ? '' : p.keepOnline === 'all' ? '全部分頁保持在線' : '背景分頁保持在線', p.wakeHours ? `離線每 ${p.wakeHours} 小時領取` : '', p.autoRevive !== false ? '死掉自動復活' : ''].filter(Boolean).join('・');
   renderOvBar();
   const logs = (DATA.idleLog || []).slice().reverse().slice(0, 30);
   $('#idleLogOut').innerHTML = logs.length ? logs.map(l => `<div><span class="dim">${clock(l.at)}</span> ${esc(l.name)}：${esc(l.msg)}</div>`).join('') : '<span class="dim">還沒有紀錄</span>';
@@ -1305,6 +1307,7 @@ function saveIdlePolicy() {
   const renew = $('#ipRenew').checked, stop = $('#ipStop').checked;
   const policy = { autoRenew: renew, renewBeforeMin: Math.max(5, Number($('#ipRenewMin').value) || 30), stopAfterHours: stop ? Math.max(0.5, Number($('#ipStopH').value) || 8) : 0,
     wakeHours: $('#ipWake').checked ? Math.min(23, Math.max(1, Number($('#ipWakeH').value) || 12)) : 0,
+    keepOnline: $('#ipKeep').value || 'bg',
     autoRevive: $('#ipRevive').checked, reviveMaxPerHour: Math.min(9999, Math.max(1, Math.floor(Number($('#ipReviveMax').value)) || 6)) };
   return saveSettings({ idlePolicy: policy });
 }
@@ -2860,7 +2863,7 @@ document.addEventListener('change', e => {
   if (t.id === 'autoUpd') { saveSettings({ autoUpdate: t.checked }); return; }
   if (t.dataset && t.dataset.isel) { if (t.checked) ui.idleSel.add(t.dataset.isel); else ui.idleSel.delete(t.dataset.isel); renderOverview(); renderIdleCard(); return; }
   if (t.dataset && t.dataset.iexcl) { saveSettings({ idleExcluded: { ...(S.idleExcluded || {}), [t.dataset.iexcl]: !t.checked } }); return; }
-  if (['ipRenew', 'ipStop', 'ipRenewMin', 'ipStopH', 'ipWake', 'ipWakeH', 'ipRevive', 'ipReviveMax'].includes(t.id)) { saveIdlePolicy().then(() => poll(true)); return; }
+  if (['ipRenew', 'ipStop', 'ipRenewMin', 'ipStopH', 'ipWake', 'ipWakeH', 'ipKeep', 'ipRevive', 'ipReviveMax'].includes(t.id)) { saveIdlePolicy().then(() => poll(true)); return; }
   if (t.id === 'cMoney') renderTrade();
   if (t.id === 'cKeep') { saveSettings({ collectKeepPct: keepPctValue() }); renderTrade(); }
   if (t.id === 'gFrom') { giveDraft.items = {}; giveDraft.gear.clear(); renderGivePick(); }
