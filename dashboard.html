@@ -306,6 +306,11 @@
   #charDrawer .cd-stat td { padding: 3px 4px; } #charDrawer .cd-stat button { padding: 0 6px; }
   #charDrawer .cdsk .cdg-hd button { padding: 0 6px; }
   #charDrawer .cd-sw { display: block; margin: 6px 0; }
+  #charDrawer .cdic { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; }
+  #charDrawer .cdic .bar { margin: 3px 0; flex-wrap: wrap; } #charDrawer .cdic select { max-width: 170px; } #charDrawer .cdic input[type=number] { width: 64px; }
+  #charDrawer .cdcp-row { display: flex; gap: 6px; align-items: flex-start; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; margin: 3px 0; cursor: pointer; user-select: none; }
+  #charDrawer .cdcp-row:hover { border-color: var(--accent); } #charDrawer .cdcp-row.on { border-color: var(--accent); background: rgba(90,169,230,.08); }
+  #charDrawer .cdcp-row input { pointer-events: none; margin-top: 2px; }
   .enforce-box { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin: 6px 0; flex-wrap: wrap; }
   .enforce-log > div { margin-left: 10px; }
   .tparty { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: 4px; padding: 14px 4px 3px; margin: 2px; border: 1.5px solid #8a6cd8; border-radius: 10px; background: rgba(138,108,216,.08); position: relative; vertical-align: top; }
@@ -318,6 +323,10 @@
   .rd-bar span { position: relative; font-size: 11px; padding-left: 6px; line-height: 16px; white-space: nowrap; }
   .rd-en { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; margin: 6px 0; } .rd-en .rd-bar { height: 22px; } .rd-en .rd-bar span { line-height: 22px; font-size: 12px; }
   .rd-mem td { vertical-align: middle; }
+  .rd-stat { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 4px 0 8px; } .rd-stat > div { min-width: 120px; } .rd-stat b { font-size: 15px; } .rd-stat .bad b, .rd-stat b.bad { color: var(--bad, #e74c3c); }
+  .rd-orbs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; } .rd-orbs .rd-bar { min-width: 86px; width: 86px; height: 14px; } .rd-orbs .rd-bar i { background: #6c4bb5; } .rd-orbs .rd-bar span { font-size: 10px; line-height: 14px; }
+  .rd-orbbox { border: 1px solid var(--line, #444); border-radius: 6px; padding: 6px 8px; margin: 6px 0; } .rd-orbbox.on { border-color: #b5651d; background: rgba(181,101,29,.08); }
+  .rd-rep td.num, .rd-mem td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .tav .grp.gB { color: #f0b86a; }
   .town-pool .tparty { padding-top: 13px; }
   #charDrawer .seg { flex-wrap: wrap; }
@@ -456,6 +465,8 @@
   .g-drawer { width: min(860px, 96vw); }
   .g-drawer summary .gd-lb { width: auto; margin-right: 8px; } .g-drawer h3 { color: var(--text); font-size: 14px; }
   .g-drawer .card { border: 0; padding: 4px 0 12px; border-bottom: 1px solid var(--line); border-radius: 0; }
+  .gr-rule { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 6px 0; } .gr-rule.off { opacity: .6; }
+  .gr-rule .bar { margin: 2px 0; } .gr-log { max-height: 320px; overflow: auto; } .gr-log > div { padding: 2px 0; border-bottom: 1px dashed var(--line); }
   @media (max-width: 1100px) { .g-xfer { grid-template-columns: 1fr; } .g-mid { position: static; padding-top: 0; flex-direction: row; flex-wrap: wrap; } .g-act { flex-direction: row; flex-wrap: wrap; align-items: center; } }
 
   /* ===== 背包：角色卡收合（v0.35）===== */
@@ -1055,7 +1066,7 @@
       <div class="g-st-cap" id="gsCap"></div>
       <div class="g-st-money" id="gsMoney"></div>
       <div class="g-st-auto" id="gsAuto"></div>
-      <div class="g-st-btns"><button class="btn" id="gwRefresh" title="請一個在線的遊戲分頁讀取公會倉庫（只讀）"><span data-ic="refresh-cw"></span> 重新整理</button><button class="btn" id="gRulesOpen" title="自動存入、存入規則、部位設定"><span data-ic="settings-2"></span> 存入規則</button><button class="btn" id="gMoneyOpen" title="存入或提領楓幣、點數"><span data-ic="coins"></span> 楓幣／點數</button></div>
+      <div class="g-st-btns"><button class="btn" id="gwRefresh" title="請一個在線的遊戲分頁讀取公會倉庫（只讀）"><span data-ic="refresh-cw"></span> 重新整理</button><button class="btn" id="gRulesOpen" title="自動存入、存入規則、部位設定"><span data-ic="settings-2"></span> 存入規則</button><button class="btn" id="gMoneyOpen" title="存入或提領楓幣、點數"><span data-ic="coins"></span> 楓幣／點數</button><button class="btn" id="gRestockOpen" title="角色背包的道具低於設定數量時，自動從公倉領到指定數量"><span data-ic="pill"></span> 自動補給</button></div>
     </div>
     <div id="gGuideWrap">
     <div class="card">
@@ -1139,6 +1150,19 @@
       <div class="bar" id="gmQuick"></div>
       <div id="gmOut"></div>
       <div class="bar" style="margin-top:8px"><button class="btn primary" id="gmCreate">建立存入工作</button><span class="dim" id="gmSum"></span><span class="dim" id="gmMsg"></span></div>
+    </div>
+    </aside>
+    <aside id="gRestockDrawer" class="drawer g-drawer" style="display:none">
+      <div class="dhd"><b>公倉自動補給</b><span class="dim" style="flex:1">背包的道具低於設定數量時，自動從公倉領到指定數量（只領道具，不碰楓幣、點數）</span><button class="btn" data-gclose="gRestockDrawer">關閉 ✕</button></div>
+    <div class="card" id="grCard">
+      <div class="bar"><label class="gr-on"><input type="checkbox" id="grOn"> <b>開啟自動補給</b></label><span class="dim sm" id="grInfo"></span><span style="flex:1"></span><button class="btn" id="grRun">立即檢查一次</button></div>
+      <div class="bar"><span class="sm" id="grGuild"></span><button class="btn sm" id="grRefresh" title="請一個在線的遊戲分頁讀取公會倉庫（只讀）">重新讀取公倉</button></div>
+      <div class="sm dim">只替<b>在線、有自己遊戲分頁</b>的角色領；在副本戰鬥中、離線掛機、背包滿、有公倉工作在排隊的會略過。多隻同時缺、公倉不夠時，照規則順序、背包最少的先分。領取時會再讀一次公倉、照當下背包重算數量。</div>
+      <h3 style="margin-top:10px">規則 <span class="dim sm">改了會自動存檔；從上到下依序分配</span></h3>
+      <div id="grRules"></div>
+      <div class="bar"><button class="btn sm" id="grAdd">＋ 新增規則</button><span class="dim sm" id="grMsg"></span></div>
+      <h3 style="margin-top:10px">最近紀錄 <span class="dim sm">最近 50 筆</span></h3>
+      <div id="grLog" class="gr-log"></div>
     </div>
     </aside>
   </section>
@@ -4895,10 +4919,164 @@ function cdProgBody(id, s) {
       <div class="dim sm">照順序把技能點到目標等級，再換下一列。</div>
       ${cdPlanRows('kp', (ui.cd.kp && ui.cd.kp.id === id ? ui.cd.kp.rows : (ui.cd.kp = { id, rows: pr.skillPlan.map(r => ({ ...r })) }).rows), pr.skills.map(x => [x.id, x.name]), 1, 30, 'skill')}`;
   } else {
-    h += `<h4 class="cd-h">掛機設定</h4>${CD_AUTO.map(([k, n, tip]) => `<label class="cd-sw" title="${esc(tip)}"><input type="checkbox" class="sw" data-cdauto="${k}" ${pr.auto[k] ? 'checked' : ''}> ${n} <span class="dim sm">${esc(tip)}</span></label>`).join('')}`;
+    h += `<h4 class="cd-h">掛機開關</h4>${CD_AUTO.map(([k, n, tip]) => `<label class="cd-sw" title="${esc(tip)}"><input type="checkbox" class="sw" data-cdauto="${k}" ${pr.auto[k] ? 'checked' : ''}> ${n} <span class="dim sm">${esc(tip)}</span></label>`).join('')}`;
+    h += cdIdleBody(id, s, pr);
   }
   return h;
 }
+// ---- 角色抽屜「掛機設定」：遊戲的掛機設定（1／2／3 套、補給、隊友 Buff、補血、自動購買）搬到中控改，改完送回遊戲 ----
+// 資料：agent 回報的 char.idleCfg（遊戲裡目前那一套＋背包的消耗品）；草稿 ui.cd.ic（遊戲那份變了就換成新的）
+const CD_CURE = 'i2050004', CD_BP = ['buffPotion', 'buffPotion2', 'buffPotion3'];
+const cdPct = (v, d) => { const n = Math.round(Number(v)); return n >= 1 && n <= 100 ? n : d; };
+function cdIcEditable(ic) {
+  const s = ic.supply || {}, bp = x => ({ enabled: !!(x && x.enabled), item: (x && x.item) || null }), th = (x, d) => ({ enabled: !!(x && x.enabled), threshold: cdPct(x && x.threshold, d) }), ab = ic.autoBuy || {};
+  return { supply: { hpItem: s.hpItem || null, mpItem: s.mpItem || null, hpPct: cdPct(s.hpPct, 50), mpPct: cdPct(s.mpPct, 30), onEmpty: s.onEmpty === 'continue' ? 'continue' : 'stop', autoCure: !!s.autoCure, ...Object.fromEntries(CD_BP.map(k => [k, bp(s[k])])) },
+    partyBuffs: [0, 1, 2].map(i => { const x = (ic.partyBuffs || [])[i] || {}; return { enabled: !!x.enabled, skill: x.skill || null }; }),
+    partyHeal: th(ic.partyHeal, 50), selfHeal: th(ic.selfHeal, 50),
+    autoBuy: { enabled: !!ab.enabled, reserve: Number(ab.reserve) || 0, rules: (ab.rules || []).map(r => ({ item: r.item, below: Number(r.below) || 0, target: Number(r.target) || 0 })) } };
+}
+function cdIcDraft(id, ic) {
+  const sig = JSON.stringify([ic.slot, ic.supply, ic.partyBuffs, ic.partyHeal, ic.selfHeal, ic.autoBuy]);
+  if (!ui.cd.ic || ui.cd.ic.id !== id || ui.cd.ic.sig !== sig) ui.cd.ic = { id, sig, v: cdIcEditable(ic) };
+  return ui.cd.ic;
+}
+const cdIcQty = (ic, key) => { const x = ic && (ic.items || []).find(i => i.id === key); return x ? x.qty : 0; };
+const cdIcName = (ic, key) => { const x = ic && (ic.items || []).find(i => i.id === key); return x ? x.name : (WORLD && WORLD.names && WORLD.names[key] && WORLD.names[key][0]) || key; };
+const cdSkName = (pr, id) => ((pr && pr.skills || []).find(x => x.id === id) || {}).name || id;
+function cdIcItemSel(ic, path, cur, none = '（不使用）') {
+  const list = [...(ic.items || [])]; if (cur && !list.some(x => x.id === cur)) list.push({ id: cur, name: cdIcName(ic, cur), qty: 0 });
+  return `<select data-cdic="${path}" data-t="item"><option value="">${none}</option>${list.map(x => `<option value="${esc(x.id)}" ${x.id === cur ? 'selected' : ''}>${esc(x.name)}（${x.qty}）</option>`).join('')}</select>`;
+}
+// 這份草稿要送的指令（base＝遊戲裡現在的，v＝要改成的）；parts 限制要送哪幾塊（複製到其他角色用）；skip(i) 隊友 Buff 哪幾格不送
+function cdIcCmds(ic, pr, base, v, opt = {}) {
+  const parts = opt.parts || { supply: 1, pbuff: 1, heal: 1, buy: 1 }, out = [], same = (a, b) => JSON.stringify(a) === JSON.stringify(b), nm = k => (k ? cdIcName(ic, k) : '');
+  if (parts.supply && (opt.force || !same(base.supply, v.supply))) {
+    const sp = v.supply, bps = CD_BP.map((k, i) => sp[k].enabled && sp[k].item ? `Buff 藥水${i + 1} ${nm(sp[k].item)}` : '').filter(Boolean);
+    out.push({ cmd: { type: 'supply', supply: v.supply, enable: true }, label: `補給：HP ${sp.hpItem ? nm(sp.hpItem) + ' ' + sp.hpPct + '%' : '不喝'}、MP ${sp.mpItem ? nm(sp.mpItem) + ' ' + sp.mpPct + '%' : '不喝'}${bps.length ? '、' + bps.join('、') : ''}、自動解除異常${sp.autoCure ? '開' : '關'}、用完${sp.onEmpty === 'continue' ? '繼續掛機' : '停止掛機'}` });
+    // 遊戲的補給指令會順便打開自動喝水（enable:true）：原本是關的就再關回去
+    if (opt.keepPotionOff) out.push({ cmd: { type: 'setting', key: 'autoPotion', value: false }, label: '自動喝水維持關閉' });
+  }
+  if (parts.pbuff) v.partyBuffs.forEach((x, i) => { if ((opt.force || !same(base.partyBuffs[i], x)) && !(opt.skip && opt.skip(i))) out.push({ cmd: { type: 'partyBuff', slot: i, config: { enabled: x.enabled && !!x.skill, skill: x.skill } }, label: `隊友 Buff 第 ${i + 1} 格：${x.enabled && x.skill ? cdSkName(pr, x.skill) : '關閉'}` }); });
+  if (parts.heal) for (const [k, n] of [['partyHeal', '隊友補血'], ['selfHeal', '自己補血']]) if (opt.force || !same(base[k], v[k])) out.push({ cmd: { type: k, config: v[k] }, label: `${n}：${v[k].enabled ? `HP 低於 ${v[k].threshold}%` : '關閉'}` });
+  if (parts.buy && (opt.force || !same(base.autoBuy, v.autoBuy))) { const b = v.autoBuy; out.push({ cmd: { type: 'autoBuy', config: b }, label: `自動購買：${b.enabled ? (b.rules.map(r => `${nm(r.item)} 低於 ${r.below} 買到 ${r.target}`).join('；') || '沒有規則') + (b.reserve ? `，保留 ${b.reserve.toLocaleString()} 楓幣` : '') : '關閉'}` }); }
+  return out;
+}
+function cdIcCheck(v) {
+  const sp = v.supply;
+  if (![sp.hpPct, sp.mpPct, v.partyHeal.threshold, v.selfHeal.threshold].every(n => Number.isInteger(n) && n >= 1 && n <= 100)) return '百分比要在 1～100 之間';
+  if (v.partyBuffs.some(x => x.enabled && !x.skill)) return '隊友 Buff 勾了但沒選技能';
+  if (v.autoBuy.rules.some(r => !r.item || !(r.target > r.below) || r.below < 0)) return '自動購買：每一條都要選道具，「買到」要比「低於」多';
+  return '';
+}
+// 套到別隻角色時的警告：藥水不在它背包、沒有萬能療傷藥、隊友 Buff 技能它沒學（那一格不送）
+function cdCopyIssues(v, src, sT) {
+  const ic = sT.char.idleCfg, pr = sT.char.prog, w = [], skip = new Set(), parts = ui.cd.cp.parts;
+  if (!ic) w.push('它的遊戲分頁還是舊腳本，沒辦法檢查背包');
+  if (ic && parts.supply) {
+    const sp = v.supply, need = [sp.hpItem, sp.mpItem, ...CD_BP.map(k => sp[k].enabled && sp[k].item)].filter(Boolean);
+    for (const k of [...new Set(need)]) if (!cdIcQty(ic, k)) w.push(`背包沒有 ${cdIcName(src, k)}`);
+    if (sp.autoCure && !cdIcQty(ic, CD_CURE)) w.push('沒有萬能療傷藥（自動解除異常不會有效）');
+  }
+  if (parts.pbuff) v.partyBuffs.forEach((x, i) => { if (x.enabled && x.skill && !((pr && pr.skills) || []).some(k => k.id === x.skill && k.lv > 0)) { w.push(`沒學 ${cdSkName(src.__pr, x.skill)}（隊友 Buff 第 ${i + 1} 格不套用）`); skip.add(i); } });
+  return { w, skip };
+}
+function cdIdleBody(id, s, pr) {
+  const ic = s.char.idleCfg;
+  if (!ic) return '<div class="card attn sm" style="margin-top:8px;padding:6px 10px">補給、隊友 Buff、補血這些設定要等這隻的遊戲分頁換上新版中控腳本（重新整理遊戲分頁）才看得到。</div>';
+  const d = cdIcDraft(id, ic), v = d.v, sp = v.supply, cure = cdIcQty(ic, CD_CURE), dirty = cdIcCmds(ic, pr, cdIcEditable(ic), v).length;
+  const ck = (path, on) => `<input type="checkbox" data-cdic="${path}" data-t="bool" ${on ? 'checked' : ''}>`, num = (path, val, lo = 1, hi = 100) => `<input type="number" min="${lo}" max="${hi}" data-cdic="${path}" data-t="num" value="${esc(val)}">`;
+  const miss = k => k && !cdIcQty(ic, k) ? ' <span class="tag warn">背包沒有</span>' : '';
+  const pskills = pr.skills.filter(x => x.party && x.lv > 0);
+  const skSel = (path, cur) => { const list = [...pskills]; if (cur && !list.some(x => x.id === cur)) list.push({ id: cur, name: cdSkName(pr, cur) + '（沒學／不能給隊友）' }); return `<select data-cdic="${path}" data-t="str"><option value="">（不使用）</option>${list.map(x => `<option value="${esc(x.id)}" ${x.id === cur ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`; };
+  let h = `<h4 class="cd-h">掛機設定組合 <span class="sm">目前第 <b id="cdicSlot">${ic.slot}</b> 套</span><span style="flex:1"></span><span class="seg">${[1, 2, 3].map(n => `<button data-cdpreset="${n}" class="${ic.slot === n ? 'on' : ''}" ${ic.slot === n ? 'disabled' : ''}>${n}</button>`).join('')}</span></h4>
+    <div class="dim sm">下面顯示的是遊戲裡第 ${ic.slot} 套的內容；三套各自獨立，沒用過的那套是空白的。</div>
+    <div class="bar"><button class="btn sm" data-cdicread="1" title="放棄還沒套用的修改，向遊戲重新讀一次">⟳ 從遊戲重新讀取</button>${dirty ? `<span class="warn sm">有 ${dirty} 項還沒套用</span>` : '<span class="dim sm">跟遊戲一樣</span>'}</div>
+    <div class="cdic"><b>補給（喝水）</b>
+      <div class="bar">HP 藥水 ${cdIcItemSel(ic, 'supply.hpItem', sp.hpItem, '（不喝）')} 低於 ${num('supply.hpPct', sp.hpPct)}% 喝${miss(sp.hpItem)}</div>
+      <div class="bar">MP 藥水 ${cdIcItemSel(ic, 'supply.mpItem', sp.mpItem, '（不喝）')} 低於 ${num('supply.mpPct', sp.mpPct)}% 喝${miss(sp.mpItem)}</div>
+      ${CD_BP.map((k, i) => `<div class="bar"><label>${ck(`supply.${k}.enabled`, sp[k].enabled)} Buff 藥水 ${i + 1}</label> ${cdIcItemSel(ic, `supply.${k}.item`, sp[k].item)}${sp[k].enabled ? miss(sp[k].item) : ''}</div>`).join('')}
+      <div class="bar"><label>${ck('supply.autoCure', sp.autoCure)} 自動解除異常</label><span class="sm ${cure ? 'dim' : 'warn'}" id="cdicCure">背包有萬能療傷藥 ${cure} 個${cure ? '' : sp.autoCure ? '：勾了也不會用（怪物掉落）' : ''}</span></div>
+      <div class="dim sm">中了封印、黑暗、詛咒、虛弱、中毒等自動吃萬能療傷藥，每次 1 個。</div>
+      <div class="bar">藥水用完時 <select data-cdic="supply.onEmpty" data-t="str"><option value="stop" ${sp.onEmpty === 'stop' ? 'selected' : ''}>停止掛機</option><option value="continue" ${sp.onEmpty === 'continue' ? 'selected' : ''}>繼續掛機</option></select></div></div>
+    <div class="cdic"><b>隊友 Buff</b>${pskills.length ? '' : ' <span class="dim sm">這隻沒有學可以給隊友的 Buff 技能</span>'}
+      ${v.partyBuffs.map((x, i) => `<div class="bar"><label>${ck(`partyBuffs.${i}.enabled`, x.enabled)} 第 ${i + 1} 格</label> ${skSel(`partyBuffs.${i}.skill`, x.skill)}</div>`).join('')}</div>
+    <div class="cdic"><b>補血</b>
+      <div class="bar"><label>${ck('partyHeal.enabled', v.partyHeal.enabled)} 隊友補血</label> HP 低於 ${num('partyHeal.threshold', v.partyHeal.threshold)}%</div>
+      <div class="bar"><label>${ck('selfHeal.enabled', v.selfHeal.enabled)} 自己補血</label> HP 低於 ${num('selfHeal.threshold', v.selfHeal.threshold)}%</div></div>
+    <div class="cdic"><b>自動購買</b> <label class="sm">${ck('autoBuy.enabled', v.autoBuy.enabled)} 開啟</label>
+      <div class="dim sm">低於幾個就自動去商店買到幾個（只限商店有賣的；會花楓幣）。</div>
+      <div class="bar">保留楓幣 ${num('autoBuy.reserve', v.autoBuy.reserve, 0, 2000000000)}<span class="dim sm">不會花到這個數以下</span></div>
+      ${v.autoBuy.rules.map((r, i) => `<div class="bar">${cdIcItemSel(ic, `autoBuy.rules.${i}.item`, r.item, '（選道具）')} 低於 ${num(`autoBuy.rules.${i}.below`, r.below, 0, 30000)} 買到 ${num(`autoBuy.rules.${i}.target`, r.target, 1, 30000)}<button class="btn sm" data-cdicbuydel="${i}">✕</button></div>`).join('')}
+      <div class="bar"><button class="btn sm" data-cdicbuyadd="1">＋ 加一條</button></div></div>
+    <div class="dim sm">遊戲裡另外設的：自動 Buff ${ic.autoBuffs.length ? ic.autoBuffs.map(k => esc(cdSkName(pr, k))).join('、') : '無'}・快速施放 ${ic.quickCast.length} 個・連續攻擊${ic.continuousAttack ? '開' : '關'}${ic.lowHpSkill && ic.lowHpSkill.enabled ? `・低血技能 ${esc(cdSkName(pr, ic.lowHpSkill.skill))} ${ic.lowHpSkill.threshold}%` : ''}（自動 Buff 在「技能」頁改）</div>
+    <div class="bar" style="margin-top:6px"><button class="btn sm primary" data-cdicapply="1">套用到遊戲</button><button class="btn sm" data-cdicreset="1">還原</button><span style="flex:1"></span><button class="btn sm" data-cdcpopen="1">複製到其他角色…</button></div>`;
+  if (ui.cd.cp && ui.cd.cp.id === id) h += cdCopyBox(id, s, ic, pr, v);
+  return h;
+}
+function cdCopyBox(id, s, ic, pr, v) {
+  const cp = ui.cd.cp, src = { ...ic, __pr: pr }, others = snaps().filter(x => x.char && x.char.id !== id).sort((a, b) => String(a.char.name).localeCompare(String(b.char.name)));
+  const parts = [['supply', '補給（藥水、Buff 藥水、解除異常、用完時）'], ['pbuff', '隊友 Buff'], ['heal', '隊友補血／自己補血'], ['buy', '自動購買']];
+  return `<div class="cdic" id="cdCopy"><div class="bar"><b>複製 ${esc(s.char.name)} 的設定到其他角色</b><span style="flex:1"></span><button class="btn sm" data-cdcpclose="1">✕</button></div>
+    <div class="dim sm">用上面顯示的內容（含還沒套用的修改），套到每隻角色「目前那一套」。</div>
+    ${parts.map(([k, n]) => `<label class="sm cd-sw"><input type="checkbox" data-cdcppart="${k}" ${cp.parts[k] ? 'checked' : ''}> ${n}</label>`).join('')}
+    <div class="bar"><button class="btn sm" data-cdcpall="1">全選</button><button class="btn sm" data-cdcpnone="1">全不選</button><span class="dim sm">已選 ${cp.sel.length} 隻</span></div>
+    ${others.map(o => { const on = cp.sel.includes(o.char.id), is = cdCopyIssues(v, src, o), oic = o.char.idleCfg;
+      return `<div class="cdcp-row ${on ? 'on' : ''}" data-cdcprow="${esc(o.char.id)}"><input type="checkbox" ${on ? 'checked' : ''} tabindex="-1"><div><b>${esc(o.char.name)}</b> <span class="dim sm">Lv${o.char.lv}・${esc(o.char.jobName || '')}${oic ? `・第 ${oic.slot} 套` : ''}</span>${is.w.length ? `<div class="warn sm">⚠ ${is.w.map(esc).join('；')}</div>` : ''}</div></div>`; }).join('') || '<div class="dim sm">沒有其他角色的資料</div>'}
+    <div class="bar"><button class="btn sm primary" data-cdcpgo="1" ${cp.sel.length ? '' : 'disabled'}>套用到 ${cp.sel.length} 隻</button></div></div>`;
+}
+document.addEventListener('change', e => {
+  const t = e.target; if (!t.closest || !t.closest('#charDrawer') || !(t.dataset.cdic || t.dataset.cdcppart)) return;
+  if (t.dataset.cdcppart) { ui.cd.cp.parts[t.dataset.cdcppart] = t.checked; renderCharDrawer(); return; }
+  const d = ui.cd.ic; if (!d || d.id !== ui.charDrawer) return;
+  const ks = t.dataset.cdic.split('.'), last = ks.pop(); let o = d.v; for (const k of ks) o = o[k];
+  const ty = t.dataset.t; o[last] = ty === 'bool' ? t.checked : ty === 'num' ? Math.round(Number(t.value)) : ty === 'item' ? (t.value || null) : t.value || null;
+  if (last === 'skill' && !o[last]) o.enabled = false;
+  renderCharDrawer(); // 輸入框還在打字時 renderCharDrawer 自己會跳過
+});
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('#charDrawer [data-cdpreset],#charDrawer [data-cdicread],#charDrawer [data-cdicapply],#charDrawer [data-cdicreset],#charDrawer [data-cdicbuyadd],#charDrawer [data-cdicbuydel],#charDrawer [data-cdcpopen],#charDrawer [data-cdcpclose],#charDrawer [data-cdcprow],#charDrawer [data-cdcpall],#charDrawer [data-cdcpnone],#charDrawer [data-cdcpgo]'); if (!t) return;
+  const id = ui.charDrawer, s = DATA.chars[id], pr = s && s.char.prog, ic = s && s.char.idleCfg; if (!pr || !ic) return;
+  const dd = t.dataset, d = cdIcDraft(id, ic), v = d.v, name = s.char.name;
+  if (dd.cdpreset) {
+    const n = Number(dd.cdpreset), dirty = cdIcCmds(ic, pr, cdIcEditable(ic), v).length;
+    if (!confirm(`把 ${name} 換成第 ${n} 套掛機設定？\n\n三套各自獨立：沒用過的那一套是空白的（沒有藥水、Buff、補血設定），換過去後請在這裡設好再套用。\n第 ${ic.slot} 套的內容會留在第 ${ic.slot} 套。${dirty ? `\n\n還沒套用的 ${dirty} 項修改會放棄。` : ''}`)) return;
+    ui.cd.ic = null; await cdSend(id, { type: 'settingsPreset', slot: n }, `換成第 ${n} 套掛機設定`); return;
+  }
+  if (dd.cdicread) { ui.cd.ic = null; await cdSend(id, { type: 'read' }, '從遊戲重新讀取掛機設定'); return; }
+  if (dd.cdicreset) { ui.cd.ic = null; renderCharDrawer(); return; }
+  if (dd.cdicbuyadd) { v.autoBuy.rules.push({ item: v.supply.hpItem || null, below: 10, target: 200 }); renderCharDrawer(); return; }
+  if (dd.cdicbuydel) { v.autoBuy.rules.splice(Number(dd.cdicbuydel), 1); renderCharDrawer(); return; }
+  if (dd.cdicapply) {
+    const bad = cdIcCheck(v); if (bad) { alert(bad); return; }
+    const cmds = cdIcCmds(ic, pr, cdIcEditable(ic), v, { keepPotionOff: !pr.auto.autoPotion }); if (!cmds.length) { alert('沒有改任何設定'); return; }
+    if (!confirm(`${name}（第 ${ic.slot} 套）要改這些掛機設定：\n・${cmds.map(c => c.label).join('\n・')}\n\n確定套用到遊戲？`)) return;
+    try { await api('/api/idle', { targets: cmds.map(c => ({ charId: id, action: 'cfg', cmd: c.cmd, label: c.label })) }); ui.cd.msg = `已送出 ${cmds.length} 項掛機設定，幾秒內會更新`; await poll(true); }
+    catch (err) { alert('失敗：' + err.message); }
+    return;
+  }
+  if (dd.cdcpopen) { ui.cd.cp = { id, sel: [], parts: { supply: true, pbuff: true, heal: true, buy: true } }; renderCharDrawer(); const b = $('#cdCopy'); if (b && b.scrollIntoView) b.scrollIntoView({ block: 'nearest' }); return; }
+  const cp = ui.cd.cp; if (!cp || cp.id !== id) return;
+  if (dd.cdcpclose) { ui.cd.cp = null; renderCharDrawer(); return; }
+  if (dd.cdcprow) { const k = dd.cdcprow; cp.sel = cp.sel.includes(k) ? cp.sel.filter(x => x !== k) : [...cp.sel, k]; renderCharDrawer(); return; }
+  if (dd.cdcpall) { cp.sel = snaps().map(x => x.char.id).filter(x => x !== id); renderCharDrawer(); return; }
+  if (dd.cdcpnone) { cp.sel = []; renderCharDrawer(); return; }
+  if (dd.cdcpgo) {
+    const bad = cdIcCheck(v); if (bad) { alert(bad); return; }
+    if (!Object.values(cp.parts).some(Boolean)) { alert('至少勾一項要複製的設定'); return; }
+    const src = { ...ic, __pr: pr }, targets = [], lines = [];
+    for (const tid of cp.sel) {
+      const o = DATA.chars[tid]; if (!o) continue;
+      const is = cdCopyIssues(v, src, o), oic = o.char.idleCfg, base = oic ? cdIcEditable(oic) : null;
+      const cmds = cdIcCmds(ic, pr, base || cdIcEditable({}), v, { parts: cp.parts, force: !base, skip: i => is.skip.has(i), keepPotionOff: !pr.auto.autoPotion });
+      for (const c of cmds) targets.push({ charId: tid, action: 'cfg', cmd: c.cmd, label: '複製 ' + name + '：' + c.label });
+      lines.push(`・${o.char.name}：${cmds.length ? cmds.length + ' 項' : '已經一樣'}${is.w.length ? '\n    ⚠ ' + is.w.join('；') : ''}`);
+    }
+    if (!targets.length) { alert('勾選的角色設定都已經一樣了'); return; }
+    if (!confirm(`把 ${name} 的掛機設定套到 ${cp.sel.length} 隻角色（各自目前那一套）：\n${lines.join('\n')}\n\n確定套用？`)) return;
+    try { await api('/api/idle', { targets }); ui.cd.msg = `已送出：複製到 ${cp.sel.length} 隻角色（${targets.length} 項），幾秒內會更新`; ui.cd.cp = null; await poll(true); }
+    catch (err) { alert('失敗：' + err.message); }
+  }
+});
 function cdPlanRows(key, rows, opts, lo, hi, field = 'stat') {
   return `<div class="cd-plan">${rows.map((r, i) => `<div class="bar"><span class="dim sm">${i + 1}.</span><select data-cdpl="${key}|${i}|${field}">${opts.map(([v, n]) => `<option value="${esc(v)}" ${String(r[field]) === String(v) ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select><span class="sm">到</span><input type="number" min="${lo}" max="${hi}" data-cdpl="${key}|${i}|target" value="${esc(r.target)}" style="width:70px"><button class="btn sm" data-cdpldel="${key}|${i}">✕</button></div>`).join('')}
     <div class="bar"><button class="btn sm" data-cdpladd="${key}">＋ 加一列</button><button class="btn sm primary" data-cdplsave="${key}">儲存計畫</button></div></div>`;
@@ -5903,7 +6081,7 @@ function gearFits(g) {
 }
 function renderGuild() {
   fillIcons($('#guild'));
-  loadGuild().then(() => { renderGuildStatus(); renderGuildBag(); renderGuildOut(); renderGuideSteps(); if ($('#gRulesDrawer').style.display !== 'none') { renderGuildDeposit(); renderGuildAuto(); } if ($('#gMoneyDrawer').style.display !== 'none') renderGuildMoney(); });
+  loadGuild().then(() => { renderGuildStatus(); renderGuildBag(); renderGuildOut(); renderGuideSteps(); if ($('#gRulesDrawer').style.display !== 'none') { renderGuildDeposit(); renderGuildAuto(); } if ($('#gMoneyDrawer').style.display !== 'none') renderGuildMoney(); if ($('#gRestockDrawer').style.display !== 'none') renderGuildRestock(); });
 }
 function renderGuildAuto() {
   setTimeout(() => enhanceSegs($('#gRulesDrawer')), 0);
@@ -6055,16 +6233,18 @@ function renderGuildStatus() {
   $('#gsName').innerHTML = g ? `<b>${esc(g.guildName || '公會倉庫')}</b> <span class="dim sm">${job ? '讀取中…' : ago(Date.now() - (GUILD.at || 0)) + '更新'}</span>` : `<b>公會倉庫</b> <span class="dim sm">${job ? '讀取中…' : '還沒讀過，按「重新整理」'}</span>`;
   $('#gsCap').innerHTML = g ? meter('道具', Object.values(g.items || {}).filter(n => n > 0).length, cap.items) + meter('裝備', (g.gear || []).length, cap.gear) : '';
   $('#gsMoney').innerHTML = g ? `<span class="lbl">楓幣</span><b class="nfont">${short(g.mesos || 0)}</b><span class="lbl">點數</span><b class="nfont">${fmt(g.cashPoints || 0)}</b>` : '';
-  $('#gsAuto').innerHTML = `<div>${autoTxt}</div><div class="dim sm">規則：${gdShortSummary()}</div>`;
+  const rc = S.guildRestock || {}, rn = (rc.rules || []).filter(r => r.on !== false && r.key).length;
+  $('#gsAuto').innerHTML = `<div>${autoTxt}</div><div class="dim sm">規則：${gdShortSummary()}</div><div class="sm">${rc.on ? `自動補給：開（${rn} 條規則）` : '<span class="dim">自動補給：關閉</span>'}</div>`;
 }
-function openGDrawer(id) { document.querySelectorAll('.g-drawer').forEach(x => { x.style.display = x.id === id ? '' : 'none'; }); if (id === 'gMoneyDrawer') renderGuildMoney(); if (id === 'gRulesDrawer') { renderGuildDeposit(); renderGuildAuto(); } }
+function openGDrawer(id) { document.querySelectorAll('.g-drawer').forEach(x => { x.style.display = x.id === id ? '' : 'none'; }); if (id === 'gMoneyDrawer') renderGuildMoney(); if (id === 'gRulesDrawer') { renderGuildDeposit(); renderGuildAuto(); } if (id === 'gRestockDrawer') renderGuildRestock(true); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.g-drawer').forEach(x => { x.style.display = 'none'; }); });
 document.addEventListener('change', e => { if (e.target.id === 'gxJudge') { ui.gx.judge = e.target.value; renderGuildBag(); } });
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-gxpick],[data-gxsel],#gxDeposit,#gRulesOpen,#gMoneyOpen,[data-gclose]'); if (!t || !t.closest('#guild')) return;
+  const t = e.target.closest('[data-gxpick],[data-gxsel],#gxDeposit,#gRulesOpen,#gMoneyOpen,#gRestockOpen,[data-gclose]'); if (!t || !t.closest('#guild')) return;
   if (t.dataset.gclose) { $('#' + t.dataset.gclose).style.display = 'none'; return; }
   if (t.id === 'gRulesOpen') { openGDrawer('gRulesDrawer'); return; }
   if (t.id === 'gMoneyOpen') { openGDrawer('gMoneyDrawer'); return; }
+  if (t.id === 'gRestockOpen') { openGDrawer('gRestockDrawer'); return; }
   if (t.dataset.gxpick) {
     const rk = t.dataset.gxpick, list = ui.gx.shown;
     if (e.shiftKey && ui.gx.last && list.includes(ui.gx.last)) { const [i, j] = [list.indexOf(ui.gx.last), list.indexOf(rk)].sort((x, y) => x - y); for (const k of list.slice(i, j + 1)) ui.gx.sel.add(k); }
@@ -6355,6 +6535,101 @@ document.addEventListener('change', e => {
 document.addEventListener('input', e => {
   if (e.target.id === 'gwQ') { ui.gw.q = e.target.value; renderGuildOut(); }
   if (e.target.id === 'gdQ') { gdState().q = e.target.value; renderGuildDeposit(); }
+});
+// ---- 公倉自動補給：背包低於 X 個自動從公倉領到 Y 個（settings.guildRestock；伺服器每 2 分鐘檢查、建立 guildWithdraw）----
+// 規則 { id, on, key:'i…', name, below, target, charSpec:{mode,ids}, chars:[角色id]|null（null＝全部角色）}；只有道具，沒有楓幣、點數
+function grCfg() { if (!S.guildRestock) S.guildRestock = { on: false, rules: [] }; if (!Array.isArray(S.guildRestock.rules)) S.guildRestock.rules = []; return S.guildRestock; }
+const grRule = id => grCfg().rules.find(r => r.id === id);
+const grSave = () => saveSettings({ guildRestock: grCfg() });
+// 公倉裡的道具（只列 i 開頭的道具，裝備不能補給）
+function grItems() {
+  const g = GUILD && GUILD.data;
+  return Object.entries((g && g.items) || {}).filter(([k, n]) => /^i\w+$/.test(k) && n > 0).map(([key, n]) => ({ key, n, name: keyName(key) })).sort((a, b) => cmp(a.name, b.name));
+}
+const grBag = (s, key) => (s.items || []).filter(it => it.loc === '背包' && it.key === key).reduce((t, it) => t + (Number(it.qty) || 0), 0);
+// 角色選擇器：每條規則一個（全部／A／B／有分頁的是動態的，角色變了就重存展開後的清單給伺服器）
+function grRegisterCP() {
+  let changed = false;
+  for (const r of grCfg().rules) {
+    const rid = r.id;
+    CP['gr' + rid] = { get: () => (grRule(rid) || {}).charSpec || { mode: 'all' },
+      set: spec => { const x = grRule(rid); if (!x) return; x.charSpec = spec; x.chars = spec.mode === 'all' ? null : cpIds(spec); grSave(); renderGuildRestock(true); } };
+    const m = r.charSpec && r.charSpec.mode;
+    if ((m === 'A' || m === 'B' || m === 'tab') && snaps().length) {
+      const want = cpIds(r.charSpec), have = r.chars || [];
+      if (want.length !== have.length || want.some(id => !have.includes(id))) { r.chars = want; changed = true; }
+    }
+  }
+  if (changed) grSave();
+}
+function grNowLine(r) {
+  if (!r.key) return '先選要補給的道具';
+  const ids = Array.isArray(r.chars) ? new Set(r.chars) : null;
+  const list = snaps().filter(s => !ids || ids.has(s.char.id)).map(s => ({ s, n: grBag(s, r.key) })).sort((a, b) => a.n - b.n || cmp(a.s.char.name, b.s.char.name));
+  if (!list.length) return '沒有套用的角色';
+  const low = list.filter(x => x.n < Number(r.below));
+  return low.length ? `目前低於 ${fmt(r.below)}：${low.slice(0, 8).map(x => `${esc(x.s.char.name)} ${fmt(x.n)}`).join('、')}${low.length > 8 ? ` 等 ${low.length} 隻` : ''}` : `目前 ${list.length} 隻都夠（最少 ${esc(list[0].s.char.name)} ${fmt(list[0].n)}）`;
+}
+function grRuleHTML(r, i, items) {
+  const opts = items.slice();
+  if (r.key && !opts.some(x => x.key === r.key)) opts.unshift({ key: r.key, n: 0, name: r.name || keyName(r.key) });
+  const sel = `<select data-grf="key" data-grid="${esc(r.id)}"><option value="">（選公倉裡的道具）</option>${opts.map(x => `<option value="${esc(x.key)}" ${x.key === r.key ? 'selected' : ''}>${esc(x.name)}（公倉 ${x.n ? fmt(x.n) : '沒有'}）</option>`).join('')}</select>`;
+  const bad = Number(r.target) < Number(r.below);
+  return `<div class="gr-rule ${r.on === false ? 'off' : ''}" data-grrule="${esc(r.id)}">
+    <div class="bar"><label title="開關這條規則"><input type="checkbox" data-grf="on" data-grid="${esc(r.id)}" ${r.on !== false ? 'checked' : ''}> ${i + 1}.</label>${sel}
+      <span>低於</span><input type="number" min="1" data-grf="below" data-grid="${esc(r.id)}" value="${esc(r.below)}" style="width:80px"><span>個時，補到</span><input type="number" min="1" data-grf="target" data-grid="${esc(r.id)}" value="${esc(r.target)}" style="width:80px"><span>個</span>
+      ${bad ? '<span class="warn sm">「補到」要大於等於「低於」</span>' : ''}<span style="flex:1"></span>
+      ${i ? `<button class="btn sm" data-grup="${esc(r.id)}" title="往上移（公倉不夠時先分配）">↑</button>` : ''}<button class="btn sm" data-grdel="${esc(r.id)}">刪除</button></div>
+    <div class="bar"><span class="gd-lb">哪些角色</span>${charPickHTML('gr' + r.id, {})}</div>
+    <div class="sm dim">${grNowLine(r)}</div></div>`;
+}
+const GR_ST = { queued: ['排隊中', ''], approved: ['排隊中', ''], pending: ['待確認', 'warn'], running: ['領取中', 'good'], done: ['✓ 完成', 'good'], failed: ['✗ 失敗', 'bad'], cancelled: ['已取消', 'dim'] };
+function renderGuildRestock(full) {
+  if (!$('#grCard')) return;
+  const c = grCfg(), R = (GUILD && GUILD.restock) || {}, ae = document.activeElement;
+  if (ae !== $('#grOn')) $('#grOn').checked = !!c.on;
+  $('#grInfo').textContent = `每 ${Math.max(1, Math.round((R.everyMs || 120000) / 60e3))} 分鐘檢查一次・同一隻同一道具 ${Math.max(1, Math.round((R.cdMs || 600000) / 60e3))} 分鐘內只領一次${R.at ? `・上次檢查 ${clock(R.at)}` : ''}`;
+  const g = GUILD && GUILD.data, job = (DATA.jobs || []).find(j => j.kind === 'guildView' && ['approved', 'running'].includes(j.status));
+  $('#grGuild').innerHTML = job ? '公倉內容：讀取中…' : g ? `公倉內容：<b>${ago(Date.now() - (GUILD.at || 0))}</b>讀的（${grItems().length} 種道具）` : '<span class="warn">還沒讀過公倉，按「重新讀取公倉」</span>';
+  // 正在改規則（輸入框、下拉有焦點）時不重畫規則，只更新紀錄
+  if (full || !($('#grRules').contains(ae) && /INPUT|SELECT/.test(ae.tagName))) {
+    grRegisterCP();
+    const items = grItems();
+    $('#grRules').innerHTML = c.rules.length ? c.rules.map((r, i) => grRuleHTML(r, i, items)).join('') : '<div class="dim">還沒有規則。按「＋ 新增規則」，例如：特殊藥水低於 50 個時補到 200 個。</div>';
+  }
+  const jobs = new Map((DATA.jobs || []).map(j => [j.id, j]));
+  $('#grLog').innerHTML = (R.log || []).slice().reverse().map(x => {
+    let st = '';
+    if (x.kind === 'take') { const j = jobs.get(x.jobId), k = x.status === 'queued' && j ? j.status : x.status, s = GR_ST[k] || [k, '']; st = ` <b class="${s[1]}">${s[0]}</b>`; }
+    return `<div class="sm"><span class="dim">${clock(x.at)}</span> ${esc(x.msg)}${st}${x.result ? ` <span class="dim">${esc(x.result)}</span>` : ''}</div>`;
+  }).join('') || '<div class="dim">還沒有紀錄</div>';
+}
+document.addEventListener('change', e => {
+  const t = e.target; if (!t.closest || !t.closest('#gRestockDrawer')) return;
+  const c = grCfg();
+  if (t.id === 'grOn') {
+    if (t.checked && !confirm('開啟後，角色背包的道具低於規則的數量時，會自動從公倉領取（直接執行、不用確認；只領道具，不碰楓幣、點數）。確定開啟？')) { t.checked = false; return; }
+    c.on = t.checked; grSave().then(() => { renderGuildRestock(true); renderGuildStatus(); }); return;
+  }
+  if (t.dataset.grf) {
+    const r = grRule(t.dataset.grid); if (!r) return;
+    const f = t.dataset.grf;
+    if (f === 'on') r.on = t.checked;
+    else if (f === 'key') { r.key = t.value; r.name = t.value ? keyName(t.value) : ''; }
+    else r[f] = Math.max(1, Math.floor(Number(t.value) || 1));
+    grSave(); renderGuildRestock(true); renderGuildStatus(); return;
+  }
+});
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('#grAdd,#grRun,#grRefresh,[data-grdel],[data-grup]'); if (!t || !t.closest('#gRestockDrawer')) return;
+  const c = grCfg();
+  try {
+    if (t.id === 'grAdd') { c.rules.push({ id: Math.random().toString(36).slice(2, 10), on: true, key: '', name: '', below: 20, target: 100, charSpec: { mode: 'all' }, chars: null }); await grSave(); renderGuildRestock(true); return; }
+    if (t.dataset.grdel) { const r = grRule(t.dataset.grdel); if (r && r.key && !confirm(`刪除規則「${r.name || r.key}」？`)) return; c.rules = c.rules.filter(x => x.id !== t.dataset.grdel); await grSave(); renderGuildRestock(true); renderGuildStatus(); return; }
+    if (t.dataset.grup) { const i = c.rules.findIndex(x => x.id === t.dataset.grup); if (i > 0) { [c.rules[i - 1], c.rules[i]] = [c.rules[i], c.rules[i - 1]]; await grSave(); renderGuildRestock(true); } return; }
+    if (t.id === 'grRun') { t.disabled = true; await api('/api/guild/restock/run', {}); await loadGuild(true); await poll(true); renderGuildRestock(); t.disabled = false; return; }
+    if (t.id === 'grRefresh') { t.disabled = true; await api('/api/guild/refresh', {}); $('#grMsg').textContent = '已請遊戲分頁讀取公倉，幾秒後更新'; await poll(true); setTimeout(async () => { t.disabled = false; await loadGuild(true); renderGuildRestock(true); }, 4000); return; }
+  } catch (err) { t.disabled = false; $('#grMsg').textContent = '失敗：' + err.message; }
 });
 // ---- 背包分頁：選取的東西直接存進公倉 ----
 function bagGuildPlan() {
@@ -7041,13 +7316,32 @@ function toastMsg(m) { let el = $('#lbToast'); if (!el) { el = document.createEl
 // ---------- ⚔ 副本（v0.77）：settings.raid = {kind, leader, members[]}；/api/raid 的 views（隊伍）、live（即時戰況）----------
 const RAID_NAME = { papulatus: '拉圖斯', zakum: '殘暴炎魔' };
 const AIL_NAME = { seal: '封印', darkness: '黑暗', stun: '暈眩', curse: '詛咒', poison: '中毒', weakness: '虛弱', slow: '緩慢' };
-let RAID = null, raidLoading = false;
+let RAID = null, raidLoading = false, RS = null; // RS：這場的時間序列（/api/raid 的 series，每秒只拿新的點接上去）
+const RAID_RESULT = { clear: ['通關', 'good'], fail: ['失敗', 'bad'], timeout: ['時間到', 'bad'] };
 function raidPlan() { const p = S.raid || {}; return { kind: RAID_NAME[p.kind] ? p.kind : 'papulatus', leader: p.leader || '', members: (p.members || []).filter(x => x && x !== p.leader).slice(0, 11), lock: !!p.lock, password: String(p.password || '').slice(0, 12) }; }
 // 遊戲回的副本規則（等級、人數、法師、費用、時間、每週場數）：任一隻角色讀過就有
 function raidRules(kind) { for (const v of Object.values((RAID && RAID.views) || {})) { const r = v.view && (v.view.raids || []).find(x => x && x.id === kind); if (r) return r; } return null; }
 const raidSelf = id => { const v = RAID && RAID.views[id]; return v && v.view && v.view.self; };
 const raidAll = p => [p.leader, ...p.members].filter(Boolean);
-async function loadRaid() { if (raidLoading) return; raidLoading = true; try { RAID = await (await fetch('/api/raid')).json(); } finally { raidLoading = false; } }
+async function loadRaid() {
+  if (raidLoading) return; raidLoading = true;
+  try { const last = RS && RS.points.length ? RS.points[RS.points.length - 1][0] : 0; RAID = await (await fetch('/api/raid' + (last ? '?since=' + last : ''))).json(); raidMergeSeries(RAID.series); } finally { raidLoading = false; }
+}
+function raidMergeSeries(s) {
+  if (!s) { RS = null; return; }
+  if (!RS || RS.code !== s.code || !s.since) { RS = { ...s, points: (s.points || []).slice() }; return; }
+  const last = RS.points.length ? RS.points[RS.points.length - 1][0] : 0;
+  RS = { ...s, points: RS.points.concat((s.points || []).filter(p => p[0] > last)) };
+  if (RS.points.length > 1500) RS.points.splice(0, RS.points.length - 1500);
+}
+// 近 30 秒：總輸出＝damageBy 總和的增加量、淨輸出＝王實際掉的血、回血＝兩者的差（實機拉圖斯約每秒 6 萬）
+function raidRates(win = 30000) {
+  const pts = (RS && RS.points) || []; if (pts.length < 2) return null;
+  const end = pts[pts.length - 1], seg = pts.filter(p => p[0] >= end[0] - win), a = seg[0], dt = (end[0] - a[0]) / 1000;
+  if (!a || dt < 5) return null;
+  const gross = (end[2] - a[2]) / dt, net = (a[1] - end[1]) / dt;
+  return { dt, gross: gross >= 0 ? gross : null, net, regen: gross >= 0 ? Math.max(0, gross - net) : null, hp: end[1] };
+}
 // 隊伍表用「最新的」那份：隊長的資料可能是建立時的舊資料，隊員加入／準備後他們自己回報的比較新（v0.77.2）
 function raidLeaderView() {
   const p = raidPlan(); if (!RAID) return null; const lead = RAID.views[p.leader];
@@ -7084,7 +7378,10 @@ function drawRaid() {
     if (R) { const low = all.filter(id => (DATA.chars[id] && DATA.chars[id].char.lv) < R.minLevel); if (low.length) warn.push(`等級不到 ${R.minLevel}：${low.map(charNameOf).join('、')}`); }
     const zero = all.filter(id => (raidSelf(id) || {}).left === 0); if (zero.length) warn.push(`本週場數用完：${zero.map(charNameOf).join('、')}`);
     if (!typing) $('#rdSetup').insertAdjacentHTML('beforeend', warn.length ? `<div class="sm warn">⚠ ${warn.map(esc).join('；')}</div>` : ''); }
-  const live = Object.entries(RAID.live || {}), battleLive = (RAID.live[p.leader] && RAID.live[p.leader].battle) ? RAID.live[p.leader] : (live.find(([, v]) => v.battle) || [])[1];
+  const live = Object.entries(RAID.live || {}), L0 = RAID.live[p.leader];
+  // 隊長有在回報就看隊長的（隊員的回報可能晚幾秒才知道打完了）；已經有這場的結算＝打完了
+  let battleLive = L0 && now - L0.at < 6000 ? (L0.battle ? L0 : null) : (live.find(([, v]) => v.battle) || [])[1];
+  { const rep = RAID.report && RAID.report.report, bb = battleLive && battleLive.battle; if (rep && bb && rep.code && rep.code === bb.code && rep.at >= (bb.prepUntil || 0)) battleLive = null; }
   const fighting = !!battleLive;
   $('#rdBtns').innerHTML = !p.leader ? '<span class="dim sm">先選隊長</span>' : fighting
     ? `<button class="btn" data-rdact="surrender">🏳 全部投降</button><button class="btn" data-rdact="leaveRaid">離開副本（全部）</button>`
@@ -7100,7 +7397,7 @@ function drawRaid() {
   { const others = ((lv && lv.teams) || []).filter(t => !team || t.code !== team.code);
     if (others.length) $('#rdTeam').insertAdjacentHTML('beforeend', `<details class="sm" style="margin-top:6px"><summary class="dim">遊戲裡其他招募中的隊伍（${others.length}）</summary>${others.map(t => `<div>${t.locked ? '🔒 ' : ''}${esc(t.name || t.code)} <span class="dim">(${t.count}/${t.max})${t.full ? ' 滿了' : ''}</span></div>`).join('')}</details>`); }
   // 戰況
-  if (!battleLive) { $('#rdBattle').innerHTML = '<div class="dim">還沒開打。開始後這裡每秒更新王的血量、階段、隊員狀態。</div>'; return; }
+  if (!battleLive) { $('#rdBattle').innerHTML = raidReportHtml() || '<div class="dim">還沒開打。開始後這裡每秒更新王的血量、階段、隊員狀態。</div>'; return; }
   const b = battleLive.battle, flags = [];
   if (b.prepUntil > now) flags.push(`<span class="tag">準備時間 ${secLeft(b.prepUntil, now)} 秒（只能放輔助技能）</span>`);
   if (b.bloodAt && b.bloodAt > now - 1000) flags.push('<span class="tag bad">血魔歸一預備：全隊 HP／MP 即將變成 1</span>');
@@ -7109,14 +7406,59 @@ function drawRaid() {
   if (b.minions) flags.push(`<span class="tag warn">熔岩像 ${b.minions} 隻：本體傷害減半</span>`);
   if (b.immuneUntil > now) flags.push(`<span class="tag bad">物理／魔法免疫 ${secLeft(b.immuneUntil, now)} 秒</span>`);
   if (b.guardUntil > now) flags.push(`<span class="tag">手臂物理傷害減半 ${secLeft(b.guardUntil, now)} 秒</span>`);
-  const mobName = id => (WORLD && WORLD.mobIdx && WORLD.mobIdx[id] && WORLD.mobIdx[id].name) || id;
-  const enemies = (battleLive.enemies || []).slice().sort((x, y) => (y.maxHp || 0) - (x.maxHp || 0));
+  const mobName = id => (WORLD && WORLD.mobIdx && WORLD.mobIdx[id] && WORLD.mobIdx[id].name) || ({ gms8500001: '拉圖斯', gms8500003: '黑球' })[id] || id;
+  // 王＝maxHp 最大的那隻（回報者會送 damageBy）；黑球＝其他（實機 maxHp 20000）
+  const enemies = (battleLive.enemies || []).slice().sort((x, y) => (y.maxHp || 0) - (x.maxHp || 0)), boss = enemies[0], adds = enemies.slice(1);
+  const repLive = Object.values(RAID.live || {}).find(v => v.battle && v.battle.code === b.code && (v.enemies || []).some(e => e.damageBy)) || battleLive;
+  const dmgBy = ((repLive.enemies || []).slice().sort((x, y) => (y.maxHp || 0) - (x.maxHp || 0))[0] || {}).damageBy || {};
+  const dmgTotal = Object.values(dmgBy).reduce((t, v) => t + (Number(v) || 0), 0);
   const memIds = [...new Set([...all, ...live.filter(([, v]) => v.battle && v.battle.code === b.code).map(([id]) => id)])];
-  $('#rdBattle').innerHTML = `<div class="bar"><b>${esc(RAID_NAME[b.raid] || b.raid || '副本')}</b><span class="tag">第 ${b.phase || '?'} 階段</span><span>剩餘 <b>${mmss(secLeft(b.deadline, now))}</b></span>${(b.surrender || []).length ? `<span class="warn sm">投降 ${b.surrender.length} 人</span>` : ''}</div>
+  const extra = Object.keys(dmgBy).filter(id => !memIds.includes(id));
+  // 王的速度估計
+  const R = RS && RS.code === b.code ? raidRates() : null, remain = secLeft(b.deadline, now), fighting2 = b.prepUntil <= now;
+  let statHtml = '';
+  if (boss) {
+    const eta = R && R.net > 0 ? (R.hp || boss.hp) / R.net : null, ok = eta != null && eta <= remain;
+    statHtml = `<div class="rd-stat" id="rdStat">
+      <div>總輸出／秒<br><b>${R && R.gross != null ? short(R.gross) : '—'}</b></div>
+      <div title="近 30 秒 damageBy 總和的增加量 − 王實際掉的血">回血速度（估）<br><b>${R && R.regen != null ? short(R.regen) + '／秒' : '—'}</b></div>
+      <div title="王實際掉血的速度（已扣掉回血）">淨輸出／秒<br><b class="${R && R.net <= 0 ? 'bad' : ''}">${R ? short(R.net) : '—'}</b></div>
+      <div class="${R && fighting2 && !ok ? 'bad' : ''}" id="rdEta">照這速度還要<br><b>${!R ? '—' : eta == null ? '打不完（王沒在掉血）' : mmss(eta)}</b>${R && fighting2 ? (ok ? ' <span class="good sm">時間內打得完</span>' : ` <span class="bad sm">剩 ${mmss(remain)} 打不完</span>`) : ''}</div>
+    </div>${R ? `<div class="dim sm">以近 ${Math.round(R.dt)} 秒估算；黑球（無敵）期間王不掉血但照樣回血，也算在裡面。${R.net > 0 && !ok ? `要在時間內打完，淨輸出至少要 ${short((R.hp || boss.hp) / Math.max(1, remain))}／秒。` : ''}</div>` : '<div class="dim sm">累積幾秒資料後估算回血、淨輸出和還要多久。</div>'}`;
+  }
+  // 黑球
+  let orbHtml = '';
+  if (b.raid === 'papulatus') {
+    const waves = (RS && RS.code === b.code && RS.orbWaves) || [], lastW = waves[waves.length - 1], n = b.orbs || adds.length;
+    const nextTxt = b.invulnerable || n ? '' : lastW ? (() => { const a1 = lastW + 100e3 - now, a2 = lastW + 120e3 - now; return a2 < 0 ? '下一波隨時會出現（上次出現已超過 120 秒）' : `下一波約 ${a1 > 0 ? mmss(a1 / 1000) + '～' : '0:00～'}${mmss(a2 / 1000)} 後`; })()
+      : '還沒出現過（實機第一波約在開打後 130 秒）';
+    orbHtml = `<div class="rd-orbbox ${n ? 'on' : ''}" id="rdOrbs"><div class="bar"><b>黑球</b>${n ? `<span class="tag warn">剩 ${n} 顆</span><span class="bad sm">沒清完會自己消失，接著全隊封印約 30 秒（不能放技能、祭司不能補）</span>` : '<span class="dim sm">目前沒有</span>'}
+      ${lastW ? `<span class="dim sm">上次出現：${mmss((now - lastW) / 1000)} 前（第 ${waves.length} 波）</span>` : ''}${nextTxt ? `<span class="sm">${nextTxt}</span>` : ''}</div>
+      ${adds.length ? `<div class="rd-orbs">${adds.map(e => hpBar(e.hp, e.maxHp)).join('')}</div>` : ''}${(RS && RS.code === b.code && (RS.sealAt || []).length) ? `<div class="sm warn">這場全隊封印過 ${RS.sealAt.length} 次（上次 ${mmss((now - RS.sealAt[RS.sealAt.length - 1]) / 1000)} 前）</div>` : ''}</div>`;
+  }
+  const ailOf = L => { const me = (L && L.me) || {}, el = (now - (L ? L.at : now)) / 1000;
+    return [...Object.entries(me.diseases || {}).map(([k, v]) => [k, v && typeof v === 'object' ? (Number(v.left) || 0) - el : (Number(v) - now) / 1000]).filter(([, l]) => l > 0).map(([k, l]) => `${AIL_NAME[k] || k} ${Math.ceil(l)}秒`),
+      ...(me.lockUntil > now ? [`鎖水 ${secLeft(me.lockUntil, now)}秒`] : [])]; };
+  const dmgCell = id => { const d = Number(dmgBy[id]) || 0; if (!dmgTotal) return '<td class="num dim">—</td><td class="num dim">—</td>';
+    return `<td class="num ${d ? '' : 'bad'}">${d ? short(d) : '0'}</td><td class="num ${d ? '' : 'bad'}">${(d / dmgTotal * 100).toFixed(1)}%</td>`; };
+  $('#rdBattle').innerHTML = `<div class="bar"><b>${esc(RAID_NAME[b.raid] || b.raid || '副本')}</b><span class="tag">第 ${b.phase || '?'} 階段</span><span>剩餘 <b>${mmss(remain)}</b></span>${(b.surrender || []).length ? `<span class="warn sm">投降 ${b.surrender.length} 人</span>` : ''}</div>
     <div class="bar">${flags.join('') || '<span class="dim sm">沒有特殊狀態</span>'}</div>
-    ${enemies.map(e => `<div class="rd-en"><b>${esc(mobName(e.id))}</b>${hpBar(e.hp, e.maxHp, 'boss')}</div>`).join('') || '<div class="dim sm">還沒拿到王的血量</div>'}
-    <table class="tbl sm rd-mem"><tr><th>角色</th><th>HP</th><th>MP</th><th>異常狀態</th></tr>${memIds.map(id => { const L = RAID.live[id], me = L && L.me || {}; const ail = [...Object.entries(me.diseases || {}).filter(([, u]) => u > now).map(([k, u]) => `${AIL_NAME[k] || k} ${secLeft(u, now)}秒`), ...(me.lockUntil > now ? [`鎖水 ${secLeft(me.lockUntil, now)}秒`] : [])];
-      return `<tr><td>${esc(charNameOf(id))}${(b.surrender || []).includes(id) ? ' <span class="warn">投降</span>' : ''}${!L ? ' <span class="dim">（沒有回報）</span>' : ''}</td><td>${L ? (me.hp <= 0 ? '<span class="bad">倒下</span>' : hpBar(me.hp, me.maxhp, 'hp')) : ''}</td><td>${L ? hpBar(me.mp, me.maxmp, 'mp') : ''}</td><td>${ail.length ? `<span class="bad">${ail.join('、')}</span>` : '<span class="dim">—</span>'}</td></tr>`; }).join('')}</table>`;
+    ${boss ? `<div class="rd-en"><b>${esc(mobName(boss.id))}</b>${hpBar(boss.hp, boss.maxHp, 'boss')}</div>` : '<div class="dim sm">還沒拿到王的血量</div>'}
+    ${statHtml}${orbHtml}
+    <table class="tbl sm rd-mem"><tr><th>角色</th><th>HP</th><th>MP</th><th>異常狀態</th><th>對王累計傷害</th><th>占比</th></tr>${memIds.map(id => { const L = RAID.live[id], me = L && L.me || {}, ail = ailOf(L);
+      return `<tr><td>${esc(charNameOf(id))}${(b.surrender || []).includes(id) ? ' <span class="warn">投降</span>' : ''}${!L ? ' <span class="dim">（沒有回報）</span>' : ''}</td><td>${L ? (me.hp <= 0 ? '<span class="bad">倒下</span>' : hpBar(me.hp, me.maxhp, 'hp')) : ''}</td><td>${L ? hpBar(me.mp, me.maxmp, 'mp') : ''}</td><td>${ail.length ? `<span class="bad">${ail.join('、')}</span>` : '<span class="dim">—</span>'}</td>${dmgCell(id)}</tr>`; }).join('')}
+      ${extra.map(id => `<tr class="dim"><td>${esc(charNameOf(id))} <span class="sm">（不在計畫裡）</span></td><td></td><td></td><td></td>${dmgCell(id)}</tr>`).join('')}</table>
+    ${dmgTotal ? `<div class="dim sm">對王累計傷害合計 ${short(dmgTotal)}（遊戲的 damageBy；不含黑球）</div>` : ''}`;
+}
+// 戰鬥結束後：遊戲的結算（character.raidReport）
+function raidReportHtml() {
+  const R = RAID && RAID.report && RAID.report.report; if (!R) return '';
+  const [rn, rc] = RAID_RESULT[R.result] || [R.result || '?', ''], tot = R.total || R.rows.reduce((t, r) => t + (r.damage || 0), 0);
+  const rows = R.rows.slice().sort((x, y) => (y.damage || 0) - (x.damage || 0));
+  const dur = RS && RS.code === R.code && RS.points.length ? (RS.points[RS.points.length - 1][0] - RS.startAt) / 1000 : null;
+  return `<div id="rdReport"><div class="bar"><b>上一場結算</b><span class="tag ${rc}">${esc(rn)}</span><span class="dim sm">${R.at ? new Date(R.at).toLocaleString() : ''}${dur ? `・約打了 ${mmss(dur)}` : ''}</span><span>總傷害 <b>${short(tot)}</b></span></div>
+    <table class="tbl sm rd-rep"><tr><th>角色</th><th>傷害</th><th>占比</th><th>死亡</th></tr>${rows.map(r => `<tr><td>${esc(r.name)}</td><td class="num ${r.damage ? '' : 'bad'}">${r.damage ? short(r.damage) : '0'}</td><td class="num ${r.damage ? '' : 'bad'}">${tot ? (r.damage / tot * 100).toFixed(1) : '0.0'}%</td><td class="num ${r.deaths ? 'warn' : ''}">${r.deaths || 0}</td></tr>`).join('')}</table>
+    <div class="dim sm">還沒開打下一場。開始後這裡換成即時戰況。</div></div>`;
 }
 setInterval(() => { if (!document.hidden && document.querySelector('nav button.on').dataset.tab === 'raid') renderRaid(); }, 1000);
 async function raidSavePlan(patch) { await saveSettings({ raid: { ...raidPlan(), ...patch } }); drawRaid(); }
