@@ -7290,6 +7290,8 @@ async function renderMPop(newDev) {
   // 有設定 tailscale serve（HTTPS）用 https 機器名稱；否則遠端模式下用 Tailscale 位址的 http（也能用，只是加到主畫面時比較像捷徑）
   const guess = info.dns && info.serve ? `https://${info.dns}` : ts && info.remote ? `http://${ts}:${info.port}` : info.dns ? `https://${info.dns}` : '';
   let base = ''; try { base = localStorage.getItem('mBase') || ''; } catch (_) {}
+  // v0.75.1：以前沒開 tailscale serve 時記住的 http://100.x.x.x:8787，開了 serve 之後改用 https（http 的手機版常常白畫面、黑畫面）
+  if (base && /^http:\/\//.test(base) && info.dns && info.serve) { base = ''; try { localStorage.removeItem('mBase'); } catch (_) {} }
   base = base || guess;
   const url = newDev ? `${base.replace(/\/+$/, '')}/m#t=${newDev.token}` : '';
   let qrSvg = '';
