@@ -613,6 +613,18 @@ function destEnforcePlan(preview) {
   }
   return out;
 }
+// 「立即全部套用」：不管照表操課有沒有開，現在就把每隻角色所在地圖的自動販售對齊去處規則（一次）
+function destApplyNow() {
+  const plan = destEnforcePlan(true);
+  if (!plan.length) return { n: 0, jobs: 0 };
+  const jobs = createIdleJobs({ targets: plan.map(t => ({ charId: t.charId, action: 'autosell', map: t.map, mapName: t.mapName, sell: t.sell })) });
+  for (const j of jobs) jobLog(j, '去處規則：立即全部套用');
+  const now = Date.now(), lg = db.destEnforceLog || (db.destEnforceLog = []);
+  for (const t of plan) lg.push({ at: now, charId: t.charId, name: t.name, map: t.map, mapName: t.mapName, was: (t.from.enabled ? (t.from.itemIds || []).length : 0), now: t.sell.enabled ? t.sell.itemIds.length : 0, manual: true });
+  if (lg.length > 60) lg.splice(0, lg.length - 60);
+  save();
+  return { n: plan.length, jobs: jobs.length, names: plan.map(t => `${t.name}（${t.mapName}）`) };
+}
 function destEnforceTick() {
   const now = Date.now(), plan = destEnforcePlan().filter(t => { const k = t.charId + '|' + t.map, key = JSON.stringify([t.sell, !!t.from.enabled, (t.from.itemIds || []).map(Number).sort((x, y) => x - y)]), p = destEnforceSent[k]; if (p && p.key === key && now - p.at < 10 * 60e3) return false; destEnforceSent[k] = { key, at: now }; return true; });
   if (!plan.length) return;
@@ -657,7 +669,24 @@ function cleanCfg(c) {
   return null;
 }
 // 遊戲的地圖自動販售設定：{ enabled, itemIds }（遊戲只接受角色「目前所在地圖」的設定）
-const cleanSell = x => x && typeof x === 'object' ? { enabled: !!x.enabled, itemIds: [...new Set((x.itemIds || []).map(Number).filter(n => Number.isFinite(n) && n > 0))].slice(0, 400) } : undefined;
+const cleanIds = a => [...new Set((a || []).map(Number).filter(n => Number.isFinite(n) && n > 0))].slice(0, 500);
+// keep：遊戲新版（rule 2，打勾＝保留）要送的保留清單；沒有 keep 的舊資料，agent 會拒絕送出（避免把「要賣的」當成「要留的」）
+const cleanSell = x => x && typeof x === 'object' ? { enabled: !!x.enabled, itemIds: cleanIds(x.itemIds), ...(Array.isArray(x.keep) ? { keep: cleanIds(x.keep) } : {}) } : undefined;
+// 角色回報的自動販售（遊戲新版：保留清單）換成中控用的「會賣哪些」：這張圖可販售的掉落物扣掉保留的
+function sellFromGame(map, x) {
+  if (!x || !x.v2) return x ? { ...x, enabled: false, itemIds: [] } : x; // 舊格式：遊戲當成沒設定（關閉）
+  const rows = ((worldFull() || {}).autoSellDrops || {})[map];
+  const keep = new Set((x.keep || []).map(Number));
+  const sell = Array.isArray(rows) ? rows.filter(r => r[4] && !keep.has(Number(r[0]))).map(r => Number(r[0])) : [];
+  const on = !!x.enabled && sell.length > 0; // 關閉、或全部保留＝什麼都不賣（跟中控「沒有要賣的」一樣）
+  return { ...x, enabled: on, itemIds: on ? sell : [], ...(Array.isArray(rows) ? {} : { unknown: true }) };
+}
+function normalizeSnapSell(snap) {
+  try {
+    if (snap.autoSell && snap.autoSell.map) snap.autoSell = sellFromGame(String(snap.autoSell.map), snap.autoSell);
+    if (snap.autoSellAll && typeof snap.autoSellAll === 'object') for (const [m, x] of Object.entries(snap.autoSellAll)) snap.autoSellAll[m] = sellFromGame(m, x);
+  } catch (e) { console.warn('[自動販售] 換算失敗', e); }
+}
 function accountOfChar(charId) {
   const own = db.chars[charId];
   if (own) return own.accountId;
@@ -1528,6 +1557,7 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${HOST}`);
     if (req.method === 'OPTIONS') return send(res, 204, '');
     // 手機版頁面本身沒有資料，不用通行碼（資料 API 才要）；通行碼放在網址 # 後面，只有手機自己讀得到
+    if (req.method === 'POST' && url.pathname === '/api/dest/apply-now') return send(res, 200, destApplyNow());
     if (req.method === 'GET' && url.pathname === '/dest.js') return send(res, 200, fs.readFileSync(path.join(__dirname, 'dest.js'), 'utf8'), 'application/javascript; charset=utf-8');
     if (req.method === 'GET' && (url.pathname === '/m' || url.pathname === '/m/')) return send(res, 200, fs.readFileSync(path.join(__dirname, 'm.html'), 'utf8'), 'text/html; charset=utf-8');
     // 加到主畫面後是另一個獨立的 App（iPhone 的儲存空間和 Safari 分開），所以啟動網址要帶著這支手機的通行碼（# 後面不會送到伺服器）
@@ -1631,6 +1661,7 @@ const server = http.createServer(async (req, res) => {
       const snap = JSON.parse(await readBody(req));
       if (!snap || !snap.char || !snap.char.id) return send(res, 400, { error: 'bad snapshot' });
       snap.receivedAt = Date.now();
+      normalizeSnapSell(snap);
       // 這次沒帶 12 碼 ID（查詢暫時失敗）時，沿用之前記住的；同帳號其他角色的 ID 也可以用（ID 跟著帳號）
       if (!snap.playerCode) {
         const prev = db.chars[snap.char.id];
@@ -1785,7 +1816,15 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req, 30 * 1024 * 1024);
       const w = JSON.parse(body);
       if (!w || !Array.isArray(w.maps)) return send(res, 400, { error: 'bad world' });
-      try { fs.writeFileSync(WORLD_FILE + '.tmp', body); fs.renameSync(WORLD_FILE + '.tmp', WORLD_FILE); } catch (e) { return send(res, 500, { error: e.message }); }
+      // 遊戲 2026-11-27 起掉落資料（drops、mapDrops、autoSellDrops）改成另外載入，/api/catalog 不一定帶：
+      // 這次沒帶的就沿用上次的（去處規則、自動販售換算要用 autoSellDrops，空的話會算不出要保留哪些）
+      let out = body;
+      try {
+        const old = fs.existsSync(WORLD_FILE) ? JSON.parse(fs.readFileSync(WORLD_FILE, 'utf8')) : null;
+        const empty = v => !v || (typeof v === 'object' && !Object.keys(v).length);
+        if (old) { let kept = false; for (const k of ['autoSellDrops', 'drops', 'mapDrops', 'dropScale']) if (empty(w[k]) && !empty(old[k])) { w[k] = old[k]; kept = true; } if (kept) { w.dropsKeptFrom = old.dropsKeptFrom || old.version || 'old'; out = JSON.stringify(w); } }
+      } catch (_) {}
+      try { fs.writeFileSync(WORLD_FILE + '.tmp', out); fs.renameSync(WORLD_FILE + '.tmp', WORLD_FILE); } catch (e) { return send(res, 500, { error: e.message }); }
       return send(res, 200, { ok: true });
     }
 

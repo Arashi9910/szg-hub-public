@@ -92,8 +92,10 @@
     if (!mapId || !(ctx === 'boss' ? c.boss : c.board)) return null;
     const x = calc(world, settings, mapId);
     if (x.game || !x.rows.length) return null;
-    const ids = x.sell.slice(0, 500);
-    return { enabled: ids.length > 0, itemIds: ids };
+    const ids = x.sell.slice(0, 500), sold = new Set(ids);
+    // 遊戲 2026-11-27 起自動販售改成「打勾＝保留」（rule 2：itemIds 是要保留的，其他可販售的新掉落全部賣掉）→ 另外算 keep 給遊戲
+    const keep = x.rows.filter(r => r[4] && !sold.has(Number(r[0]))).map(r => Number(r[0]));
+    return { enabled: ids.length > 0, itemIds: ids, keep };
   }
   // 舊設定轉過來（v0.71 第一次啟動）：野王掉落篩選、派工每張圖的販售範本 → 去處規則；結果跟原本會賣的東西一樣
   // 原本沒設定販售範本的派工地圖 → 沿用遊戲設定（中控不會動它）

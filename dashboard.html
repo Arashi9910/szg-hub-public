@@ -3721,9 +3721,18 @@ function enforceBox() {
   const on = !!(S.dest || {}).enforce, info = DATA.destEnforce || { log: [], todo: 0 }, log = info.log || [], last = log[log.length - 1];
   return `<div class="bar enforce-box"><label><input type="checkbox" class="sw" data-denforce="1" ${on ? 'checked' : ''}> <b>照表操課</b></label>
     <span class="dim sm">不用再按「套用」：中控每分鐘檢查，角色在派工看板的地圖（「派工地圖套用」開著）或野王地圖（「野王地圖套用」開著）時，遊戲的自動販售跟這裡算出來的不一樣就自動改過去；以後的新角色也一樣。在遊戲裡手動改的會被改回來，要改請改這裡。</span>
-    ${on ? (info.todo ? `<span class="warn sm">還有 ${info.todo} 隻待對齊（每分鐘處理）</span>` : '<span class="good sm">目前全部一致</span>') : info.todo ? `<span class="dim sm">現在打開會先改 ${info.todo} 隻</span>` : ''}</div>
+    ${on ? (info.todo ? `<span class="warn sm">還有 ${info.todo} 隻待對齊（每分鐘處理）</span>` : '<span class="good sm">目前全部一致</span>') : info.todo ? `<span class="dim sm">現在打開會先改 ${info.todo} 隻</span>` : ''}
+    ${info.todo ? `<button class="btn sm primary" data-dapplynow="1" title="不管照表操課有沒有開，現在就把每隻角色所在地圖的自動販售改成這裡的結果（一次）">⚡ 立即全部套用（${info.todo} 隻）</button>` : ''}</div>
     ${log.length ? `<details class="sm enforce-log"><summary class="dim">最近自動套用 ${clock(last.at)}：${esc(last.name)} ${esc(last.mapName)}</summary>${log.slice().reverse().map(l => `<div><span class="dim">${clock(l.at)}</span> ${esc(l.name)}・${esc(l.mapName)}：賣 ${l.was} 項 → ${l.now} 項</div>`).join('')}</details>` : ''}`;
 }
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('[data-dapplynow]'); if (!t) return;
+  const n = (DATA.destEnforce || {}).todo || 0;
+  if (!confirm(`把 ${n} 隻角色所在地圖的自動販售，改成去處規則算出來的結果？\n（會賣掉規則設成「商店」的東西；「沿用遊戲設定」的圖不動）`)) return;
+  t.disabled = true;
+  try { const r = await api('/api/dest/apply-now', {}); alert(r.n ? `已送出 ${r.n} 隻（${r.jobs} 個帳號），幾秒內生效。` : '目前全部一致，不用套用'); } catch (err) { alert('失敗：' + err.message); }
+  await poll(true); if (ui.board.destEdit) renderDestEditor(); if (typeof renderBossSell === 'function') renderBossSell();
+});
 document.addEventListener('change', async e => {
   const t = e.target; if (!t.dataset || !t.dataset.denforce) return;
   if (t.checked && !confirm(`開啟「照表操課」？${(DATA.destEnforce || {}).todo ? `（現在會先改 ${DATA.destEnforce.todo} 隻角色）` : ''}\n\n中控會每分鐘自動把角色所在地圖的自動販售改成去處規則算出來的結果（會賣掉規則設成「商店」的東西），不用再按套用，新角色也一樣。\n在遊戲裡手動改的自動販售會被改回來。`)) { t.checked = false; return; }

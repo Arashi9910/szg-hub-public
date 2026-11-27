@@ -386,6 +386,17 @@ function agentMain(ctx) {
       if (c.type === 'skillPlan') c.plan = c.plan.map(r => ({ ...r, skill: real(r.skill) }));
       return c;
     }
+    // 遊戲 2026-11-27 起自動販售改成 rule 2：itemIds 是「保留」的清單，沒保留的可販售掉落全部賣掉。
+    // 中控內部還是用「會賣哪些」（itemIds）＋另外算好的 keep；沒有 keep 的舊資料不送（送出去會變成「要賣的被保留、其他全賣」）
+    function gameSellConfig(sell) {
+      if (!sell || !Array.isArray(sell.keep)) { const e = new Error('自動販售設定是舊格式（遊戲改成「打勾＝保留」），請重新套用一次'); e.noRetry = true; throw e; }
+      return { rule: 2, enabled: !!sell.enabled, itemIds: sell.keep.map(Number) };
+    }
+    // 回報給中控：遊戲新版（rule 2）原樣帶 keep，中控用地圖的掉落表換算成「會賣哪些」；舊格式遊戲當成沒設定
+    function sellOfGame(c, map) {
+      const a = c.autoSell || {}, x = a.rule === 2 && a.maps && a.maps[map];
+      return x ? { map, v2: 1, enabled: !!x.enabled, keep: (x.itemIds || []).slice(0, 500), hi: !!x.keepAboveBase } : { map, v2: a.rule === 2 ? 1 : 0, enabled: false, keep: [], itemIds: [] };
+    }
     function progOf(c) {
       const pick = o => { const r = {}; for (const k of ['str', 'dex', 'int', 'luk']) r[k] = Number((o || {})[k]) || 0; return r; };
       // 這個職業一路上來的技能（跟遊戲一樣：沿著職業的 parent 往上找）
@@ -468,9 +479,9 @@ function agentMain(ctx) {
           gearBagCount: (c.equipmentBag || []).length,
           itemStackCount: (c.inventoryStacks || []).length,
         },
-        autoSell: (() => { const a = c.autoSell && c.autoSell.maps; const x = a && a[c.map]; return x ? { map: c.map, enabled: !!x.enabled, itemIds: (x.itemIds || []).slice(0, 400) } : { map: c.map, enabled: false, itemIds: [] }; })(),
+        autoSell: sellOfGame(c, c.map),
         // 所有地圖的自動販售設定（你在遊戲裡手動設過的），給派工看板匯入當範本
-        autoSellAll: (() => { const a = (c.autoSell && c.autoSell.maps) || {}; const o = {}; for (const [m, x] of Object.entries(a).slice(0, 60)) if (x) o[m] = { enabled: !!x.enabled, itemIds: (x.itemIds || []).slice(0, 400) }; return o; })(),
+        autoSellAll: (() => { const a = c.autoSell && c.autoSell.rule === 2 && c.autoSell.maps || {}; const o = {}; for (const [m, x] of Object.entries(a).slice(0, 60)) if (x) { const v = sellOfGame(c, m); delete v.map; o[m] = v; } return o; })(),
         points: (() => { const v = state.cashPoints != null ? state.cashPoints : (c.cashPoints != null ? c.cashPoints : c.points); return typeof v === 'number' ? v : (v && typeof v.balance === 'number' ? v.balance : undefined); })(),
         idleOffline: trackOffline() ? { since: offlineSince } : undefined,
         // 隊伍：只留中控用得到的欄位。以前整包（含隊伍聊天 messages，最多 40 則約 4.5KB）超過 8000 字就整個丟掉，
@@ -696,7 +707,7 @@ function agentMain(ctx) {
             try { await gameRetry({ type: 'start', characterId: t.charId }); done.push(`${t.name} 開始掛機`); } catch (e) { if (e.gameUpdated) throw e; failed.push(`${t.name} 開始掛機（${e.message}）`); }
             if (t.sell) {
               await new Promise(r => setTimeout(r, 1200));
-              try { await gameRetry({ type: 'autoSell', characterId: t.charId, map: t.map, config: t.sell }); done.push(`${t.name} 套用自動販售（${t.sell.enabled ? t.sell.itemIds.length + ' 項' : '關閉'}）`); }
+              try { await gameRetry({ type: 'autoSell', characterId: t.charId, map: t.map, config: gameSellConfig(t.sell) }); done.push(`${t.name} 套用自動販售（${t.sell.enabled ? t.sell.itemIds.length + ' 項' : '關閉'}）`); }
               catch (e) { failed.push(`${t.name} 套用自動販售（${e.message}）`); }
             }
           } catch (e) { failed.push(`${t.name} 前往 ${t.mapName || t.map}（${e.message}）`); }
@@ -710,7 +721,7 @@ function agentMain(ctx) {
         if (t.action === 'autosell') {
           try {
             setBadge(null, `${t.name}：套用自動販售…`);
-            await gameRetry({ type: 'autoSell', characterId: t.charId, map: t.map, config: t.sell });
+            await gameRetry({ type: 'autoSell', characterId: t.charId, map: t.map, config: gameSellConfig(t.sell) });
             done.push(`${t.name} 在 ${t.mapName || t.map} 的自動販售已更新（${t.sell.enabled ? t.sell.itemIds.length + ' 項' : '關閉'}）`);
           } catch (e) { failed.push(`${t.name} 自動販售（${/所在地/.test(e.message) ? '角色已不在這張地圖' : e.message}）`); }
           continue;
@@ -1590,7 +1601,7 @@ function agentMain(ctx) {
         if (p.map && here !== p.map) { setBadge(null, `組隊：前往 ${p.mapName}…`); await gameRetry({ type: 'map', map: p.map, characterId: id }); moved = true; await sleepP(1200); }
         // 派工看板上這張圖的自動販售範本（遊戲只接受目前所在地圖的設定，所以換圖後才套用）
         let sellMsg = '';
-        if (p.map && p.sell) { try { await gameRetry({ type: 'autoSell', characterId: id, map: p.map, config: p.sell }); sellMsg = `套用自動販售（${p.sell.enabled ? p.sell.itemIds.length + ' 項' : '關閉'}），`; } catch (e) { sellMsg = `自動販售沒套用（${e.message}），`; } }
+        if (p.map && p.sell) { try { await gameRetry({ type: 'autoSell', characterId: id, map: p.map, config: gameSellConfig(p.sell) }); sellMsg = `套用自動販售（${p.sell.enabled ? p.sell.itemIds.length + ' 項' : '關閉'}），`; } catch (e) { sellMsg = `自動販售沒套用（${e.message}），`; } }
         let started = true;
         try { await gameRetry({ type: 'start', characterId: id }); } catch (_) { started = false; }
         lastHash = '';
@@ -1670,7 +1681,7 @@ function agentMain(ctx) {
         // 野王地圖的自動販售（遊戲只接受角色目前所在地圖，所以到了才套用）
         let sellMsg = '';
         if (b.sell && Array.isArray(b.sell.itemIds)) {
-          try { await gameRetry({ type: 'autoSell', characterId: id, map: b.map, config: { enabled: !!b.sell.enabled, itemIds: b.sell.itemIds } }); sellMsg = b.sell.enabled ? `，自動販售 ${b.sell.itemIds.length} 項` : '，自動販售關閉'; }
+          try { await gameRetry({ type: 'autoSell', characterId: id, map: b.map, config: gameSellConfig(b.sell) }); sellMsg = b.sell.enabled ? `，自動販售 ${b.sell.itemIds.length} 項` : '，自動販售關閉'; }
           catch (e) { if (e.gameUpdated) throw e; sellMsg = `（自動販售沒套用：${e.message}）`; }
         }
         const idleOk = await startIdle();
