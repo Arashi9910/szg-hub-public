@@ -305,6 +305,8 @@ Using: node
 ### 背景執行（試用）
 不想一直開著好幾個 Chrome 視窗的話：到「帳號」分頁（或按右上角「🖥 背景」）新增帳號（帳號多可以用 CSV 匯入）→ 按「🔑 批次登入」，在跳出來的 Chrome 視窗用 Google 登入遊戲，看到遊戲畫面後關掉那個視窗就換下一個。之後中控會在背景開 Chrome 跑遊戲（看不到視窗），勾選要開哪幾隻角色就好；點角色名字可以叫出那隻的遊戲視窗。你平常的 Chrome 也開著同一隻時，背景那頁會自動暫停。需要 Node.js 22 以上。詳見 [README 的背景執行](../README.md#背景執行v057-起試用)。
 
+**更省記憶體：直連模式（v0.79 起，測試版）**。在「帳號」分頁勾「直連（不開 Chrome，省記憶體）」（或勾選多個帳號按「改成直連」），中控就不開 Chrome，直接用登入資料跟遊戲伺服器溝通，每個帳號只用幾 MB 記憶體。遊戲登入 7 天到期，「登入到期」欄會提醒（剩不到 24 小時標紅），到期後重新按「登入」。直連時全身照不會更新。
+
 ---
 
 ## 自動更新
@@ -341,6 +343,7 @@ Using: node
 - 專案：上漲谷中控（GitHub `Arashi9910/szg-hub-public`），給同時玩多個帳號的人用的本機中控面板。遊戲網址 `https://play.szg08.com/game/`。
 - 組成：Node.js 本機伺服器 `server.js`（**只聽 `127.0.0.1:8787`**，不要改成對外開放、不要開路由器連接埠）＋面板 `dashboard.html`（`http://127.0.0.1:8787`）＋每個 Chrome 設定檔裡的 Tampermonkey 載入器 `szg-hub.user.js`（從 `http://127.0.0.1:8787/szg-hub.user.js` 安裝，執行時由伺服器提供 `agent.js`）。
 - 背景執行（v0.57 起，`bg.js`）：面板「🖥 背景」讓中控用使用者電腦上的 Google Chrome（`--headless=new`，每個帳號獨立的 `data/bg/<編號>` 資料夾）跑遊戲分頁並注入中控腳本，不需要 Tampermonkey；登入是開一般的 Chrome 視窗讓使用者自己用 Google 登入後關掉。需要 Node.js 22 以上（內建 WebSocket）。
+- 直連模式（v0.79 起，`direct.js`）：帳號勾「直連」後不開 Chrome；`bg.js` 用 CDP `Storage.getCookies` 讀一次遊戲登入 cookie（`data/bg/<編號>/direct-cookies.json`），`direct.js` 在 Node 的 vm 假頁面裡跑同一份 agent.js，直接 POST 遊戲 API（帶 Origin、X-Game-Version）。登入 cookie 7 天到期不延長，過期顯示「需要登入」。
 - 啟動：Windows 雙擊 `start.bat`（找 Node.js → 先跑 `update.js` 自動更新 → 跑 `server.js`；結束碼 3 表示更新後重啟）。需要 Node.js LTS。
 - Tampermonkey 必要設定：Chrome 138 以上在 `chrome://extensions` → Tampermonkey「詳細資料」開啟「允許使用者指令碼」；更舊的 Chrome 開「開發人員模式」（參考 <https://www.tampermonkey.net/faq.php?q=Q209>）。另外 Tampermonkey 設定改「進階」模式，「外部 → 更新間隔」設「總是」。
 - 驗證順序：① 黑色視窗顯示「上漲谷中控已啟動」→ ② 瀏覽器打開 `http://127.0.0.1:8787` 看得到面板 → ③ 遊戲分頁右下角顯示「中控：已連線」→ ④ 面板上出現角色。

@@ -1918,7 +1918,7 @@ const server = http.createServer(async (req, res) => {
         try { return send(res, 200, await bg.gameSrc(q)); } catch (e) { return send(res, 200, { error: e.message }); }
       }
       const act = url.pathname.slice('/api/bg/'.length);
-      if (req.method === 'POST' && /^(config|add|rename|edit|remove|start|stop|login|login-done|login-batch|login-skip|login-cancel|reload|pages|order|all|import|show|hide|trim)$/.test(act)) {
+      if (req.method === 'POST' && /^(config|add|rename|edit|remove|start|stop|login|login-done|login-batch|login-skip|login-cancel|reload|pages|order|all|import|show|hide|trim|mode)$/.test(act)) {
         return send(res, 200, await bg.action(act, JSON.parse((await readBody(req)) || '{}')));
       }
       return send(res, 404, { error: 'not found' });

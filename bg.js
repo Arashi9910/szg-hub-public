@@ -235,6 +235,7 @@ ${fixed}
   // 這隻角色是不是背景執行中某個帳號的分頁該顯示的，現在有沒有分頁顯示它（同步，給伺服器判斷用）
   function charPage(charId) {
     for (const p of cfg().profiles) {
+      const rd = run[p.id]; if (rd && rd.direct && wantKeys(p).includes(charId)) return { name: p.name, shown: true, direct: true }; // 直連：每隻角色各自跑，不會跑掉
       const r = run[p.id]; if (!r || !r.cdp || r.state !== 'running' || !wantKeys(p).includes(charId)) continue;
       return { name: p.name, shown: Object.values(r.pages).some(pg => (pg.info || {}).char === charId) };
     }
@@ -243,6 +244,7 @@ ${fixed}
   // 面板按「切換」：這隻在背景執行、有它自己的背景分頁 → 換那一頁就好（不要用遊戲的切換，會讓同帳號的另一頁跟著跑掉）
   async function repinChar(charId) {
     for (const p of cfg().profiles) {
+      const rd = run[p.id]; if (rd && rd.direct && wantKeys(p).includes(charId)) return { ok: true, already: true, name: p.name };
       const r = run[p.id]; if (!r || !r.cdp || r.state !== 'running' || !wantKeys(p).includes(charId)) continue;
       if (Object.values(r.pages).some(pg => (pg.info || {}).char === charId)) return { ok: true, already: true, name: p.name };
       const key = pageToHeal(r, p, charId) || (r.pages[charId] ? charId : null);
@@ -301,14 +303,241 @@ ${fixed}
     if (m.method === 'Target.detachedFromTarget' && m.params) { const k = Object.entries(r.pages).find(([, p]) => p.sessionId === m.params.sessionId); if (k) delete r.pages[k[0]]; }
   }
 
+  // 開一個中控用的 Chrome（無頭背景，或 visible＝看得到的視窗），回傳 DevTools 的 WebSocket 網址；開不起來就丟錯誤
+  async function spawnChrome(id, visible) {
+    const chrome = findChrome(cfg().chromePath);
+    if (!chrome) throw new Error('找不到 Chrome：請在下面填 chrome.exe 的位置');
+    const dir = dirOf(id); prepDir(dir);
+    let ws = '';
+    // 先清掉殘留：還佔著這個資料夾的 Chrome（登入視窗關了但程式沒結束）、上次沒清乾淨的鎖定檔
+    const killed = await killStale(id);
+    for (const f of ['DevToolsActivePort', 'SingletonLock', 'SingletonSocket', 'SingletonCookie', 'lockfile']) { try { fs.rmSync(path.join(dir, f), { force: true }); } catch (_) {} }
+    const logFile = path.join(dir, 'chrome-start.log');
+    let logFd = 'ignore'; try { logFd = fs.openSync(logFile, 'w'); } catch (_) {}
+    const args = [...(visible ? ['--new-window'] : ['--headless=new']), '--remote-debugging-port=0', `--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check',
+      '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
+      '--mute-audio', '--window-size=1280,800',
+      // 省記憶體：同一個遊戲網站的分頁共用一個程序；關掉背景 Chrome 用不到的功能（同步、擴充、元件更新、翻譯…）
+      '--process-per-site', '--disable-extensions', '--disable-component-update', '--disable-default-apps', '--disable-sync', '--disable-background-networking',
+      '--disable-breakpad', '--no-pings', '--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication,CalculateNativeWinOcclusion,HeavyAdIntervention,BackForwardCache',
+      ...(visible ? [] : ['--disable-gpu', '--disable-gpu-compositing']), ...sandboxArgs(), 'about:blank'];
+    const t0 = Date.now();
+    const proc = spawn(chrome, args, { detached: true, stdio: ['ignore', logFd, logFd], windowsHide: true });
+    if (typeof logFd === 'number') try { fs.closeSync(logFd); } catch (_) {}
+    let exited = null, spawnErr = '';
+    proc.on('error', e => { spawnErr = e.message; });
+    proc.on('exit', (code, sig) => { exited = { code, sig, at: Date.now() }; });
+    proc.unref();
+    // 電腦忙的時候（一次開很多帳號）Chrome 可能要好一陣子才準備好：最多等 60 秒；Chrome 自己先結束就不用等
+    const end = Date.now() + 60000;
+    while (!ws && Date.now() < end && !spawnErr) {
+      ws = await wsFromDir(dir, 0);
+      if (ws) break;
+      // 一啟動就結束：Windows 上常是「交給另一個正在用這個資料夾的 Chrome」然後自己退出；多給 3 秒看看檔案是否出現
+      if (exited && Date.now() - exited.at > 3000) break;
+      await sleep(400);
+    }
+    if (!ws) {
+      const tail = (() => { try { return fs.readFileSync(logFile, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(l => l && !/^\[\d+:\d+:\d+\/\d+\.\d+:(INFO|VERBOSE)/.test(l)).slice(-3).join(' ｜ ').slice(0, 300); } catch (_) { return ''; } })();
+      const sec = Math.round((Date.now() - t0) / 1000), extra = (killed ? `（啟動前已結束 ${killed} 個殘留的 Chrome）` : '') + (tail ? `　Chrome 訊息：${tail}` : '');
+      if (spawnErr) throw new Error('開不了 Chrome：' + spawnErr);
+      if (exited) throw new Error(`背景 Chrome 一啟動就結束了（結束碼 ${exited.code ?? exited.sig}）。可能是這個帳號的資料夾正被別的 Chrome 使用，或資料夾損壞：可以按「刪除」後重新加入這個帳號${extra}`);
+      try { process.kill(proc.pid); } catch (_) {}
+      throw new Error(`背景 Chrome 等了 ${sec} 秒還沒準備好：電腦可能太忙（同時開太多帳號），可以晚點再按開始，或少開幾個${extra}`);
+    }
+    return ws;
+  }
+
+  // ---------- 直連模式（profile.direct）：不開 Chrome，direct.js 在 Node 裡跑中控腳本、帶登入 cookie 直接打遊戲 API ----------
+  // Chrome 只用來「登入」和「讀登入 cookie」（Chrome 存在硬碟的 cookie 有加密，只能趁這個帳號的 Chrome 開著時用 DevTools 讀）。
+  // 讀到的 cookie 存 data/bg/<id>/direct-cookies.json（遊戲的 __Host-maple_session：登入後 7 天有效，用了也不會延長）
+  let direct = opt.direct, directErr = ''; // 測試可以傳 opt.direct；平常第一次用到才載入 direct.js
+  function getDirect() {
+    if (direct === undefined) {
+      try { direct = require('./direct')({ hubUrl, game: GAME, agent, userscript, log }); }
+      catch (e) { direct = null; directErr = e.message; log('直連模式無法使用：' + e.message); }
+    }
+    return direct;
+  }
+  const GAME_HOST = (() => { try { return new URL(GAME).hostname.toLowerCase(); } catch (_) { return ''; } })();
+  const gameCookie = c => { const d = String(c.domain || '').replace(/^\./, '').toLowerCase(); return !!d && (GAME_HOST === d || GAME_HOST.endsWith('.' + d)); };
+  const ckFile = id => path.join(dirOf(id), 'direct-cookies.json');
+  const ckExp = j => { const e = ((j && j.cookies) || []).map(c => Number(c.expires) || 0).filter(x => x > 0); return e.length ? Math.round(Math.min(...e) * 1000) : 0; }; // 最早到期的遊戲 cookie（毫秒）
+  const ckCache = {}; // id -> { mtime, j }
+  function loadCookies(id) {
+    try {
+      const f = ckFile(id), mt = fs.statSync(f).mtimeMs, c = ckCache[id];
+      if (c && c.mtime === mt) return c.j;
+      const j = JSON.parse(fs.readFileSync(f, 'utf8')), ok = j && Array.isArray(j.cookies) ? j : null;
+      ckCache[id] = { mtime: mt, j: ok }; return ok;
+    } catch (_) { delete ckCache[id]; return null; }
+  }
+  function saveCookies(id, cookies) {
+    const j = { at: Date.now(), cookies };
+    fs.mkdirSync(dirOf(id), { recursive: true }); fs.writeFileSync(ckFile(id), JSON.stringify(j, null, 1)); delete ckCache[id];
+    return j;
+  }
+  function dropCookies(id) { try { fs.rmSync(ckFile(id), { force: true }); } catch (_) {} delete ckCache[id]; }
+  // 讀登入 cookie：這個帳號的 Chrome 開著就直接讀；沒開就短暫開一個無頭 Chrome，讀完正常關掉（強制結束會遺失 cookie）
+  async function captureCookies(id) {
+    const r = R(id), dir = dirOf(id), nm = (prof(id) || {}).name || id;
+    let cdp = r.cdp && !r.cdp.closed ? r.cdp : null, temp = null;
+    try {
+      if (!cdp) {
+        let ws = await wsFromDir(dir, 0);
+        if (!ws) {
+          if ((await chromeOf(id)).some(x => !/--remote-debugging-port/.test(x.cmd))) throw new Error('這個帳號的 Chrome 視窗開著（可能是登入視窗）：關掉後才讀得到登入資料');
+          ws = await spawnChrome(id, false);
+        }
+        temp = cdp = new Cdp(ws); await cdp.ready;
+      }
+      const { cookies } = await cdp.send('Storage.getCookies', {}, undefined, 15000);
+      const list = (cookies || []).filter(gameCookie).map(c => ({ name: c.name, value: c.value, domain: c.domain, path: c.path || '/', expires: c.expires }));
+      const j = saveCookies(id, list), exp = ckExp(j);
+      r.needLogin = !list.length;
+      log(`${nm}：讀到 ${list.length} 個遊戲登入 cookie${exp ? `（${new Date(exp).toLocaleString()} 到期）` : ''}${list.length ? '' : '，需要登入'}`);
+      return j;
+    } finally {
+      if (temp) { // 為了讀 cookie 開的（或沒接上的）Chrome：正常關掉，等它放開資料夾
+        try { await temp.send('Browser.close', {}, undefined, 5000); } catch (_) {}
+        temp.close();
+        for (let i = 0; i < 30 && await wsFromDir(dir, 0); i++) await sleep(300);
+        await sleep(500);
+      }
+    }
+  }
+  // 中控腳本的 GM 值：同一個帳號的角色共用（跟 Chrome 模式同一個設定檔共用 localStorage 一樣），存 data/bg/<id>/direct-gm.json
+  function gmStore(id) {
+    const f = path.join(dirOf(id), 'direct-gm.json');
+    let data = {}; try { data = JSON.parse(fs.readFileSync(f, 'utf8')) || {}; } catch (_) {}
+    let t = null;
+    const write = () => { clearTimeout(t); t = null; try { fs.writeFileSync(f, JSON.stringify(data)); } catch (_) {} };
+    return {
+      get: (k, d) => { if (!Object.prototype.hasOwnProperty.call(data, k)) return d; try { return JSON.parse(data[k]); } catch (_) { return d; } },
+      set: (k, v) => { data[k] = JSON.stringify(v === undefined ? null : v); if (!t) t = setTimeout(write, 2000); },
+      flush: () => { if (t) write(); },
+    };
+  }
+  const jarSig = jar => JSON.stringify([...jar.entries()].sort());
+  // runner 收到新的 Set-Cookie（jar 變了）：寫回 cookie 檔，中控重開後用新的
+  function saveJar(id, d) {
+    const sig = jarSig(d.jar); if (sig === d.sig) return; d.sig = sig;
+    const old = (loadCookies(id) || {}).cookies || [];
+    saveCookies(id, [...d.jar].map(([name, value]) => ({ ...(old.find(c => c.name === name) || { domain: GAME_HOST, path: '/', expires: -1 }), name, value })));
+  }
+  function addRunner(r, p, key) {
+    const d = r.direct, D = getDirect(); if (!d || !D) return;
+    const x = D.runner({
+      profile: p.id, key, boot: r.boot, jar: d.jar, gm: d.gm,
+      onAuth: st => {
+        const bad = st === 401 || st === 403 || st === false;
+        if (bad && !r.needLogin) log(`${p.name}：遊戲回應未登入（${st}），需要重新登入`);
+        if (bad) r.needLogin = true; else if (st === true || (st >= 200 && st < 300)) r.needLogin = false;
+      },
+      onLog: m => { (r.logs || (r.logs = [])).push({ at: Date.now(), page: key, msg: String(m).slice(0, 300) }); if (r.logs.length > 30) r.logs.shift(); },
+    });
+    d.runners.set(key, x);
+    try { x.start(); } catch (e) { log(`${p.name}：直連啟動 ${key} 失敗（${e.message}）`); }
+  }
+  function stopDirect(r) {
+    const d = r.direct; if (!d) return;
+    r.direct = null;
+    for (const x of d.runners.values()) { try { x.stop(); } catch (_) {} }
+    d.gm.flush();
+    try { saveJar(r.id, d); } catch (_) {}
+  }
+  async function startDirect(id, p, r) {
+    const D = getDirect(); if (!D) throw new Error('直連模式無法使用（' + (directErr || '缺少 direct.js') + '）');
+    let j = null;
+    // Chrome 模式正在跑（剛切換成直連、或從「顯示」的視窗回來）：從開著的 Chrome 讀最新的 cookie
+    if (r.cdp && !r.cdp.closed) j = await captureCookies(id).catch(e => { log(`${p.name}：從執行中的 Chrome 讀 cookie 失敗（${e.message}）`); return null; });
+    if (!j) j = loadCookies(id);
+    const exp = ckExp(j);
+    if (!j || (exp && exp - Date.now() < 5 * 60000)) {
+      try { j = await captureCookies(id); }
+      catch (e) {
+        if (!j && /視窗開著/.test(e.message)) {
+          r.state = 'wait'; r.msg = e.message;
+          if (!r.waitLogged) { r.waitLogged = true; log(`${p.name}：${r.msg}`); }
+          return;
+        }
+        if (!j) throw e;
+        log(`${p.name}：重新讀 cookie 失敗（${e.message}），先用存著的`);
+      }
+    }
+    r.waitLogged = false;
+    // 直連不用 Chrome：還開著的（Chrome 模式、上次留下的）正常關掉
+    if ((r.cdp && !r.cdp.closed) || await wsFromDir(dirOf(id), 0)) await stopBrowser(id);
+    r.visible = ''; r.pages = {};
+    const jar = new Map(((j && j.cookies) || []).map(c => [c.name, c.value]));
+    r.boot = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    r.direct = { runners: new Map(), jar, gm: gmStore(id), sig: jarSig(jar), acctAt: 0 };
+    r.needLogin = !jar.size || (ckExp(j) > 0 && ckExp(j) < Date.now());
+    if (jar.size) for (const k of wantKeys(p)) addRunner(r, p, k); // 沒有 cookie＝還沒登入：不跑，等登入
+    r.state = 'running'; r.startedAt = Date.now(); r.msg = '';
+    log(`${p.name}：直連模式開始（${r.direct.runners.size} 隻角色，不開 Chrome）`);
+  }
+  // 每輪檢查（直連）：角色跟勾選的一致、每 60 秒問一次帳號（有沒有登入、帳號有哪些角色）
+  async function tickDirect(r, p) {
+    const d = r.direct, D = getDirect(); if (!d || !D) return;
+    const want = wantKeys(p);
+    for (const [k, x] of [...d.runners]) if (!want.includes(k)) { try { x.stop(); } catch (_) {} d.runners.delete(k); }
+    if (d.jar.size) for (const k of want) if (!d.runners.has(k)) addRunner(r, p, k);
+    try { saveJar(r.id, d); } catch (_) {}
+    const now = Date.now();
+    if (!d.jar.size || now - d.acctAt < (r.needLogin ? 15000 : ACCT_CHECK_MS)) return;
+    d.acctAt = now;
+    let a; try { a = await D.account(d.jar); } catch (_) { return; }
+    if (r.direct !== d || !a) return;
+    if (a.status === 401 || a.status === 403) { if (!r.needLogin) log(`${p.name}：登入過期了，需要重新登入`); r.needLogin = true; return; }
+    if (a.status >= 200 && a.status < 300) r.needLogin = false;
+    if (!a.code) return;
+    const u = d.runners.get('_'); let cur = '';
+    if (u) { try { cur = (u.status() || {}).char || ''; } catch (_) {} if (!cur) cur = a.active || ''; }
+    await learnAcct(r, a.code, a.chars || [], cur, async c => { // 「帳號目前的角色」改成那隻：換一個 runner
+      if (r.direct !== d || d.runners.has(c)) return;
+      const x = d.runners.get('_'); if (x) { try { x.stop(); } catch (_) {} d.runners.delete('_'); }
+    });
+    const q = prof(r.id); if (q && r.direct === d && d.jar.size) for (const k of wantKeys(q)) if (!d.runners.has(k)) addRunner(r, q, k);
+  }
+  // 登入後學到帳號的遊戲 ID、角色（Chrome 分頁的 probe 和直連共用）
+  async function learnAcct(r, code, chars, cur, rekey) {
+    const p = prof(r.id) || {};
+    if (p.code !== code || JSON.stringify(p.charIds || []) !== JSON.stringify(chars)) patchProf(r.id, { code, charIds: chars });
+    // 登入後知道帳號有哪些角色了：「帳號目前的角色」改成帳號的角色（最多兩隻同時在線），目前顯示的那隻排第一、沿用原本的分頁
+    const pages = p.pages && p.pages.length ? p.pages : [''];
+    if (pages.includes('') && chars.length) {
+      cur = cur && chars.includes(cur) ? cur : '';
+      const next = [...new Set([...pages.filter(Boolean), cur, ...chars].filter(Boolean))].slice(0, Math.max(2, pages.filter(Boolean).length));
+      if (cur && next.includes(cur)) await rekey(cur);
+      patchProf(r.id, { pages: next });
+      log(`${p.name}：登入後改成開帳號的角色（${next.length} 隻）`);
+    }
+  }
+  // 切換直連／Chrome 模式：存設定，執行中的帳號換成新的模式重開（登入中、顯示視窗中的等關掉後自然換過去）
+  async function setMode(id, on) {
+    const p = prof(id); if (!p) return false;
+    const r = R(id);
+    if (!!p.direct !== on) { patchProf(id, { direct: on }); log(`${p.name}：改成${on ? '直連模式（不開 Chrome）' : 'Chrome 模式'}`); }
+    if (!p.on || r.login || r.visible || r.busy) return true;
+    if (on ? r.direct : !r.direct && r.cdp && !r.cdp.closed) return true; // 已經是這個模式
+    r.fails = [];
+    if (!on) { stopDirect(r); r.state = 'off'; }
+    await start(id);
+    return true;
+  }
+
   async function start(id, opt = {}) {
     const p = prof(id); if (!p) throw new Error('沒有這個背景帳號');
     const r = R(id);
     if (r.busy || r.login) return;
+    if (p.direct && !opt.visible && r.direct) return; // 直連已經在跑
     r.busy = true; r.state = 'starting'; r.msg = ''; r.needLogin = false;
     let reattachTried = false;
     try {
       if (typeof WebSocket !== 'function') throw new Error('背景執行需要 Node.js 22 以上（目前 ' + process.version + '）');
+      if (p.direct && !opt.visible) return await startDirect(id, p, r);
+      if (r.direct) stopDirect(r); // 改回 Chrome 模式、或「顯示」視窗：先停掉直連
       const chrome = findChrome(cfg().chromePath);
       if (!chrome) throw new Error('找不到 Chrome：請在下面填 chrome.exe 的位置');
       const dir = dirOf(id); prepDir(dir);
@@ -329,44 +558,7 @@ ${fixed}
       }
       r.waitLogged = false;
       r.visible = opt.visible ? String(opt.visible) : '';
-      if (!ws) {
-        // 先清掉殘留：還佔著這個資料夾的 Chrome（登入視窗關了但程式沒結束）、上次沒清乾淨的鎖定檔
-        const killed = await killStale(id);
-        for (const f of ['DevToolsActivePort', 'SingletonLock', 'SingletonSocket', 'SingletonCookie', 'lockfile']) { try { fs.rmSync(path.join(dir, f), { force: true }); } catch (_) {} }
-        const logFile = path.join(dir, 'chrome-start.log');
-        let logFd = 'ignore'; try { logFd = fs.openSync(logFile, 'w'); } catch (_) {}
-        const args = [...(opt.visible ? ['--new-window'] : ['--headless=new']), '--remote-debugging-port=0', `--user-data-dir=${dir}`, '--no-first-run', '--no-default-browser-check',
-          '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
-          '--mute-audio', '--window-size=1280,800',
-          // 省記憶體：同一個遊戲網站的分頁共用一個程序；關掉背景 Chrome 用不到的功能（同步、擴充、元件更新、翻譯…）
-          '--process-per-site', '--disable-extensions', '--disable-component-update', '--disable-default-apps', '--disable-sync', '--disable-background-networking',
-          '--disable-breakpad', '--no-pings', '--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication,CalculateNativeWinOcclusion,HeavyAdIntervention,BackForwardCache',
-          ...(opt.visible ? [] : ['--disable-gpu', '--disable-gpu-compositing']), ...sandboxArgs(), 'about:blank'];
-        const t0 = Date.now();
-        const proc = spawn(chrome, args, { detached: true, stdio: ['ignore', logFd, logFd], windowsHide: true });
-        if (typeof logFd === 'number') try { fs.closeSync(logFd); } catch (_) {}
-        let exited = null, spawnErr = '';
-        proc.on('error', e => { spawnErr = e.message; });
-        proc.on('exit', (code, sig) => { exited = { code, sig, at: Date.now() }; });
-        proc.unref();
-        // 電腦忙的時候（一次開很多帳號）Chrome 可能要好一陣子才準備好：最多等 60 秒；Chrome 自己先結束就不用等
-        const end = Date.now() + 60000;
-        while (!ws && Date.now() < end && !spawnErr) {
-          ws = await wsFromDir(dir, 0);
-          if (ws) break;
-          // 一啟動就結束：Windows 上常是「交給另一個正在用這個資料夾的 Chrome」然後自己退出；多給 3 秒看看檔案是否出現
-          if (exited && Date.now() - exited.at > 3000) break;
-          await sleep(400);
-        }
-        if (!ws) {
-          const tail = (() => { try { return fs.readFileSync(logFile, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(l => l && !/^\[\d+:\d+:\d+\/\d+\.\d+:(INFO|VERBOSE)/.test(l)).slice(-3).join(' ｜ ').slice(0, 300); } catch (_) { return ''; } })();
-          const sec = Math.round((Date.now() - t0) / 1000), extra = (killed ? `（啟動前已結束 ${killed} 個殘留的 Chrome）` : '') + (tail ? `　Chrome 訊息：${tail}` : '');
-          if (spawnErr) throw new Error('開不了 Chrome：' + spawnErr);
-          if (exited) throw new Error(`背景 Chrome 一啟動就結束了（結束碼 ${exited.code ?? exited.sig}）。可能是這個帳號的資料夾正被別的 Chrome 使用，或資料夾損壞：可以按「刪除」後重新加入這個帳號${extra}`);
-          try { process.kill(proc.pid); } catch (_) {}
-          throw new Error(`背景 Chrome 等了 ${sec} 秒還沒準備好：電腦可能太忙（同時開太多帳號），可以晚點再按開始，或少開幾個${extra}`);
-        }
-      }
+      if (!ws) ws = await spawnChrome(id, opt.visible);
       const cdp = new Cdp(ws); await cdp.ready;
       r.cdp = cdp; r.pages = {}; r.boot = Date.now().toString(36) + Math.random().toString(36).slice(2, 6); // 這次 Chrome 的編號（分頁標記用，v0.74.3）
       cdp.on(m => onEvent(r, m, cdp));
@@ -430,7 +622,7 @@ ${fixed}
   }
 
   const GOOGLE_LOGIN = new RegExp(process.env.SZG_GOOGLE_LOGIN_RE || '^https://accounts\\.google\\.com/', 'i'); // 測試用 SZG_GOOGLE_LOGIN_RE 換成模擬的網址
-  async function stop(id) { const r = R(id); r.busy = true; try { await stopBrowser(id); } finally { r.busy = false; } r.state = 'off'; r.msg = ''; }
+  async function stop(id) { const r = R(id); r.busy = true; try { stopDirect(r); await stopBrowser(id); } finally { r.busy = false; } r.state = 'off'; r.msg = ''; }
 
   // 登入：同一個資料夾開「一般的 Chrome 視窗」（不接 DevTools，不是自動化瀏覽器，Google 登入不會被擋）
   async function login(id, opt = {}) {
@@ -440,6 +632,7 @@ ${fixed}
     const r = R(id);
     if (r.login) return;
     await stop(id);
+    dropCookies(id); // 直連用的舊 cookie 作廢：登入視窗關掉後重新讀（重新登入通常就是舊的過期了）
     // 還有中控開的 Chrome（有遠端除錯）佔著這個資料夾：新開的視窗會變成它的一個視窗（同一個資料夾只會有一個 Chrome），
     // Google 會判斷成自動化瀏覽器、擋登入（「這個瀏覽器或應用程式可能有安全疑慮」）→ 先確實關掉
     if ((await chromeOf(id)).some(x => /--remote-debugging-port/.test(x.cmd))) { log(`${p.name}：先關掉還在跑的背景 Chrome，再開登入視窗`); await killStale(id); }
@@ -515,19 +708,7 @@ ${fixed}
       if (withAcct && o.acct !== undefined) { // 頁面還沒載入（about:blank）時不算檢查過
         pg.acctAt = now;
         r.needLogin = o.acct === 401 || o.acct === 403 || (!onGame && now - pg.openedAt > 30000);
-        if (o.code) {
-          const p = prof(r.id) || {};
-          if (p.code !== o.code || JSON.stringify(p.charIds || []) !== JSON.stringify(o.chars || [])) patchProf(r.id, { code: o.code, charIds: o.chars || [] });
-          // 登入後知道帳號有哪些角色了：「帳號目前的角色」改成帳號的角色（最多兩隻同時在線），目前顯示的那隻排第一、沿用原本的分頁
-          const pages = p.pages && p.pages.length ? p.pages : [''];
-          if (pages.includes('') && (o.chars || []).length) {
-            const cur = key === '_' && o.char && o.chars.includes(o.char) ? o.char : '';
-            const next = [...new Set([...pages.filter(Boolean), cur, ...o.chars].filter(Boolean))].slice(0, Math.max(2, pages.filter(Boolean).length));
-            if (cur && next.includes(cur)) await rekeyPage(r, '_', cur);
-            patchProf(r.id, { pages: next });
-            log(`${p.name}：登入後改成開帳號的角色（${next.length} 隻）`);
-          }
-        }
+        if (o.code) await learnAcct(r, o.code, o.chars || [], key === '_' ? o.char : '', c => rekeyPage(r, '_', c));
       }
     } catch (e) {
       pg.fail++;
@@ -559,6 +740,15 @@ ${fixed}
         const r = R(p.id);
         if (r.busy || r.login) continue;
         if (!p.on) continue;
+        if (p.direct && !r.visible) { // 直連：沒有 Chrome，下面的分頁檢查、整理、重新整理都不用
+          if (!r.direct) {
+            r.fails = r.fails.filter(t => Date.now() - t < 10 * 60 * 1000);
+            if (r.fails.length >= 3) { r.state = 'error'; r.msg = (r.msg || '一直開不起來').replace(/（10 分鐘內失敗 3 次.*$/, '') + '（10 分鐘內失敗 3 次，先停止自動重開；按「開始」再試）'; continue; }
+            await start(p.id);
+          } else await tickDirect(r, p).catch(e => log(`${p.name}：直連檢查失敗（${e.message}）`));
+          continue;
+        }
+        if (r.direct) stopDirect(r); // 改回 Chrome 模式了
         if (!r.cdp || r.cdp.closed) {
           r.fails = r.fails.filter(t => Date.now() - t < 10 * 60 * 1000);
           if (r.fails.length >= 3) { r.state = 'error'; r.msg = (r.msg || '一直開不起來') + '（10 分鐘內失敗 3 次，先停止自動重開；按「開始」再試）'; continue; }
@@ -646,11 +836,19 @@ ${fixed}
         roots.forEach(walk);
         if (n) { by[p.id] = { mb: Math.round(sum / 1048576), pageMb: Math.round(page / 1048576), baseMb: Math.round((sum - page) / 1048576), procs: n }; total += sum; totalPage += page; }
       }
-      mem = { at: Date.now(), by, total: Math.round(total / 1048576), page: Math.round(totalPage / 1048576), base: Math.round((total - totalPage) / 1048576), procs: procs.length, matched: Object.keys(by).length, err: !procs.length ? '讀不到程序清單' : !Object.keys(by).length && cfg().profiles.some(p => run[p.id] && run[p.id].state === 'running') ? '對不到背景 Chrome 的程序' : '' };
+      mem = { at: Date.now(), by, total: Math.round(total / 1048576), page: Math.round(totalPage / 1048576), base: Math.round((total - totalPage) / 1048576), procs: procs.length, matched: Object.keys(by).length, err: !procs.length ? '讀不到程序清單' : !Object.keys(by).length && cfg().profiles.some(p => run[p.id] && run[p.id].state === 'running' && run[p.id].cdp) ? '對不到背景 Chrome 的程序' : '' };
     } catch (e) { mem = { ...mem, at: Date.now(), err: e.message }; }
     finally { memBusy = false; }
   }
 
+  // 直連的每隻角色，轉成跟 Chrome 分頁一樣的格式（面板共用）
+  function liveDirect(r) {
+    return [...r.direct.runners].map(([k, x]) => {
+      let s = {}; try { s = x.status() || {}; } catch (_) {}
+      return { heap: 0, heapTotal: 0, key: k, char: s.char || (k === '_' ? '' : k), url: '', standby: !!s.standby, injected: true, badge: [s.state, s.msg].filter(Boolean).join(' ').slice(0, 120), at: s.at || 0, fail: s.errors || 0,
+        state: s.state || '', syncs: s.syncs || 0, errors: s.errors || 0, loadedAt: s.loadedAt || 0, busy: !!s.busy };
+    });
+  }
   function status() {
     refreshMem();
     const c = cfg();
@@ -658,6 +856,7 @@ ${fixed}
       all: allJob && (!allJob.end || Date.now() - allJob.end < 15000) ? { ...allJob } : null,
       batch: { cur: batch.cur, queue: [...batch.queue], done: batch.done.length, skipped: batch.skipped.length, total: batch.done.length + batch.skipped.length + batch.queue.length + (batch.cur ? 1 : 0) },
       events: events.slice(-60),
+      directOk: !!getDirect(), directErr,
       lite: c.lite, reloadHours: c.reloadHours, trimMin: c.trimMin, mem: { total: mem.total, page: mem.page || 0, base: mem.base || 0, at: mem.at, err: mem.err },
       chrome: findChrome(c.chromePath), chromePath: c.chromePath, nodeOk: typeof WebSocket === 'function', node: process.version, game: GAME,
       profiles: c.profiles.map(p => {
@@ -666,7 +865,8 @@ ${fixed}
           id: p.id, name: p.name, email: p.email || '', note: p.note || '', on: !!p.on, visible: (run[p.id] || {}).visible || '', pages: p.pages || [''], code: p.code || '', charIds: p.charIds || [],
           mem: mem.by[p.id] || null, noLite: !!r.noLite, reloads: r.reloads || 0, trimAt: r.trimAt || 0,
           state: r.state || 'off', msg: r.msg || '', logs: (r.logs || []).slice(-10), needLogin: !!r.needLogin, startedAt: r.startedAt || 0, dir: dirOf(p.id),
-          live: Object.entries(r.pages || {}).map(([k, pg]) => ({ heap: pg.heap || 0, heapTotal: pg.heapTotal || 0, key: k, char: (pg.info && pg.info.char) || pg.char, url: pg.info && pg.info.url, standby: !!(pg.info && pg.info.bg && pg.info.bg.standby), injected: !!(pg.info && pg.info.bg), badge: pg.info && pg.info.badge, at: (pg.info && pg.info.at) || 0, fail: pg.fail })),
+          direct: !!p.direct, mode: r.direct ? 'direct' : r.visible ? 'visible' : r.cdp ? 'chrome' : '', cookieExp: ckExp(loadCookies(p.id)),
+          live: r.direct ? liveDirect(r) : Object.entries(r.pages || {}).map(([k, pg]) => ({ heap: pg.heap || 0, heapTotal: pg.heapTotal || 0, key: k, char: (pg.info && pg.info.char) || pg.char, url: pg.info && pg.info.url, standby: !!(pg.info && pg.info.bg && pg.info.bg.standby), injected: !!(pg.info && pg.info.bg), badge: pg.info && pg.info.badge, at: (pg.info && pg.info.at) || 0, fail: pg.fail })),
         };
       }),
     };
@@ -709,14 +909,34 @@ ${fixed}
           try {
             if (b.op === 'start') {
               patchProf(id, { on: true }); r.fails = [];
-              if (r.state === 'running' && r.cdp && !r.cdp.closed) job.skipped++; // 已經在跑的不用重開
+              if (r.state === 'running' && (r.direct || (r.cdp && !r.cdp.closed))) job.skipped++; // 已經在跑的不用重開
               else await start(id);
             } else {
               patchProf(id, { on: false });
-              if (r.state === 'off' && !r.cdp) job.skipped++;
+              if (r.state === 'off' && !r.cdp && !r.direct) job.skipped++;
               else { r.state = 'stopping'; await stop(id); }
             }
           } catch (e) { log('依序' + (b.op === 'start' ? '開始' : '停止') + '：' + e.message); }
+          job.done++;
+        }
+        job.cur = ''; job.end = Date.now();
+      })();
+      return status();
+    }
+    if (name === 'mode') { // 直連模式開關：{id, direct} 或 {ids:[…], direct}（好幾個時背景依序做，進度跟「依序開始」一樣在 status.all）
+      const on = !!b.direct;
+      const ids = (Array.isArray(b.ids) && b.ids.length ? b.ids : [b.id]).filter(id => list.find(x => x.id === id));
+      if (!ids.length) throw new Error('沒有這個背景帳號');
+      if (ids.length === 1 && !Array.isArray(b.ids)) { await setMode(ids[0], on); return status(); }
+      if (allJob && !allJob.end) throw new Error(`上一批還沒做完（${allJob.done}/${allJob.total}），等它做完`);
+      const job = allJob = { op: on ? 'direct' : 'chrome', total: ids.length, done: 0, skipped: 0, cur: '', at: Date.now(), end: 0 };
+      for (const id of ids) if (!!(prof(id) || {}).direct !== on) patchProf(id, { direct: on }); // 設定先全部存好，畫面馬上看得到
+      (async () => {
+        for (const id of ids) {
+          job.cur = id;
+          const r = R(id);
+          try { if ((on ? r.direct : !r.direct && r.cdp) || !(prof(id) || {}).on) job.skipped++; await setMode(id, on); } // 已經是這個模式、或沒開的：只存設定
+          catch (e) { log('切換模式：' + e.message); }
           job.done++;
         }
         job.cur = ''; job.end = Date.now();
@@ -754,13 +974,13 @@ ${fixed}
       if (r.visible && r.cdp && !r.cdp.closed) { const pg = r.pages[ch || '_'] || Object.values(r.pages)[0]; if (pg) await r.cdp.send('Target.activateTarget', { targetId: pg.targetId }).catch(() => {}); r.visible = ch || '_'; }
       else { r.busy = true; try { await stopBrowser(p.id); } finally { r.busy = false; } await start(p.id, { visible: ch || '_' }); }
     }
-    else if (name === 'hide') { const r = R(p.id); if (r.visible) { r.busy = true; try { await stopBrowser(p.id); } finally { r.busy = false; } r.visible = ''; await start(p.id); } }
+    else if (name === 'hide') { const r = R(p.id); if (r.visible && p.direct) { r.visible = ''; await start(p.id); } else if (r.visible) { r.busy = true; try { await stopBrowser(p.id); } finally { r.busy = false; } r.visible = ''; await start(p.id); } }
     else if (name === 'remove') { await stop(p.id); delete run[p.id]; setCfg({ ...c, profiles: list.filter(x => x.id !== p.id) }); }
     else if (name === 'start') { patchProf(p.id, { on: true }); R(p.id).fails = []; await start(p.id, { force: true }); }
     else if (name === 'stop') { patchProf(p.id, { on: false }); await stop(p.id); }
     else if (name === 'login') { patchProf(p.id, { on: true }); await login(p.id); }
     else if (name === 'login-done') await loginDone(p.id);
-    else if (name === 'reload') { const r = R(p.id); for (const pg of Object.values(r.pages)) if (r.cdp) await r.cdp.send('Page.reload', {}, pg.sessionId).catch(() => {}); }
+    else if (name === 'reload') { const r = R(p.id); if (r.direct) for (const x of r.direct.runners.values()) { try { x.reload(); } catch (_) {} } for (const pg of Object.values(r.pages)) if (r.cdp) await r.cdp.send('Page.reload', {}, pg.sessionId).catch(() => {}); }
     else if (name === 'pages') {
       let pages = [...new Set((Array.isArray(b.pages) ? b.pages : []).map(x => String(x || '')).filter(x => x === '' || /^[\w-]{1,64}$/.test(x)))].slice(0, 6);
       if ((p.charIds || []).length) { // 登入過、知道有哪些角色：只能勾帳號的角色
@@ -832,9 +1052,20 @@ ${fixed}
     }
     return null;
   }
+  // 沒有 Chrome 分頁時：用執行中的直連帳號的 cookie 直接抓
+  function srcDirect(want) {
+    if (!getDirect()) return null;
+    for (const p of cfg().profiles) {
+      if (want && p.id !== want && p.name !== want) continue;
+      const r = run[p.id];
+      if (r && r.direct && r.direct.jar.size && !r.needLogin && r.state === 'running') return { r, name: p.name };
+    }
+    return null;
+  }
   async function gameSrc(q) {
-    const at = srcPage(q.profile);
+    const at = srcPage(q.profile), dt = at ? null : srcDirect(q.profile);
     if (q.list) { // 頁面載入過的程式檔
+      if (!at && dt) return { from: dt.name + '（直連）', files: ['/game/game.js'], note: '直連模式沒有瀏覽器分頁，看不到頁面載入了哪些檔案，只列出主程式' };
       if (!at) return { error: '沒有已登入、執行中的背景分頁' };
       const v = await at.r.cdp.send('Runtime.evaluate', { expression: `[...new Set([...document.scripts].map(s => s.src).concat(performance.getEntriesByType('resource').map(e => e.name)))].filter(u => u.startsWith(location.origin) && /\\.(m?js|json)(\\?|$)/.test(u)).map(u => u.slice(location.origin.length))`, returnByValue: true }, at.pg.sessionId, 15000);
       return { from: at.name, files: (v.result && v.result.value) || [] };
@@ -843,10 +1074,15 @@ ${fixed}
     if (!/^\/[\w./-]+\.(m?js|json)$/.test(file) || file.includes('..')) return { error: '只能讀遊戲網站上的 .js／.json 檔（例如 /game/game.js）' };
     let c = srcCache[file];
     if (!c || q.fresh || Date.now() - c.at > 10 * 60000) {
+      if (!at && dt) {
+        const o = (await getDirect().fetchText(dt.r.direct.jar, file)) || {}, okSt = o.status >= 200 && o.status < 300;
+        c = srcCache[file] = { at: Date.now(), text: okSt ? String(o.text || '') : '', status: o.status || 0, from: dt.name + '（直連）' };
+      } else {
       if (!at) return { error: '沒有已登入、執行中的背景分頁（帳號分頁要有一個在跑、而且已登入）' };
       const v = await at.r.cdp.send('Runtime.evaluate', { expression: `fetch(${JSON.stringify(file)}, { cache: 'no-store', credentials: 'same-origin' }).then(async r => ({ status: r.status, text: r.ok ? await r.text() : '' }))`, awaitPromise: true, returnByValue: true }, at.pg.sessionId, 60000);
       const o = (v.result && v.result.value) || {};
       c = srcCache[file] = { at: Date.now(), text: String(o.text || ''), status: o.status || 0, from: at.name };
+      }
     }
     const t = c.text;
     let h = 0x811c9dc5; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
@@ -876,6 +1112,7 @@ ${fixed}
   // 中控正常關閉（Ctrl+C、關視窗）時一起關掉背景 Chrome；自動更新重新啟動時不關（中控起來後會接回去）
   async function shutdown() {
     clearInterval(timer);
+    for (const id of Object.keys(run)) stopDirect(run[id]);
     await Promise.all(cfg().profiles.map(p => (run[p.id] && run[p.id].cdp) ? stopBrowser(p.id).catch(() => {}) : null));
   }
 
