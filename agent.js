@@ -864,11 +864,11 @@ function agentMain(ctx) {
             setBadge(null, `${t.name}：套用自動販售…`);
             await gameRetry({ type: 'autoSell', characterId: t.charId, map: t.map, config: gameSellConfig(t.sell) });
             done.push(`${t.name} 在 ${t.mapName || t.map} 的自動販售已更新（${t.sell.enabled ? t.sell.itemIds.length + ' 項' : '關閉'}）`);
-          } catch (e) { failed.push(`${t.name} 自動販售（${/所在地/.test(e.message) ? '角色已不在這張地圖' : e.message}）`); }
+          } catch (e) { if (e.gameUpdated) throw e; failed.push(`${t.name} 自動販售（${/所在地/.test(e.message) ? '角色已不在這張地圖' : e.message}）`); }
           continue;
         }
         if (t.action === 'wake') {
-          try { done.push((await wakePage(t.why || '從面板要求')) ? `${t.name} 已領取離線收益` : `${t.name} 不在離線掛機狀態`); } catch (e) { failed.push(`${t.name} 領取（${e.message}）`); }
+          try { done.push((await wakePage(t.why || '從面板要求')) ? `${t.name} 已領取離線收益` : `${t.name} 不在離線掛機狀態`); } catch (e) { if (e.gameUpdated) throw e; failed.push(`${t.name} 領取（${e.message}）`); }
           continue;
         }
         if (t.action === 'switch') {
@@ -881,14 +881,14 @@ function agentMain(ctx) {
             await game({ type: 'switch', characterId: t.charId });
             switchTo = t.charId;
             done.push(`已切換到 ${t.name}`);
-          } catch (e) { failed.push(`切換到 ${t.name}（${e.message}）`); }
+          } catch (e) { if (e.gameUpdated) throw e; failed.push(`切換到 ${t.name}（${e.message}）`); }
           continue;
         }
         try {
           setBadge(null, `${t.name}：${IDLE_LABEL[t.action]}…`);
           await idleAction(t.charId, t.action);
           done.push(`${t.name} ${IDLE_LABEL[t.action]}`);
-        } catch (e) { failed.push(`${t.name}（${e.message}）`); }
+        } catch (e) { if (e.gameUpdated) throw e; failed.push(`${t.name}（${e.message}）`); } // 遊戲改版：頁面自己重新整理，工作留著重整後再做
       }
       // 改了掛機設定：馬上向遊戲要一份最新的（補給這些欄位平常 45 秒才更新一次），下一輪立刻回報給中控
       if (cfgTouched && !switchTo) { await refreshOwnState(true); lastHash = ''; }
