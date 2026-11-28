@@ -7470,13 +7470,18 @@ function drawRaid() {
       ...(me.lockUntil > now ? [`鎖水 ${secLeft(me.lockUntil, now)}秒`] : [])]; };
   const dmgCell = id => { const d = Number(dmgBy[id]) || 0; if (!dmgTotal) return '<td class="num dim">—</td><td class="num dim">—</td>';
     return `<td class="num ${d ? '' : 'bad'}">${d ? short(d) : '0'}</td><td class="num ${d ? '' : 'bad'}">${(d / dmgTotal * 100).toFixed(1)}%</td>`; };
+  // 攻擊紀錄（回報者收全隊的 summary.events）：出手次數／未命中率；這場有紀錄但某隻 0 次＝沒出手
+  const HT = RAID.hits && RAID.hits.code === b.code && RAID.hits.n ? RAID.hits : null;
+  const hitCell = id => { const s = HT && HT.chars[id]; if (!HT) return '<td class="num dim">—</td>'; if (!s || !(s.atk || s.dot)) return '<td class="num bad" title="這場沒有這隻的攻擊事件">沒出手</td>';
+    const mp = s.missPct, bad = mp != null && mp >= 90, z = s.atk && !s.eff && s.dmg;
+    return `<td class="num ${bad || z ? 'bad' : mp >= 50 ? 'warn' : ''}" title="出手 ${s.atk} 次、${s.lines} 段，未命中 ${s.miss} 段；扣血 0 但有傷害 ${s.zeroEff} 次">${s.atk}／${mp == null ? '—' : mp.toFixed(0) + '%'}${z ? ' 扣血 0' : ''}</td>`; };
   $('#rdBattle').innerHTML = `<div class="bar"><b>${esc(RAID_NAME[b.raid] || b.raid || '副本')}</b><span class="tag">第 ${b.phase || '?'} 階段</span><span>剩餘 <b>${mmss(remain)}</b></span>${(b.surrender || []).length ? `<span class="warn sm">投降 ${b.surrender.length} 人</span>` : ''}</div>
     <div class="bar">${flags.join('') || '<span class="dim sm">沒有特殊狀態</span>'}</div>
     ${boss ? `<div class="rd-en"><b>${esc(mobName(boss.id))}</b>${hpBar(boss.hp, boss.maxHp, 'boss')}</div>` : '<div class="dim sm">還沒拿到王的血量</div>'}
     ${statHtml}${orbHtml}
-    <table class="tbl sm rd-mem"><tr><th>角色</th><th>HP</th><th>MP</th><th>異常狀態</th><th>對王累計傷害</th><th>占比</th></tr>${memIds.map(id => { const L = RAID.live[id], me = L && L.me || {}, ail = ailOf(L);
-      return `<tr><td>${esc(charNameOf(id))}${(b.surrender || []).includes(id) ? ' <span class="warn">投降</span>' : ''}${!L ? ' <span class="dim">（沒有回報）</span>' : ''}</td><td>${L ? (me.hp <= 0 ? '<span class="bad">倒下</span>' : hpBar(me.hp, me.maxhp, 'hp')) : ''}</td><td>${L ? hpBar(me.mp, me.maxmp, 'mp') : ''}</td><td>${ail.length ? `<span class="bad">${ail.join('、')}</span>` : '<span class="dim">—</span>'}</td>${dmgCell(id)}</tr>`; }).join('')}
-      ${extra.map(id => `<tr class="dim"><td>${esc(charNameOf(id))} <span class="sm">（不在計畫裡）</span></td><td></td><td></td><td></td>${dmgCell(id)}</tr>`).join('')}</table>
+    <table class="tbl sm rd-mem"><tr><th>角色</th><th>HP</th><th>MP</th><th>異常狀態</th><th>對王累計傷害</th><th>占比</th><th title="這場出手幾次／每段傷害是 0（未命中 MISS）的比例">出手／未命中率</th></tr>${memIds.map(id => { const L = RAID.live[id], me = L && L.me || {}, ail = ailOf(L);
+      return `<tr><td>${esc(charNameOf(id))}${(b.surrender || []).includes(id) ? ' <span class="warn">投降</span>' : ''}${!L ? ' <span class="dim">（沒有回報）</span>' : ''}</td><td>${L ? (me.hp <= 0 ? '<span class="bad">倒下</span>' : hpBar(me.hp, me.maxhp, 'hp')) : ''}</td><td>${L ? hpBar(me.mp, me.maxmp, 'mp') : ''}</td><td>${ail.length ? `<span class="bad">${ail.join('、')}</span>` : '<span class="dim">—</span>'}</td>${dmgCell(id)}${hitCell(id)}</tr>`; }).join('')}
+      ${extra.map(id => `<tr class="dim"><td>${esc(charNameOf(id))} <span class="sm">（不在計畫裡）</span></td><td></td><td></td><td></td>${dmgCell(id)}${hitCell(id)}</tr>`).join('')}</table>
     ${dmgTotal ? `<div class="dim sm">對王累計傷害合計 ${short(dmgTotal)}（遊戲的 damageBy；不含黑球）</div>` : ''}`;
 }
 // 戰鬥結束後：遊戲的結算（character.raidReport）
@@ -7758,7 +7763,7 @@ function raidHistDraw() {
   // 有新結算、或 30 秒沒讀就重讀；其他時候只在資料或展開／勾選變了才重畫（不會洗掉展開狀態）
   if (!RH.busy && (RH.list == null || repAt !== RH.repAt || Date.now() - RH.loadedAt > 30000)) { RH.repAt = repAt; raidHistLoad().then(raidHistDraw).catch(e => { box.textContent = '讀不到戰後紀錄：' + e.message; }); }
   if (RH.list == null) return;
-  const sig = JSON.stringify([RH.list.map(h => h.id), [...RH.open], RH.cmp]);
+  const sig = JSON.stringify([RH.list.map(h => h.id + ':' + (h.hitsAt || 0)), [...RH.open], RH.cmp]); // 攻擊紀錄晚到（結算先存）會更新 hitsAt
   if (sig === RH.sig && box.firstChild) return; RH.sig = sig;
   if (!RH.list.length) { box.innerHTML = '<div class="dim sm">還沒有紀錄。每場打完（收到遊戲的結算）會自動存一筆，最多留 50 場。</div>'; return; }
   const dur = s => (s == null ? '—' : mmss(s)), deathsOf = h => h.rows.reduce((t, r) => t + rhDeaths(r), 0);
@@ -7770,6 +7775,14 @@ function raidHistDraw() {
         <td><button class="sm" data-rhdel="${esc(h.id)}" title="刪掉這筆紀錄">刪除</button></td></tr>${op ? `<tr class="rh-det"><td colspan="9">${raidHistDetail(h)}</td></tr>` : ''}`; }).join('')}</table>
     ${raidHistCompare()}`;
 }
+// 每隻的攻擊紀錄：出手次數、未命中率、主要技能（這場沒收到攻擊紀錄就是 —）
+function rhHitCells(h, r) {
+  if (!h.hitsN) return '<td class="num dim">—</td><td class="num dim">—</td><td class="dim">—</td>';
+  const s = r.hits; if (!s || !(s.atk || s.dot)) return '<td class="num bad">0</td><td class="num dim">—</td><td class="dim">—</td>';
+  const mp = s.missPct, sk = (s.skills || []).slice(0, 2);
+  return `<td class="num" title="${s.lines} 段${s.dot ? `、持續傷害 ${s.dot} 次` : ''}；打王 ${s.boss.n} 次、黑球 ${s.orb.n} 次${s.first != null ? `；第 ${mmss(s.first)}～${mmss(s.last)}` : ''}">${s.atk}</td>
+    <td class="num ${mp != null && mp >= 90 ? 'bad' : mp >= 50 ? 'warn' : ''}">${mp == null ? '—' : mp.toFixed(0) + '%'}</td><td class="sm">${sk.length ? sk.map(k => `${esc(k.name)} ×${k.n}`).join('、') : '—'}</td>`;
+}
 const rhDeaths = r => Math.max(r.deaths || 0, (r.deathAt || []).length); // 遊戲結算的死亡數，或中控取樣看到的倒下次數（取大的）
 function raidHistDetail(h) {
   const n = v => (v == null ? '—' : short(v)), pc = v => (v == null ? '—' : `${Math.round(v)}%`), mm = s => (s == null ? '?' : mmss(s));
@@ -7779,10 +7792,10 @@ function raidHistDetail(h) {
       <div>王最低血量<br><b>${h.boss.minHpPct == null ? '—' : h.boss.minHpPct + '%'}</b>${h.boss.maxHp ? `<span class="dim sm">（${short(h.boss.maxHp)}）</span>` : ''}</div><div>全隊封印<br><b class="${h.sealCount ? 'warn' : ''}">${h.sealCount || 0}</b> 次</div><div>隊伍代碼<br><b>${esc(h.code)}</b></div></div>
     ${why.length ? `<b class="sm">${head}</b><ul class="rh-why sm">${why.map(x => `<li class="${h.result === 'clear' ? '' : 'bad'}">${esc(x)}</li>`).join('')}</ul>` : ''}
     ${waves ? `<b class="sm">黑球</b><ul class="rh-why sm">${waves}</ul>` : ''}
-    <table class="tbl sm"><tr><th>#</th><th>角色</th><th>傷害</th><th>占比</th><th>死亡</th><th>倒下時間</th><th>MP 最低</th><th>HP 最低</th></tr>${h.rows.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${esc(r.name)}</td>
+    <table class="tbl sm rh-mem"><tr><th>#</th><th>角色</th><th>傷害</th><th>占比</th><th>死亡</th><th>倒下時間</th><th>MP 最低</th><th>HP 最低</th><th>出手</th><th>未命中率</th><th>主要技能</th></tr>${h.rows.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${esc(r.name)}${r.diag ? `<div class="sm bad rh-diag">${esc(r.diag)}</div>` : ''}</td>
       <td class="num ${r.damage ? '' : 'bad'}">${r.damage ? short(r.damage) : '0'}</td><td class="num ${r.damage ? '' : 'bad'}">${(r.pct || 0).toFixed(1)}%</td><td class="num ${rhDeaths(r) ? 'warn' : ''}">${rhDeaths(r)}</td>
-      <td class="sm">${(r.deathAt || []).length ? r.deathAt.map(mm).join('、') : '<span class="dim">—</span>'}</td><td class="num ${r.mpMinPct != null && r.mpMinPct <= 5 ? 'bad' : ''}">${pc(r.mpMinPct)}</td><td class="num">${pc(r.hpMinPct)}</td></tr>`).join('')}</table>
-    <div class="dim sm">占比照遊戲結算的傷害算；MP／HP 最低、倒下時間是中控戰鬥中每秒取樣的（中控中途重開會缺）。</div>`;
+      <td class="sm">${(r.deathAt || []).length ? r.deathAt.map(mm).join('、') : '<span class="dim">—</span>'}</td><td class="num ${r.mpMinPct != null && r.mpMinPct <= 5 ? 'bad' : ''}">${pc(r.mpMinPct)}</td><td class="num">${pc(r.hpMinPct)}</td>${rhHitCells(h, r)}</tr>`).join('')}</table>
+    <div class="dim sm">占比照遊戲結算的傷害算；MP／HP 最低、倒下時間是中控戰鬥中每秒取樣的（中控中途重開會缺）。${h.hitsN ? `出手／未命中是回報者收到的全隊攻擊事件（${h.hitsN} 筆；未命中＝那一段傷害 0）。` : ''}</div>`;
 }
 function raidHistCompare() {
   if (RH.cmp.length < 2) return RH.cmp.length ? '<div class="dim sm rh-cmp">再勾一場就能比較</div>' : '';

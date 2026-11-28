@@ -511,6 +511,41 @@ function agentMain(ctx) {
         .catch(e => { T.fails++; T.until = Date.now() + 30000; rec(false, String((e && e.message) || e).slice(0, 120)); })
         .finally(() => { T.busy = false; });
     }
+    // 每隻角色的攻擊紀錄（查誰傷害 0：沒出手／全未命中／有命中但扣血 0）：回報者在副本戰鬥中，從頁面拿到的同步回應（含自己每秒多做的那次 sync）
+    // 的 summary.events 收全隊的攻擊／持續傷害事件（去重同 dpsIngest：eventId 或 instanceId:order），每 3 秒批次 POST /api/raid/hits。不額外發遊戲請求
+    // 只收打副本怪的（mob 在這場的 enemies 裡），同帳號沒進副本的角色在別張地圖打怪的事件不算
+    const raidHits = { code: '', buf: [], seen: new Set(), at: 0, boss: '', mobs: new Set() };
+    function raidHitsIngest(j) {
+      const evs = j && j.summary && Array.isArray(j.summary.events) ? j.summary.events : null;
+      if (!raidReporter || !evs) return;
+      const code = (j.raidBattle && j.raidBattle.code) || raidBattleCode; if (!code || code === 'x') return;
+      const H = raidHits;
+      if (H.code !== code) { raidHitsFlush(); Object.assign(H, { code, buf: [], seen: new Set(), at: Date.now(), boss: '', mobs: new Set() }); }
+      if (j.raidBattle && Array.isArray(j.enemies) && j.enemies.length) {
+        let top = null; for (const e of j.enemies) if (e && e.id) { H.mobs.add(String(e.id)); if (!top || raidNum(e.maxHp) > raidNum(top.maxHp)) top = e; }
+        if (top) H.boss = String(top.id);
+        if (H.mobs.size > 50) H.mobs = new Set([...H.mobs].slice(-20));
+      }
+      if (!H.mobs.size) return;
+      for (const e of evs) {
+        if (!e || !e.actor || !['attack', 'burn', 'poison'].includes(e.kind || 'attack') || !H.mobs.has(String(e.mob))) continue;
+        const id = e.eventId || (e.instanceId + ':' + e.order);
+        if (H.seen.has(id)) continue;
+        H.seen.add(id); if (H.seen.size > 6000) H.seen = new Set([...H.seen].slice(-3000));
+        if (H.buf.length >= 3000) continue; // 中控連不上時別一直堆
+        const dmg = raidNum(e.damage), lines = Array.isArray(e.lines) && e.lines.length ? e.lines : (e.kind === 'burn' || e.kind === 'poison' ? [] : [{ damage: dmg }]);
+        H.buf.push({ id: String(id).slice(0, 80), actor: String(e.actor).slice(0, 60), name: e.actorName ? String(e.actorName).slice(0, 30) : '', kind: e.kind || 'attack', skill: e.skill != null ? String(e.skill).slice(0, 40) : '0',
+          target: Number.isInteger(e.target) ? e.target : null, mob: String(e.mob).slice(0, 40), boss: String(e.mob) === H.boss, damage: dmg, eff: raidNum(e.effectiveDamage != null ? e.effectiveDamage : e.damage),
+          lines: lines.length, miss: lines.filter(l => !(raidNum(l && l.damage) > 0)).length, killed: !!e.killed, at: raidNum(e.at) || Date.now() });
+      }
+    }
+    function raidHitsFlush() {
+      const H = raidHits; if (!H.buf.length || !H.code) return;
+      const evs = H.buf.splice(0, 600), names = {}, code = H.code, st = readState();
+      for (const e of evs) { const n = catalog && catalog.skillNames && catalog.skillNames[e.skill]; if (n) names[e.skill] = n; }
+      H.at = Date.now();
+      hub('POST', '/api/raid/hits', { charId: st && st.character ? st.character.id : '', code, events: evs, names }).catch(() => { if (H.code === code && H.buf.length < 2400) H.buf.unshift(...evs); });
+    }
     async function raidLiveTick() {
       if (raidLiveBusy || passive()) return;
       let st = readState(); const c = st && st.character; if (!c) return;
@@ -521,12 +556,13 @@ function agentMain(ctx) {
       else if (ending && raidReporter && now - raidRepSyncAt > 5000) { // 剛打完、頁面上還沒有報告：回報者自己讀一次
         raidRepSyncAt = now; game({ type: 'sync', characterId: c.id }).then(j => { if (j && j.character && j.character.raidReport && raidPushReport(c.id, j.character.raidReport, raidNum(j.serverTime) || raidSrvNow(st))) raidEndAt = 0; }).catch(() => {});
       }
+      if (raidHits.buf.length && (now - raidHits.at >= 3000 || !st.raidBattle)) raidHitsFlush(); // 攻擊紀錄：每 3 秒一批（打完立刻送剩下的）
       if (!inRaid && !raidWas) return;
       if (!st.raidBattle && inRaid && now - raidLastPush < 5000) return; // 還沒開打：5 秒一次就好
       raidLiveBusy = true;
       try {
         let enemies = st.enemies;
-        if (st.raidBattle && raidReporter) { const j = await game({ type: 'sync', characterId: c.id }).catch(() => null); if (j) { if (j.raidBattle !== undefined) st = { ...st, raidBattle: j.raidBattle, raidTeam: j.raidTeam }; if (j.enemies) enemies = j.enemies; if (j.character) st = { ...st, character: { ...c, ...j.character } }; if (j.serverTime) st = { ...st, serverTime: j.serverTime }; } }
+        if (st.raidBattle && raidReporter) { const j = await game({ type: 'sync', characterId: c.id }).catch(() => null); if (j) { try { raidHitsIngest(j); } catch (_) {} if (j.raidBattle !== undefined) st = { ...st, raidBattle: j.raidBattle, raidTeam: j.raidTeam }; if (j.enemies) enemies = j.enemies; if (j.character) st = { ...st, character: { ...c, ...j.character } }; if (j.serverTime) st = { ...st, serverTime: j.serverTime }; } }
         const ch = st.character, b = st.raidBattle, srvNow = raidSrvNow(st);
         // 回報者送全部 enemies（王＋黑球，王排第一個）和每隻的 damageBy；其他人只送血量
         // slot＝在遊戲 enemies 陣列裡的索引（選目標 {type:'target', target: slot} 用；遊戲畫面怪物按鈕的 data-target）
@@ -1488,7 +1524,7 @@ function agentMain(ctx) {
           const p = orig.apply(this, arguments);
           try {
             const url = typeof input === 'string' ? input : (input && input.url) || '';
-            if (url.indexOf('/api/game') >= 0) p.then(r => r.clone().json()).then(j => { dpsIngest(j); try { lootIngest(j); } catch (_) {} try { deathIngest(j); } catch (e) { console.warn('[szg-hub death]', e); } }).catch(() => {});
+            if (url.indexOf('/api/game') >= 0) p.then(r => r.clone().json()).then(j => { dpsIngest(j); try { lootIngest(j); } catch (_) {} try { raidHitsIngest(j); } catch (_) {} try { deathIngest(j); } catch (e) { console.warn('[szg-hub death]', e); } }).catch(() => {});
           } catch (_) {}
           return p;
         };

@@ -873,15 +873,16 @@ function raidPrepRow(id, P, now) {
   row.partyHeal = ic.partyHeal || null; row.selfHeal = ic.selfHeal || null;
   if (row.healer && !(row.partyHeal && row.partyHeal.enabled)) add('warn', 'heal', '補師沒開隊友補血（群體治癒）');
   row.autoBuy = !!(ic.autoBuy && ic.autoBuy.enabled);
-  // 攻擊格（attackSlots，每張地圖各自一組）：sync 裡只有目前地圖那組；在副本裡才知道副本地圖
-  const slots = (Array.isArray(ic.attackSlots) ? ic.attackSlots : []).filter(x => x && typeof x === 'object');
-  const L = raidLive[id], inMap = L && now - L.at < 15000 && L.battle && L.me && L.me.map ? String(L.me.map) : '';
-  const maps = [...new Set(slots.map(x => x.map).filter(x => x != null && x !== '').map(String))];
-  if (!slots.length) { row.attack = { state: 'none', txt: '攻擊格沒設定' + (pr && pr.active ? `（主動技能 ${skName(pr.active)}）` : '') }; add('warn', 'attack', '攻擊格沒設定（攻擊格跟地圖有關；實機有 4 隻傷害 0）'); }
-  else {
-    row.attack = { state: 'ok', txt: `${slots.length} 格：${slots.map(x => x.skill ? skName(String(x.skill)) : '？').join('、')}`, maps };
-    if (inMap && maps.length && !maps.includes(inMap)) { row.attack.state = 'map'; add('warn', 'attack', `攻擊格是別張地圖的（副本地圖 ${inMap} 沒設定）`); }
-  }
+  // 攻擊格（遊戲 game.js openAttackSlot，2026-11-28 查證）：技能 1＝角色的主動技能 character.active（一定有）；
+  // 技能 2、3＝attackSlots[1..] 的 {skill, targets, map}，選填。targets（指定怪物）只在設定時那張地圖有效，
+  // 別張地圖上等於「全部怪物」，所以不用為副本另外設。只有連主動技能都沒有才算問題。
+  const extra = (Array.isArray(ic.attackSlots) ? ic.attackSlots : []).slice(1).filter(x => x && typeof x === 'object' && x.skill);
+  const act = pr && pr.active ? String(pr.active) : '';
+  const sk = k => (k === 'basic' ? '普通攻擊' : skName(k));
+  const names = [act ? sk(act) : '', ...extra.map(x => sk(String(x.skill)))].filter(Boolean);
+  if (!pr) row.attack = { state: 'unknown', txt: '讀不到' };
+  else if (!act) { row.attack = { state: 'none', txt: '沒有主動技能' }; add('warn', 'attack', '沒有設定主動技能（只會普通攻擊）'); }
+  else row.attack = { state: 'ok', txt: names.map((n, i) => `${i + 1}. ${n}`).join('、') };
   return row;
 }
 function raidPrepRows() {
@@ -1124,6 +1125,8 @@ function raidHistRecord(charId, r) {
   }).sort((p, q) => q.damage - p.damage);
   const h = { id, code: r.code, raid, at: r.at || Date.now(), savedAt: Date.now(), result: r.result, total, durationSec, minutes, rows, boss,
     orbWaves: waves, sealCount: sealAt.length, sealAt: sealAt.map(rel), grossDps: gross == null ? null : Math.round(gross), netDps: net == null ? null : Math.round(net), regenDps: regen == null ? null : Math.round(regen) };
+  h.startAt = startAt || null;
+  raidHitsApply(h);
   h.reasons = raidHistReasons(h);
   H.unshift(h); if (H.length > RAID_HIST_MAX) H.length = RAID_HIST_MAX;
   delete raidHistTrack[r.code]; save();
@@ -1143,11 +1146,74 @@ function raidHistReasons(h) {
   }
   if (h.result === 'timeout' && h.boss.endHpPct != null) out.push(`時間到：王還剩 ${h.boss.endHpPct}% 血`);
   const zero = h.rows.filter(r => !r.damage);
-  if (zero.length) out.push(`${zero.length} 隻傷害 0：${zero.map(r => r.name).join('、')}`);
+  if (zero.length) out.push(`${zero.length} 隻傷害 0：${zero.some(r => r.diag) ? zero.map(r => r.name + (r.diag || '')).join('／') : zero.map(r => r.name).join('、')}`);
   const low = h.rows.filter(r => r.mpMinPct != null && r.mpMinPct <= 5);
   if (low.length) out.push(`MP 見底：${low.map(r => `${r.name}（最低 ${Math.round(r.mpMinPct)}%${r.mpLowSec ? `，約 ${r.mpLowSec} 秒不到 5%` : ''}）`).join('、')}`);
   if (h.result !== 'clear' && !out.length) out.push('沒有找到明顯原因（中控可能漏了這場的戰況，例如中途重開）');
   return out;
+}
+// ---- 每隻角色的攻擊紀錄（找傷害 0 的原因）----
+// 回報者的 agent 從 sync 回應的 summary.events 收全隊的攻擊／持續傷害事件，每 3 秒 POST /api/raid/hits {code, events:[{id, actor, name, kind, skill, target, mob, boss, damage, eff, lines, miss, killed, at}], names:{skill:名稱}}。
+// 每場（隊伍代碼）每隻統計：出手次數、段數、未命中段數、damage／effectiveDamage、扣血 0 但有傷害的次數、技能、王／黑球、第一次／最後一次出手。只放記憶體，打完併進 db.raidHistory 那一筆（rows[].hits、diag）
+const raidHitsByCode = {}; // 代碼 → { at, n, seen:Set, names:{}, chars:{ charId: 統計 } }
+function raidHitsAdd(e) {
+  const code = String(e.code || '').slice(0, 40); if (!code || !Array.isArray(e.events)) return 0;
+  const now = Date.now(), R = raidHitsByCode[code] || (raidHitsByCode[code] = { at: now, n: 0, seen: new Set(), names: {}, chars: {} }); R.at = now;
+  for (const [k, v] of Object.entries(e.names && typeof e.names === 'object' ? e.names : {}).slice(0, 50)) if (/^[\w-]{1,40}$/.test(k)) R.names[k] = String(v).slice(0, 30);
+  const num = v => (Number.isFinite(Number(v)) ? Number(v) : 0), agg = () => ({ n: 0, dmg: 0, eff: 0 });
+  let added = 0;
+  for (const x of e.events.slice(0, 1000)) {
+    if (!x || typeof x !== 'object' || !x.id || !x.actor) continue;
+    const id = String(x.id).slice(0, 80); if (R.seen.has(id)) continue;
+    R.seen.add(id); added++; R.n++;
+    const cid = String(x.actor).slice(0, 60), S = R.chars[cid] || (R.chars[cid] = { name: '', atk: 0, lines: 0, miss: 0, dmg: 0, eff: 0, zeroEff: 0, dot: 0, dotDmg: 0, kills: 0, skills: {}, boss: agg(), orb: agg(), firstAt: 0, lastAt: 0 });
+    if (x.name) S.name = String(x.name).slice(0, 30);
+    const dmg = Math.max(0, num(x.damage)), eff = Math.max(0, num(x.eff)), at = num(x.at) || now, dot = x.kind === 'burn' || x.kind === 'poison';
+    if (dot) { S.dot++; S.dotDmg += dmg; } else { S.atk++; S.lines += Math.max(0, num(x.lines)); S.miss += Math.max(0, num(x.miss)); S.dmg += dmg; if (dmg > 0 && !eff) S.zeroEff++; }
+    S.eff += eff; if (x.killed) S.kills++;
+    const sk = (dot ? 'dot:' : '') + String(x.skill == null ? '0' : x.skill).slice(0, 40), K = S.skills[sk] || (S.skills[sk] = agg());
+    K.n++; K.dmg += dmg; K.eff += eff;
+    const T = x.boss ? S.boss : S.orb; T.n++; T.dmg += dmg; T.eff += eff;
+    if (!S.firstAt || at < S.firstAt) S.firstAt = at; if (at > S.lastAt) S.lastAt = at;
+  }
+  if (R.seen.size > 30000) R.seen = new Set([...R.seen].slice(-15000));
+  for (const [k, v] of Object.entries(raidHitsByCode)) if (now - v.at > 2 * 3600e3) delete raidHitsByCode[k];
+  return added;
+}
+// 一隻的統計（給 API／歷史紀錄）：未命中率、技能照次數排（最多 6 個）、第一次／最後一次出手（相對開打的秒數，不知道開打時間就給時間戳）
+function raidHitsSum(R, cid, startAt) {
+  const S = R && R.chars[cid]; if (!S) return null;
+  const sname = k => { const d = k.startsWith('dot:'), id = d ? k.slice(4) : k; return (R.names[id] || (id === '0' ? '普通攻擊' : '技能 ' + id)) + (d ? '（持續）' : ''); };
+  const rel = t => (startAt && t ? Math.max(0, Math.round((t - startAt) / 1000)) : null);
+  return { atk: S.atk, lines: S.lines, miss: S.miss, missPct: S.lines ? Math.round(S.miss / S.lines * 1000) / 10 : null, dmg: Math.round(S.dmg), eff: Math.round(S.eff), zeroEff: S.zeroEff, dot: S.dot, dotDmg: Math.round(S.dotDmg), kills: S.kills,
+    skills: Object.entries(S.skills).sort((a, b) => b[1].n - a[1].n).slice(0, 6).map(([id, v]) => ({ id, name: sname(id), n: v.n, dmg: Math.round(v.dmg), eff: Math.round(v.eff) })),
+    boss: { ...S.boss, dmg: Math.round(S.boss.dmg), eff: Math.round(S.boss.eff) }, orb: { ...S.orb, dmg: Math.round(S.orb.dmg), eff: Math.round(S.orb.eff) },
+    firstAt: S.firstAt || null, lastAt: S.lastAt || null, first: rel(S.firstAt), last: rel(S.lastAt) };
+}
+// 傷害 0 的那隻是哪一種：沒出手／出手但全未命中／有命中但扣血 0；這場完全沒收到攻擊紀錄就不判斷（回傳空字串）
+function raidHitDiag(s) {
+  if (!s || (!s.atk && !s.dot)) return '沒出手';
+  if (s.atk && s.lines && s.miss >= s.lines && !s.dotDmg) return `出手 ${s.atk} 次全未命中（命中不足？）`;
+  if (s.dmg + s.dotDmg > 0 && !s.eff) return `有命中但扣血 0（出手 ${s.atk} 次${s.orb.n && !s.boss.n ? '，都打黑球' : ''}）`;
+  return `出手 ${s.atk} 次、未命中 ${s.missPct == null ? '—' : s.missPct + '%'}`;
+}
+// 歷史紀錄的每隻加 hits（統計）和 diag（傷害 0 時的診斷）；沒有這場的攻擊紀錄就不加
+function raidHitsApply(h) {
+  const R = raidHitsByCode[h.code]; if (!R || !R.n) return false;
+  h.hitsN = R.n; h.hitsAt = Date.now();
+  for (const r of h.rows) {
+    const cid = (r.charId && R.chars[r.charId]) ? r.charId : Object.keys(R.chars).find(k => R.chars[k].name && R.chars[k].name === r.name) || r.charId;
+    r.hits = raidHitsSum(R, cid, h.startAt);
+    r.diag = r.damage ? '' : raidHitDiag(r.hits);
+  }
+  return true;
+}
+// GET /api/raid 的 hits：目前這場（王血量時間序列那場；沒有就最近更新的那場）每隻的統計
+function raidHitsView() {
+  const code = raidSeries && raidHitsByCode[raidSeries.code] ? raidSeries.code : (Object.entries(raidHitsByCode).sort((a, b) => b[1].at - a[1].at)[0] || [])[0];
+  const R = code && raidHitsByCode[code]; if (!R) return null;
+  const startAt = raidSeries && raidSeries.code === code ? raidSeries.startAt : 0;
+  return { code, at: R.at, n: R.n, chars: Object.fromEntries(Object.keys(R.chars).map(id => [id, { name: R.chars[id].name, ...raidHitsSum(R, id, startAt) }])) };
 }
 
 // ==== 副本 D 戰後紀錄與分析（伺服器函式）結束 ====
@@ -2187,7 +2253,7 @@ const server = http.createServer(async (req, res) => {
         // 時間序列：?since=時間 只回那之後的點（面板每秒讀，自己接起來）
         const since = Number(url.searchParams.get('since')) || 0, S = raidSeries;
         const series = S ? { code: S.code, raid: S.raid, boss: S.boss, maxHp: S.maxHp, startAt: S.startAt, n: S.points.length, since, points: since ? S.points.filter(p => p[0] > since) : S.points, orbWaves: S.orbWaves, sealAt: S.sealAt } : null;
-        return send(res, 200, { now, plan: db.settings.raid || {}, views: fresh(raidViews, 30 * 60e3), live: fresh(raidLive, 15000), series, report: raidLastReport, auto: raidAutoView(now) });
+        return send(res, 200, { now, plan: db.settings.raid || {}, views: fresh(raidViews, 30 * 60e3), live: fresh(raidLive, 15000), series, report: raidLastReport, auto: raidAutoView(now), hits: raidHitsView() });
       }
       if (req.method === 'POST' && url.pathname === '/api/raid/view') {
         const e = JSON.parse((await readBody(req)) || '{}'); if (!e.charId) return send(res, 400, { error: 'charId' });
@@ -2257,6 +2323,14 @@ const server = http.createServer(async (req, res) => {
           const id = url.searchParams.get('id'), i = H.findIndex(h => h.id === id); if (i < 0) return send(res, 404, { error: '找不到這筆紀錄' });
           H.splice(i, 1); save(); return send(res, 200, { ok: true });
         }
+      }
+      // 每隻角色的攻擊紀錄：回報者每 3 秒送一批；這場已經存進歷史（結算先到）就順便更新那一筆的 hits／diag／原因
+      if (req.method === 'POST' && url.pathname === '/api/raid/hits') {
+        const e = JSON.parse((await readBody(req)) || '{}'); if (!e.code || !Array.isArray(e.events)) return send(res, 400, { error: 'code/events' });
+        const added = raidHitsAdd(e), code = String(e.code).slice(0, 40);
+        const h = added && (Array.isArray(db.raidHistory) ? db.raidHistory : []).find(x => x.code === code && Date.now() - (x.savedAt || 0) < 10 * 60e3);
+        if (h && raidHitsApply(h)) { h.reasons = raidHistReasons(h); save(); }
+        return send(res, 200, { ok: true, added });
       }
       // ==== 副本 D 戰後紀錄與分析（API）結束 ====
       
