@@ -311,6 +311,8 @@
   #charDrawer .cdcp-row { display: flex; gap: 6px; align-items: flex-start; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; margin: 3px 0; cursor: pointer; user-select: none; }
   #charDrawer .cdcp-row:hover { border-color: var(--accent); } #charDrawer .cdcp-row.on { border-color: var(--accent); background: rgba(90,169,230,.08); }
   #charDrawer .cdcp-row input { pointer-events: none; margin-top: 2px; }
+  #charDrawer .cdatk .cdg-hd:hover b { color: var(--accent); }
+  .rd-cd { padding: 0 6px; margin-left: 4px; font-size: 11px; } .rd-cdlink { cursor: pointer; text-decoration: underline dotted; color: inherit; }
   .enforce-box { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin: 6px 0; flex-wrap: wrap; }
   .enforce-log > div { margin-left: 10px; }
   .tparty { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: 4px; padding: 14px 4px 3px; margin: 2px; border: 1.5px solid #8a6cd8; border-radius: 10px; background: rgba(138,108,216,.08); position: relative; vertical-align: top; }
@@ -4885,8 +4887,8 @@ const CD_STATS = [['str', '力量'], ['dex', '敏捷'], ['int', '智力'], ['luk
 const CD_AUTO = [['autoPotion', '自動喝水', 'HP／MP 低的時候自動喝藥水'], ['autoStartOnMap', '到圖自動開始掛機', '換地圖後自動開始掛機'], ['autoStats', '自動配點', '升級時照「自動配點計畫」分配能力點'], ['autoSkills', '自動配技能', '升級時照「自動配技能計畫」分配技能點']];
 function cdDraft(kind, id, sig) { const d = ui.cd[kind]; if (!d || d.id !== id || d.sig !== sig) ui.cd[kind] = { id, sig, pts: {} }; return ui.cd[kind]; }
 async function cdSend(id, cmd, label) {
-  try { await api('/api/idle', { targets: [{ charId: id, action: 'cfg', cmd, label }] }); ui.cd.msg = `已送出：${label}，幾秒內會更新`; await poll(true); }
-  catch (err) { alert('失敗：' + err.message); }
+  try { await api('/api/idle', { targets: [{ charId: id, action: 'cfg', cmd, label }] }); ui.cd.msg = `已送出：${label}，幾秒內會更新`; await poll(true); return true; }
+  catch (err) { alert('失敗：' + err.message); return false; }
 }
 function cdSkillCheck(pr, draft) {
   const lv = sk => sk.lv + (draft[sk.id] || 0), byId = Object.fromEntries(pr.skills.map(x => [x.id, x]));
@@ -4996,6 +4998,7 @@ function cdIdleBody(id, s, pr) {
   const skSel = (path, cur) => { const list = [...pskills]; if (cur && !list.some(x => x.id === cur)) list.push({ id: cur, name: cdSkName(pr, cur) + '（沒學／不能給隊友）' }); return `<select data-cdic="${path}" data-t="str"><option value="">（不使用）</option>${list.map(x => `<option value="${esc(x.id)}" ${x.id === cur ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`; };
   let h = `<h4 class="cd-h">掛機設定組合 <span class="sm">目前第 <b id="cdicSlot">${ic.slot}</b> 套</span><span style="flex:1"></span><span class="seg">${[1, 2, 3].map(n => `<button data-cdpreset="${n}" class="${ic.slot === n ? 'on' : ''}" ${ic.slot === n ? 'disabled' : ''}>${n}</button>`).join('')}</span></h4>
     <div class="dim sm">下面顯示的是遊戲裡第 ${ic.slot} 套的內容；三套各自獨立，沒用過的那套是空白的。</div>
+    ${cdAtkBody(id, s, pr, ic)}
     <div class="bar"><button class="btn sm" data-cdicread="1" title="放棄還沒套用的修改，向遊戲重新讀一次">⟳ 從遊戲重新讀取</button>${dirty ? `<span class="warn sm">有 ${dirty} 項還沒套用</span>` : '<span class="dim sm">跟遊戲一樣</span>'}</div>
     <div class="cdic"><b>補給（喝水）</b>
       <div class="bar">HP 藥水 ${cdIcItemSel(ic, 'supply.hpItem', sp.hpItem, '（不喝）')} 低於 ${num('supply.hpPct', sp.hpPct)}% 喝${miss(sp.hpItem)}</div>
@@ -5019,6 +5022,76 @@ function cdIdleBody(id, s, pr) {
   if (ui.cd.cp && ui.cd.cp.id === id) h += cdCopyBox(id, s, ic, pr, v);
   return h;
 }
+// ---- 掛機設定「攻擊技能」：照遊戲 openAttackSlot 的版面，技能 1／2／3 三格 ----
+// 技能 1＝角色的主動技能 character.active（'basic'＝普通攻擊，一定要有）；技能 2、3＝idleCfg.attackSlots[1..] 的 {skill, targets, map}（選填）。
+// targets（指定怪物）只在設定時那張 map 有效；送 {type:'attackSlot', slot, skill, targets, map, continuous(只有技能 1)}。草稿 ui.cd.atk（遊戲那份變了就換成新的）
+const cdAtkName = (pr, k) => (!k ? '無' : k === 'basic' ? '普通攻擊' : cdSkName(pr, k));
+function cdAtkCur(pr, ic, map, i) {
+  const x = (Array.isArray(ic.attackSlots) ? ic.attackSlots : [])[i], o = x && typeof x === 'object' ? x : null, here = o && o.map != null && String(o.map) === String(map);
+  return { skill: i === 0 ? (pr.active || (o && o.skill && String(o.skill)) || 'basic') : (o && o.skill ? String(o.skill) : null),
+    targets: here && Array.isArray(o.targets) ? o.targets.map(String) : [], cont: !!ic.continuousAttack,
+    elsewhere: o && !here && Array.isArray(o.targets) && o.targets.length ? String(o.map || '') : '' };
+}
+function cdAtkDraft(id, pr, ic, map) {
+  const sig = JSON.stringify([ic.slot, ic.attackSlots, pr.active, ic.continuousAttack, map]), d = ui.cd.atk;
+  if (!d || d.id !== id) ui.cd.atk = { id, sig, open: null, v: null };
+  else if (d.sig !== sig) { d.sig = sig; d.v = d.open == null ? null : cdAtkCur(pr, ic, map, d.open); }
+  return ui.cd.atk;
+}
+function cdAtkBody(id, s, pr, ic) {
+  // 怪物清單：地圖資料 WORLD（/api/world，maps[].mobIds → mobs）；別的分頁沒載過就在這裡載（最多 10 秒一次）
+  if (!WORLD && !(ui.cd.wAt > Date.now() - 10e3)) { ui.cd.wAt = Date.now(); loadWorld().then(() => WORLD && ui.charDrawer && renderCharDrawer()); }
+  const map = s.char.map, mp = map ? mapOf(map) : null, mobs = (mp && mp.mobs) || [], d = cdAtkDraft(id, pr, ic, map);
+  const mobName = k => ((WORLD && WORLD.mobIdx && WORLD.mobIdx[k]) || {}).name || k;
+  const learned = pr.skills.filter(x => x.lv > 0 && ['attack', 'heal'].includes(x.type));
+  let h = `<div class="cdic" id="cdAtk"><b>攻擊技能</b> <span class="dim sm">地圖：${esc(s.char.mapName || (mp && mp.name) || map || '—')}</span>`;
+  for (let i = 0; i < 3; i++) {
+    const cur = cdAtkCur(pr, ic, map, i), open = d.open === i, v = open ? d.v : null;
+    h += `<div class="cdg cdatk ${open ? 'open' : ''}"><div class="cdg-hd" data-cdatk="${i}" style="cursor:pointer"><span class="dim sm cdg-slot">技能 ${i + 1}</span><b>${esc(cdAtkName(pr, cur.skill))}</b>
+      ${cur.targets.length ? `<span class="dim sm">指定：${cur.targets.map(k => esc(mobName(k))).join('、')}</span>` : cur.skill ? '<span class="dim sm">全部怪物</span>' : ''}${i === 0 && cur.cont ? '<span class="tag">持續施放</span>' : ''}<span style="flex:1"></span><span class="dim sm">${open ? '收起' : '設定'}</span></div>`;
+    if (cur.elsewhere && !open) h += `<div class="dim sm">指定怪物設在別張地圖（${esc((mapOf(cur.elsewhere) || {}).name || cur.elsewhere)}），在這張圖等於全部怪物</div>`;
+    if (open && v) {
+      const opts = [...(i ? [['', '無']] : []), ['basic', '普通攻擊'], ...learned.map(x => [x.id, x.name])];
+      if (v.skill && !opts.some(o => o[0] === v.skill)) opts.push([v.skill, cdAtkName(pr, v.skill) + '（沒學／不是攻擊技能）']);
+      const extra = v.targets.filter(k => !mobs.some(m => m.id === k));
+      h += `<div class="cdg-cmp"><div class="bar">技能 <select data-cdatksk="${i}">${opts.map(([k, n]) => `<option value="${esc(k)}" ${(v.skill || '') === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
+        ${i === 0 ? `<label class="sm cd-sw"><input type="checkbox" data-cdatkcont="1" ${v.cont ? 'checked' : ''}> 掛機開始時持續施放</label>` : ''}
+        ${!v.skill ? '' : !mobs.length ? '<div class="dim sm">目前地圖的怪物清單拿不到，只能設全部怪物</div>'
+          : `<div class="sm">適用怪物（可複選；不勾＝全部怪物）<button class="btn sm" data-cdatkall="${i}" ${v.targets.length ? '' : 'disabled'}>全部怪物</button></div>
+          ${[...mobs.map(m => [m.id, m.name, m.lv, m.isBoss]), ...extra.map(k => [k, mobName(k), null, false])].map(([k, n, lv, boss]) => { const on = v.targets.includes(k);
+            return `<div class="cdcp-row ${on ? 'on' : ''}" data-cdatkmob="${esc(k)}"><input type="checkbox" tabindex="-1" ${on ? 'checked' : ''}><div>${esc(n)} <span class="dim sm">${lv != null ? 'Lv' + lv : ''}${boss ? '（王）' : ''}</span></div></div>`; }).join('')}`}
+        <div class="dim sm">指定怪物只適用這張地圖；同條件依技能 1→2→3 選用</div>
+        <div class="bar"><button class="btn sm primary" data-cdatksave="${i}">儲存</button><button class="btn sm" data-cdatkcancel="1">取消</button></div></div>`;
+    }
+    h += '</div>';
+  }
+  return h + '</div>';
+}
+document.addEventListener('change', e => {
+  const t = e.target; if (!t.closest || !t.closest('#charDrawer') || !(t.dataset.cdatksk || t.dataset.cdatkcont)) return;
+  const d = ui.cd.atk; if (!d || d.id !== ui.charDrawer || !d.v) return;
+  if (t.dataset.cdatksk) { d.v.skill = t.value || null; if (!d.v.skill) d.v.targets = []; }
+  if (t.dataset.cdatkcont) d.v.cont = t.checked;
+  renderCharDrawer();
+});
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('#charDrawer [data-cdatk],#charDrawer [data-cdatkmob],#charDrawer [data-cdatkall],#charDrawer [data-cdatksave],#charDrawer [data-cdatkcancel]'); if (!t) return;
+  const id = ui.charDrawer, s = DATA.chars[id], pr = s && s.char.prog, ic = s && s.char.idleCfg; if (!pr || !ic) return;
+  const map = s.char.map, dd = t.dataset, d = cdAtkDraft(id, pr, ic, map);
+  if (dd.cdatk != null) { const i = Number(dd.cdatk); if (d.open === i) { d.open = null; d.v = null; } else { d.open = i; d.v = cdAtkCur(pr, ic, map, i); } renderCharDrawer(); return; }
+  if (dd.cdatkcancel) { d.open = null; d.v = null; renderCharDrawer(); return; }
+  if (!d.v) return;
+  if (dd.cdatkmob) { const k = dd.cdatkmob; d.v.targets = d.v.targets.includes(k) ? d.v.targets.filter(x => x !== k) : [...d.v.targets, k]; renderCharDrawer(); return; }
+  if (dd.cdatkall) { d.v.targets = []; renderCharDrawer(); return; }
+  if (dd.cdatksave != null) {
+    const i = Number(dd.cdatksave), v = d.v, mp = map ? mapOf(map) : null, hasMobs = !!(mp && mp.mobs && mp.mobs.length);
+    const skill = i === 0 ? (v.skill || 'basic') : (v.skill || null), targets = skill && hasMobs ? v.targets.slice() : [];
+    const mobName = k => ((WORLD && WORLD.mobIdx && WORLD.mobIdx[k]) || {}).name || k;
+    const label = `技能${i + 1} 改成 ${cdAtkName(pr, skill)}${targets.length ? `（指定 ${targets.map(mobName).join('、')}）` : skill ? '（全部怪物）' : ''}${i === 0 ? `、持續施放${v.cont ? '開' : '關'}` : ''}`;
+    if (await cdSend(id, { type: 'attackSlot', slot: i, skill, targets, map: map || null, ...(i === 0 ? { continuous: !!v.cont } : {}) }, label)) { d.open = null; d.v = null; } // 失敗就留著草稿
+    renderCharDrawer();
+  }
+});
 function cdCopyBox(id, s, ic, pr, v) {
   const cp = ui.cd.cp, src = { ...ic, __pr: pr }, others = snaps().filter(x => x.char && x.char.id !== id).sort((a, b) => String(a.char.name).localeCompare(String(b.char.name)));
   const parts = [['supply', '補給（藥水、Buff 藥水、解除異常、用完時）'], ['pbuff', '隊友 Buff'], ['heal', '隊友補血／自己補血'], ['buy', '自動購買']];
@@ -7387,6 +7460,12 @@ function renderRaid() {
   { const p = raidPlan(); if (!ui.rdAuto && RAID && p.leader && !raidRules(p.kind) && hasTab(p.leader)) { ui.rdAuto = true; api('/api/raid/act', { targets: raidAll(p).filter(hasTab).map(id => ({ charId: id, cmd: { type: 'sync', raid: p.kind }, label: '讀取副本資料' })) }).catch(() => {}); } }
   loadRaid().then(() => { drawRaid(); raidExtDraw(); }).catch(e => { $('#rdMsg').textContent = '讀不到副本資料：' + e.message; });
 }
+// 副本分頁打開角色抽屜（掛機設定頁：技能 1、2、3、補給…）；capture 階段處理，不會觸發戰前檢查的整列勾選
+const rdCdBtn = id => id && DATA.chars[id] ? ` <button class="btn sm rd-cd" data-rdcd="${esc(id)}" title="打開角色抽屜的掛機設定（技能 1、2、3）">設定</button>` : '';
+document.addEventListener('click', e => {
+  const t = e.target.closest && e.target.closest('[data-rdcd]'); if (!t) return;
+  e.preventDefault(); e.stopPropagation(); ui.cd.tab = 'idle'; openCharDrawer(t.dataset.rdcd);
+}, true);
 function drawRaid() {
   if (!RAID) return;
   const p = raidPlan(), all = raidAll(p), chars = snaps().map(s => s.char).sort((a, b) => b.lv - a.lv), now = Date.now() + ((RAID.now || Date.now()) - Date.now());
@@ -7420,7 +7499,7 @@ function drawRaid() {
   // 隊伍
   $('#rdTeam').innerHTML = !p.leader ? '<div class="dim">選好隊長和隊員後按「建立隊伍」。</div>' : !team ? `<div class="dim">${esc(charNameOf(p.leader))} 還沒有副本隊伍${lv && lv.notice ? `（${esc(lv.notice)}）` : ''}。</div>`
     : `<div class="bar"><b>${esc(RAID_NAME[lv.raid] || lv.raid || '')}</b><span class="tag">隊伍代碼 ${esc(team.code)}</span>${team.locked ? '<span class="tag">🔒 上鎖</span>' : ''}<span class="dim sm">${team.members.length} 人</span>${lv.notice ? `<span class="warn sm">${esc(lv.notice)}</span>` : ''}</div>
-      <table class="tbl sm"><tr><th>角色</th><th>Lv</th><th>狀態</th><th>進場條件</th><th>本週剩</th></tr>${team.members.map(m => `<tr><td>${m.leader ? '👑 ' : ''}${esc(m.name)}</td><td>${m.lv}</td><td>${m.leader ? '隊長' : m.ready ? '<span class="good">已準備</span>' : '<span class="warn">未準備</span>'}${m.online ? '' : ' <span class="bad">離線</span>'}</td>
+      <table class="tbl sm"><tr><th>角色</th><th>Lv</th><th>狀態</th><th>進場條件</th><th>本週剩</th></tr>${team.members.map(m => `<tr><td>${m.leader ? '👑 ' : ''}${esc(m.name)}${rdCdBtn(m.id)}</td><td>${m.lv}</td><td>${m.leader ? '隊長' : m.ready ? '<span class="good">已準備</span>' : '<span class="warn">未準備</span>'}${m.online ? '' : ' <span class="bad">離線</span>'}</td>
         <td>${m.ok ? '<span class="good">符合</span>' : `<span class="bad">${esc((m.issues || []).join('、') || '不符合')}</span>`}</td><td>${m.left != null ? m.left + ' 場' : '—'}</td></tr>`).join('')}</table>
       ${all.filter(id => !inTeam.has(id)).length ? `<div class="sm warn">還沒加入：${all.filter(id => !inTeam.has(id)).map(charNameOf).map(esc).join('、')}</div>` : ''}`;
   { const others = ((lv && lv.teams) || []).filter(t => !team || t.code !== team.code);
@@ -7480,7 +7559,7 @@ function drawRaid() {
     ${boss ? `<div class="rd-en"><b>${esc(mobName(boss.id))}</b>${hpBar(boss.hp, boss.maxHp, 'boss')}</div>` : '<div class="dim sm">還沒拿到王的血量</div>'}
     ${statHtml}${orbHtml}
     <table class="tbl sm rd-mem"><tr><th>角色</th><th>HP</th><th>MP</th><th>異常狀態</th><th>對王累計傷害</th><th>占比</th><th title="這場出手幾次／每段傷害是 0（未命中 MISS）的比例">出手／未命中率</th></tr>${memIds.map(id => { const L = RAID.live[id], me = L && L.me || {}, ail = ailOf(L);
-      return `<tr><td>${esc(charNameOf(id))}${(b.surrender || []).includes(id) ? ' <span class="warn">投降</span>' : ''}${!L ? ' <span class="dim">（沒有回報）</span>' : ''}</td><td>${L ? (me.hp <= 0 ? '<span class="bad">倒下</span>' : hpBar(me.hp, me.maxhp, 'hp')) : ''}</td><td>${L ? hpBar(me.mp, me.maxmp, 'mp') : ''}</td><td>${ail.length ? `<span class="bad">${ail.join('、')}</span>` : '<span class="dim">—</span>'}</td>${dmgCell(id)}${hitCell(id)}</tr>`; }).join('')}
+      return `<tr><td>${esc(charNameOf(id))}${rdCdBtn(id)}${(b.surrender || []).includes(id) ? ' <span class="warn">投降</span>' : ''}${!L ? ' <span class="dim">（沒有回報）</span>' : ''}</td><td>${L ? (me.hp <= 0 ? '<span class="bad">倒下</span>' : hpBar(me.hp, me.maxhp, 'hp')) : ''}</td><td>${L ? hpBar(me.mp, me.maxmp, 'mp') : ''}</td><td>${ail.length ? `<span class="bad">${ail.join('、')}</span>` : '<span class="dim">—</span>'}</td>${dmgCell(id)}${hitCell(id)}</tr>`; }).join('')}
       ${extra.map(id => `<tr class="dim"><td>${esc(charNameOf(id))} <span class="sm">（不在計畫裡）</span></td><td></td><td></td><td></td>${dmgCell(id)}${hitCell(id)}</tr>`).join('')}</table>
     ${dmgTotal ? `<div class="dim sm">對王累計傷害合計 ${short(dmgTotal)}（遊戲的 damageBy；不含黑球）</div>` : ''}`;
 }
@@ -7554,7 +7633,7 @@ function rpDraw() {
     <div class="rp-wrap"><table class="tbl sm rp-tbl"><tr><th></th><th>角色</th><th>連線</th><th>設定</th><th>MP 藥水</th><th>HP 藥水</th><th>萬能療傷藥</th><th>解除異常</th><th>自動喝水</th><th>隊友 Buff</th><th>補血</th><th>攻擊格</th><th>問題</th></tr>
     ${rows.map(r => { const on = u.sel.includes(r.id), lv = r.issues.some(x => x.lv === 'bad') ? 'bad' : r.issues.length ? 'warn' : '';
       return `<tr class="rp-row ${on ? 'on' : ''} ${lv ? 'lv-' + lv : ''}" data-rpsel="${esc(r.id)}"><td><input type="checkbox" tabindex="-1" ${on ? 'checked' : ''}></td>
-        <td>${r.id === RPREP.leader ? '👑 ' : ''}<b>${esc(r.name)}</b><br><span class="dim">Lv${r.lv != null ? r.lv : '?'} ${esc(r.jobName || '')}</span></td>
+        <td>${r.id === RPREP.leader ? '👑 ' : ''}<b>${esc(r.name)}</b>${rdCdBtn(r.id)}<br><span class="dim">Lv${r.lv != null ? r.lv : '?'} ${esc(r.jobName || '')}</span></td>
         <td class="${cls(r, 'tab')}">${r.tab === 'tab' ? '分頁' : r.tab === 'bg' ? '背景／直連' : '沒有'}</td>
         <td>${r.ic ? `第 ${r.slot} 套` : nd}</td>
         <td class="${cls(r, 'mp')}">${pot(r, 'mp')}</td><td class="${cls(r, 'hp')}">${pot(r, 'hp')}</td>
@@ -7563,7 +7642,7 @@ function rpDraw() {
         <td class="${cls(r, 'autoPotion')}">${onoff(r.autoPotion)}</td>
         <td>${!r.ic ? nd : r.partyBuffs.length ? r.partyBuffs.map(esc).join('、') : '<span class="dim">沒有</span>'}</td>
         <td class="${cls(r, 'heal')}">${heal(r)}</td>
-        <td class="${cls(r, 'attack')}">${!r.ic || !r.attack ? nd : esc(r.attack.txt)}</td>
+        <td class="${cls(r, 'attack')}">${!r.ic || !r.attack ? nd : `<a class="rd-cdlink" data-rdcd="${esc(r.id)}" title="打開角色抽屜設定技能 1、2、3">${esc(r.attack.txt)}</a>`}</td>
         <td class="rp-iss">${r.issues.map(x => `<div class="${x.lv}">${x.lv === 'bad' ? '✗' : '⚠'} ${esc(x.txt)}</div>`).join('') || '<span class="good">✓</span>'}${r.autoBuy ? '<div class="dim">自動買水開著（會花楓幣）</div>' : ''}</td></tr>`; }).join('')}</table></div>
     <div class="rp-apply"><div class="bar"><b>一鍵套用</b><span class="dim sm">點整列選角色，勾要改的項目；只改勾選的、跟建議值不一樣的地方，送出前會再列一次</span></div>
       <div class="bar">${RP_ITEMS.map(([k, n]) => `<label class="sm"><input type="checkbox" data-rpitem="${k}" ${u.items[k] ? 'checked' : ''}> ${n}${k === 'mpPct' ? `（${P.mpPct}%）` : k === 'hpPct' ? `（${P.hpPct}%）` : ''}</label>`).join('')}

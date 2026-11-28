@@ -359,6 +359,8 @@ const BAG_KINDS = new Set(['sell', 'lock', 'unlock', 'idle', 'forge', 'equip', '
 // 新種類的工作要遊戲分頁的腳本夠新才看得懂：還沒換上新腳本的，工作先排隊等，不交給它（避免「未知的工作類型」直接失敗）
 // v0.78 新增的掛機設定指令：舊腳本不會先讀遊戲的 supply 再合併，要新版腳本才送
 const NEW_CFG_078 = new Set(['supply', 'partyBuff', 'partyHeal', 'selfHeal', 'conditionalSkill', 'lowHpSkill', 'settingsPreset', 'autoBuy', 'read']);
+// v0.81 新增：攻擊格（設定技能 1、2、3）；舊腳本不會檢查角色是否還在那張地圖
+const NEW_CFG_081 = new Set(['attackSlot']);
 const KIND_MIN_AGENT = { forge: '0.27.0', equip: '0.71.1', unequip: '0.71.1' };
 const verLt = (a, b) => { const x = String(a || '0').split('.').map(Number), y = String(b || '0').split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); } return false; };
 function agentTooOld(job, code, charId) {
@@ -1322,6 +1324,17 @@ function cleanIdleCfg(c) {
       }
       return { type: 'autoBuy', config: { enabled: !!cf.enabled, reserve, rules } };
     }
+    // 攻擊格（遊戲 openAttackSlot，2026-11-28）：slot 0＝技能 1（character.active，不能是「無」，continuous＝掛機開始時持續施放）；
+    // slot 1、2＝技能 2、3（character.attackSlots[i]，skill null＝清掉）；targets＝那張地圖的怪物 id（空＝全部），只適用 map 那張地圖
+    case 'attackSlot': {
+      const slot = int(c.slot, 0, 2); if (slot == null) return null;
+      const skill = c.skill == null || c.skill === '' ? null : skillId(c.skill);
+      if (skill === null && (slot === 0 || (c.skill != null && c.skill !== ''))) return null;
+      if (c.targets != null && !Array.isArray(c.targets)) return null;
+      const tg = c.targets || []; if (tg.length > 30 || tg.some(x => typeof x !== 'string' || !/^[\w-]{1,40}$/.test(x))) return null;
+      if (c.map != null && c.map !== '' && !(typeof c.map === 'string' && /^[\w-]{1,40}$/.test(c.map))) return null;
+      return { type: 'attackSlot', slot, skill, targets: skill ? [...new Set(tg)] : [], ...(c.map ? { map: c.map } : {}), ...(slot === 0 ? { continuous: !!c.continuous } : {}) };
+    }
     case 'read': return { type: 'read' }; // 「從遊戲重新讀取」：agent 向遊戲同步一次並立刻回報
     default: return null;
   }
@@ -1447,7 +1460,7 @@ function createIdleJobs(body) {
       toCharId: route.char.id, toName: route.char.name, toCode: route.playerCode,
       needChar: own || null,
       batches: [{ targets: list, items: [], gear: [], money: 0 }], batchIndex: 0, log: [], lastMsg: '',
-      ...(list.some(t => t.action === 'cfg' && t.cmd && NEW_CFG_078.has(t.cmd.type)) ? { minAgent: '0.78.0' } : list.some(t => t.action === 'raid') ? { minAgent: '0.77.0' } : list.some(t => t.action === 'cfg') ? { minAgent: '0.72.0' } : {}),
+      ...(list.some(t => t.action === 'cfg' && t.cmd && NEW_CFG_081.has(t.cmd.type)) ? { minAgent: '0.81.0' } : list.some(t => t.action === 'cfg' && t.cmd && NEW_CFG_078.has(t.cmd.type)) ? { minAgent: '0.78.0' } : list.some(t => t.action === 'raid') ? { minAgent: '0.77.0' } : list.some(t => t.action === 'cfg') ? { minAgent: '0.72.0' } : {}),
     };
     jobLog(job, '已送出：' + list.map(t => `${t.name} ${({ start: '開始掛機', stop: '暫停掛機', restart: '重新開始掛機', switch: '切換為目前角色', wake: '領取離線掛機收益', cfg: t.label || '', raid: t.label || '副本', map: '前往 ' + (t.mapName || '') + (t.sell ? '（套用自動販售）' : ''), autosell: '套用 ' + (t.mapName || '') + ' 的自動販售' })[t.action]}`).join('、'));
     db.jobs.push(job);

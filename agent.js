@@ -390,11 +390,24 @@ function agentMain(ctx) {
     // 掛機設定頁：補給要整份送（遊戲說明），中控只送它看得懂的欄位 → 跟遊戲裡這隻目前那份合併，沒送的欄位（extra、bombFloor…）保留
     async function cfgPayload(cmd, charId) {
       const c = cfgIds(cmd);
+      if (c.type === 'attackSlot') return attackSlotPayload(c, charId);
       if (c.type !== 'supply') return c;
       let cur = null;
       try { const st = readState(); if (st && st.character && st.character.id === charId) cur = st.character.supply; } catch (_) {}
       try { const j = await gameRetry({ type: 'sync', characterId: charId }); if (j && j.character && j.character.id === charId && j.character.supply) cur = j.character.supply; } catch (e) { if (e.gameUpdated) throw e; }
       return { ...c, supply: { ...(cur && typeof cur === 'object' ? cur : {}), ...c.supply } };
+    }
+    // 攻擊格（設定技能 1、2、3）：遊戲只接受角色「目前所在地圖」的設定（指定怪物只適用那張地圖）。
+    // 沒帶 map 就用角色現在的地圖；帶了但角色已經換圖 → 不送（避免把 A 圖的怪物設到 B 圖）
+    async function attackSlotPayload(c, charId) {
+      let map = null;
+      try { const st = readState(); if (st && st.character && st.character.id === charId) map = st.character.map; } catch (_) {}
+      try { const j = await gameRetry({ type: 'sync', characterId: charId }); if (j && j.character && j.character.id === charId && j.character.map != null) map = j.character.map; } catch (e) { if (e.gameUpdated) throw e; }
+      if (map == null) { const e = new Error('讀不到角色目前的地圖'); e.noRetry = true; throw e; }
+      if (c.map != null && String(c.map) !== String(map)) { const e = new Error('角色已不在那張地圖，指定怪物要在那張地圖設定'); e.noRetry = true; throw e; }
+      const o = { type: 'attackSlot', slot: c.slot, skill: c.skill == null ? null : c.skill, targets: c.skill == null ? [] : (c.targets || []), map };
+      if (c.slot === 0) o.continuous = !!c.continuous;
+      return o;
     }
     // 回報給中控的「掛機設定」（遊戲裡目前那一套；角色抽屜的掛機設定頁用）＋背包裡的消耗品（藥水下拉選單、萬能療傷藥數量）
     const CURE_ITEM = 'i2050004'; // 萬能療傷藥：supply.autoCure 勾選時中了異常狀態自動吃（怪物掉落）
