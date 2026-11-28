@@ -497,6 +497,20 @@ function agentMain(ctx) {
       raidRepSent = key; hub('POST', '/api/raid/report', { charId, report: r }).catch(() => { raidRepSent = ''; });
       return true;
     }
+    // 戰中自動應對：中控的分配表（/api/raid/live 回應的 assign）叫這隻打哪個目標，就送 {type:'target', target: slot}
+    // 每隻最多 2 秒換一次、同一個目標不重送；失敗時記錄原因，30 秒內不再送、同一個目標不再試，同一場失敗 3 次就停（target 還沒在真實遊戲送過）
+    const raidTgt = { code: '', key: '', at: 0, fails: 0, until: 0, busy: false };
+    function raidAutoTarget(charId, b, a) {
+      if (!a || !Number.isInteger(a.slot) || a.slot < 0 || a.slot > 99) return;
+      const now = Date.now(), T = raidTgt, key = a.slot + '|' + (a.spawnId || '');
+      if (T.code !== b.code) Object.assign(T, { code: b.code, key: '', at: 0, fails: 0, until: 0 });
+      if (T.busy || key === T.key || T.fails >= 3 || now < T.until || now - T.at < 2000) return;
+      T.key = key; T.at = now; T.busy = true;
+      const rec = (ok, error) => hub('POST', '/api/raid/auto', { charId, slot: a.slot, kind: a.kind === 'boss' ? 'boss' : 'orb', spawnId: a.spawnId || '', ok, ...(error ? { error } : {}) }).catch(() => {});
+      raidGame({ type: 'target', target: a.slot }, charId).then(() => rec(true))
+        .catch(e => { T.fails++; T.until = Date.now() + 30000; rec(false, String((e && e.message) || e).slice(0, 120)); })
+        .finally(() => { T.busy = false; });
+    }
     async function raidLiveTick() {
       if (raidLiveBusy || passive()) return;
       let st = readState(); const c = st && st.character; if (!c) return;
@@ -515,13 +529,15 @@ function agentMain(ctx) {
         if (st.raidBattle && raidReporter) { const j = await game({ type: 'sync', characterId: c.id }).catch(() => null); if (j) { if (j.raidBattle !== undefined) st = { ...st, raidBattle: j.raidBattle, raidTeam: j.raidTeam }; if (j.enemies) enemies = j.enemies; if (j.character) st = { ...st, character: { ...c, ...j.character } }; if (j.serverTime) st = { ...st, serverTime: j.serverTime }; } }
         const ch = st.character, b = st.raidBattle, srvNow = raidSrvNow(st);
         // 回報者送全部 enemies（王＋黑球，王排第一個）和每隻的 damageBy；其他人只送血量
-        const en = b ? (Array.isArray(enemies) ? enemies : []).filter(e => e && e.id).slice().sort((x, y) => raidNum(y.maxHp) - raidNum(x.maxHp)).slice(0, 24)
-          .map(e => ({ id: e.id, hp: e.hp, maxHp: e.maxHp, ...(e.spawnId ? { spawnId: String(e.spawnId).slice(0, 40) } : {}), ...(raidReporter && e.damageBy ? { damageBy: raidDmgBy(e.damageBy) } : {}) })) : [];
+        // slot＝在遊戲 enemies 陣列裡的索引（選目標 {type:'target', target: slot} 用；遊戲畫面怪物按鈕的 data-target）
+        const en = b ? (Array.isArray(enemies) ? enemies : []).map((e, slot) => (e && e.id ? { ...e, slot } : null)).filter(Boolean).sort((x, y) => raidNum(y.maxHp) - raidNum(x.maxHp)).slice(0, 24)
+          .map(e => ({ id: e.id, hp: e.hp, maxHp: e.maxHp, slot: e.slot, ...(e.spawnId ? { spawnId: String(e.spawnId).slice(0, 40) } : {}), ...(raidReporter && e.damageBy ? { damageBy: raidDmgBy(e.damageBy) } : {}) })) : [];
         const r = await hub('POST', '/api/raid/live', { charId: c.id, inRaid: !!(st.raidBattle || st.raidTeam), team: st.raidTeam || null,
           battle: b ? { code: b.code, raid: b.raid, phase: b.phase, prepUntil: b.prepUntil, deadline: b.deadline, surrender: b.surrender || [], bloodAt: b.bloodAt, invulnerable: !!b.invulnerable, orbs: b.orbs, windupAt: b.windupAt, immuneUntil: b.immuneUntil, arms: b.arms, minions: b.minions, guardUntil: b.guardUntil, startAt: b.startAt } : null,
           enemies: en, srvNow,
           me: { hp: ch.hp, maxhp: ch.maxhp || ch.maxHp, mp: ch.mp, maxmp: ch.maxmp || ch.maxMp, diseases: raidAils(ch.diseases, srvNow), lockUntil: (st.raid && st.raid.lockUntil) || ch.lockUntil || 0, map: ch.map } }).catch(() => null);
         raidReporter = !!(r && r.reporter);
+        if (b && r && r.assign) raidAutoTarget(c.id, b, r.assign[c.id]);
         raidLastPush = now; raidWas = inRaid;
         // 還沒開打時，回報者每 5 秒讀一次隊伍（誰加入了、誰準備好了），中控的隊伍表才會跟遊戲一樣
         if (raidReporter && inRaid && !st.raidBattle && now - raidViewAt > 5000) { raidViewAt = now; raidGame({ type: 'sync' }, c.id).then(j => raidReportView(c.id, j)).catch(() => {}); }

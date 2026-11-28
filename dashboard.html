@@ -853,7 +853,11 @@
     <div class="card"><div class="bar"><h3 style="margin:0">⚔ 副本</h3><span class="dim sm">用自己的角色組副本隊：建立 → 加入 → 準備 → 開始。戰前設定照遊戲裡每隻角色的設定（藥水、攻擊、Buff…）。</span></div>
       <div id="rdSetup"></div><div class="bar" id="rdBtns"></div><div id="rdMsg" class="sm"></div></div>
     <div class="card"><h3>隊伍</h3><div id="rdTeam"></div></div>
-    <div class="card"><h3>戰況 <span class="dim sm">每秒更新</span></h3><div id="rdBattle"></div></div>
+    <div class="card"><h3>戰況 <span class="dim sm">每秒更新</span></h3><div id="rdWarn"></div><div id="rdBattle"></div></div>
+    <div class="card" id="rdPrepCard"><h3>戰前檢查</h3><div id="rdPrep"></div></div>
+    <div class="card" id="rdSupplyCard"><h3>副本前補給</h3><div id="rdSupply"></div></div>
+    <div class="card" id="rdAutoCard"><h3>戰中自動應對</h3><div id="rdAuto"></div></div>
+    <div class="card" id="rdHistCard"><h3>戰後紀錄</h3><div id="rdHist"></div></div>
   </section>
   <section id="party">
     <div class="card">
@@ -7381,7 +7385,7 @@ function hpBar(v, max, cls = '') { const pct = max > 0 ? Math.max(0, Math.min(10
 function renderRaid() {
   if (document.querySelector('nav button.on').dataset.tab !== 'raid') return;
   { const p = raidPlan(); if (!ui.rdAuto && RAID && p.leader && !raidRules(p.kind) && hasTab(p.leader)) { ui.rdAuto = true; api('/api/raid/act', { targets: raidAll(p).filter(hasTab).map(id => ({ charId: id, cmd: { type: 'sync', raid: p.kind }, label: '讀取副本資料' })) }).catch(() => {}); } }
-  loadRaid().then(drawRaid).catch(e => { $('#rdMsg').textContent = '讀不到副本資料：' + e.message; });
+  loadRaid().then(() => { drawRaid(); raidExtDraw(); }).catch(e => { $('#rdMsg').textContent = '讀不到副本資料：' + e.message; });
 }
 function drawRaid() {
   if (!RAID) return;
@@ -7486,7 +7490,328 @@ function raidReportHtml() {
     <div class="dim sm">還沒開打下一場。開始後這裡換成即時戰況。</div></div>`;
 }
 setInterval(() => { if (!document.hidden && document.querySelector('nav button.on').dataset.tab === 'raid') renderRaid(); }, 1000);
-async function raidSavePlan(patch) { await saveSettings({ raid: { ...raidPlan(), ...patch } }); drawRaid(); }
+async function raidSavePlan(patch) { await saveSettings({ raid: { ...(S.raid || {}), ...raidPlan(), ...patch } }); drawRaid(); } // 保留 settings.raid 的其他欄位（prep、supply、auto…）
+// 副本的 A～D 區塊：每個區塊自己畫，壞掉不影響其他區塊
+function raidExtDraw() { for (const f of [raidPrepDraw, raidSupplyDraw, raidAutoDraw, raidHistDraw]) { try { f(); } catch (e) { console.warn('[副本區塊]', f.name, e); } } }
+
+// ==== 副本 A 戰前檢查＋一鍵套用（面板）：程式放在這行下面；raidPrepDraw() 每秒跟著 drawRaid 呼叫 ====
+// 資料：GET /api/raid/prep（伺服器照 settings.raid.prep 的門檻算好每隻的問題）；門檻 POST /api/raid/prep；
+// 一鍵套用：勾角色（點整列）＋勾項目 → 列出會改哪幾隻的什麼 → 確認後送既有的 cfg supply／setting（/api/idle）。不碰會花楓幣的設定（自動買水）
+let RPREP = null, rpAt = 0, rpBusy = false;
+const RP_ITEMS = [['autoCure', '自動解除異常：開'], ['mpPct', 'MP 喝水門檻：改成建議值'], ['hpPct', 'HP 喝水門檻：改成建議值'], ['autoPotion', '自動喝水：開']];
+const RP_TH = [['mpMin', 'MP 藥水至少', '個', 0, 30000], ['mpPct', 'MP 低於', '% 就喝', 1, 100], ['hpMin', 'HP 藥水至少', '個', 0, 30000], ['hpPct', 'HP 低於', '% 就喝', 1, 100], ['cureMin', '萬能療傷藥至少', '個', 0, 30000]];
+const rpUi = () => ui.rp || (ui.rp = { sel: [], items: { autoCure: true, mpPct: true, hpPct: false, autoPotion: true }, msg: '' });
+async function rpLoad(force) {
+  if (rpBusy || (!force && RPREP && Date.now() - rpAt < 2000)) return; rpBusy = true;
+  try { RPREP = await (await fetch('/api/raid/prep')).json(); rpAt = Date.now(); } finally { rpBusy = false; }
+}
+function rpStyle() {
+  if (document.getElementById('rpStyle')) return;
+  document.head.insertAdjacentHTML('beforeend', `<style id="rpStyle">#rdPrep .rp-wrap { overflow-x: auto; } #rdPrep .rp-row { cursor: pointer; user-select: none; } #rdPrep .rp-row:hover td { background: rgba(90,169,230,.06); }
+    #rdPrep .rp-row.on td { background: rgba(90,169,230,.14); } #rdPrep .rp-row input { pointer-events: none; } #rdPrep .rp-row.lv-bad td:first-child { box-shadow: inset 3px 0 var(--bad); } #rdPrep .rp-row.lv-warn td:first-child { box-shadow: inset 3px 0 var(--warn); }
+    #rdPrep .rp-th input[type=number] { width: 72px; } #rdPrep .rp-iss { max-width: 320px; } #rdPrep .rp-apply { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); }</style>`);
+}
+function raidPrepDraw() {
+  rpStyle();
+  rpLoad().then(rpDraw).catch(e => { const b = $('#rdPrep'); if (b) b.innerHTML = `<div class="dim sm">讀不到戰前檢查：${esc(e.message)}</div>`; });
+}
+// 這隻要送的指令（只改勾選的項目、而且是跟建議值不一樣的）；回 { cmds, chg[] } 或 { skip: 原因 }
+function rpPlanOf(r, items, P) {
+  if (!r.tab) return { skip: '沒有遊戲分頁或直連' };
+  if (!r.ic || !r.supply) return { skip: '讀不到掛機設定' };
+  const sp = { ...r.supply, hpPct: cdPct(r.supply.hpPct, 50), mpPct: cdPct(r.supply.mpPct, 30) }, chg = [], cmds = [];
+  if (items.autoCure && !sp.autoCure) { sp.autoCure = true; chg.push('自動解除異常 關→開'); }
+  if (items.mpPct && sp.mpItem && sp.mpPct < P.mpPct) { chg.push(`MP 喝水 ${sp.mpPct}%→${P.mpPct}%`); sp.mpPct = P.mpPct; }
+  if (items.hpPct && sp.hpItem && sp.hpPct < P.hpPct) { chg.push(`HP 喝水 ${sp.hpPct}%→${P.hpPct}%`); sp.hpPct = P.hpPct; }
+  if (chg.length) cmds.push({ cmd: { type: 'supply', supply: sp, enable: true }, label: `戰前檢查：${chg.join('、')}` });
+  // 遊戲的補給指令會順便打開自動喝水（enable:true）：沒勾「自動喝水：開」而原本是關的，就再關回去（跟角色抽屜一樣）
+  if (items.autoPotion && r.autoPotion === false) { chg.push('自動喝水 關→開'); cmds.push({ cmd: { type: 'setting', key: 'autoPotion', value: true }, label: '戰前檢查：開啟自動喝水' }); }
+  else if (cmds.length && r.autoPotion === false) cmds.push({ cmd: { type: 'setting', key: 'autoPotion', value: false }, label: '自動喝水維持關閉' });
+  return { cmds, chg };
+}
+function rpDraw() {
+  const box = $('#rdPrep'); if (!box || !RPREP) return;
+  const ae = document.activeElement; if (ae && ae.closest && ae.closest('#rdPrep') && ae.tagName === 'INPUT' && ae.type !== 'checkbox') return; // 打字中不重畫
+  const u = rpUi(), P = RPREP.prep || {}, rows = RPREP.rows || [];
+  u.sel = u.sel.filter(id => rows.some(r => r.id === id));
+  if (!rows.length) { box.innerHTML = '<div class="dim">先在上面選隊長和隊員，這裡會列出每隻的藥水、萬能療傷藥、自動解除異常、補血、攻擊格。</div>'; return; }
+  const has = (r, k) => r.issues.find(x => x.k === k || x.k.startsWith(k));
+  const cls = (r, ...ks) => { const xs = ks.map(k => has(r, k)).filter(Boolean); return xs.some(x => x.lv === 'bad') ? 'bad' : xs.length ? 'warn' : ''; };
+  const nd = '<span class="dim">讀不到</span>', onoff = v => v == null ? nd : v ? '<span class="good">開</span>' : '關';
+  const pot = (r, k) => { const x = r[k]; if (!r.ic || !x) return nd; return x.item ? `${esc(x.name)} <b>${x.qty}</b><br><span class="sm">${x.pct}% 喝</span>` : '不喝'; };
+  const heal = r => { if (!r.ic) return nd; const f = (x, n) => x && x.enabled ? `${n} ${x.threshold}%` : ''; const t = [f(r.partyHeal, '隊友'), f(r.selfHeal, '自己')].filter(Boolean).join('、'); return t || (r.healer ? '沒開' : '<span class="dim">—</span>'); };
+  const bad = rows.filter(r => r.issues.some(x => x.lv === 'bad')).length, warn = rows.filter(r => !r.issues.some(x => x.lv === 'bad') && r.issues.length).length;
+  const plans = rows.filter(r => u.sel.includes(r.id)).map(r => [r, rpPlanOf(r, u.items, P)]), nCmd = plans.reduce((t, [, p]) => t + ((p.cmds && p.cmds.length) || 0), 0);
+  box.innerHTML = `<div class="bar rp-th"><span class="sm"><b>門檻</b></span>${RP_TH.map(([k, a, b, lo, hi]) => `<label class="sm">${a} <input type="number" min="${lo}" max="${hi}" data-rpth="${k}" value="${esc(P[k])}"> ${b}</label>`).join('')}
+      <label class="sm"><input type="checkbox" data-rpthb="autoCure" ${P.autoCure ? 'checked' : ''}> 要開自動解除異常</label><label class="sm"><input type="checkbox" data-rpthb="autoPotion" ${P.autoPotion ? 'checked' : ''}> 要開自動喝水</label>
+      <button class="btn sm" data-rpdef="1" title="藍藥 ≥ 100、萬能療傷藥 ≥ 5、MP 40%…">恢復預設</button></div>
+    <div class="sm" id="rpSum">${bad ? `<span class="bad">${bad} 隻有紅色問題</span>　` : ''}${warn ? `<span class="warn">${warn} 隻有黃色提醒</span>　` : ''}${!bad && !warn ? '<span class="good">全部都符合門檻</span>' : ''}<span class="dim">（實機第一場拉圖斯：藍藥＋MP 20% 魔力不夠、沒人帶萬能療傷藥、自動解除異常沒勾，黑球後全隊封印就倒）</span></div>
+    <div class="rp-wrap"><table class="tbl sm rp-tbl"><tr><th></th><th>角色</th><th>連線</th><th>設定</th><th>MP 藥水</th><th>HP 藥水</th><th>萬能療傷藥</th><th>解除異常</th><th>自動喝水</th><th>隊友 Buff</th><th>補血</th><th>攻擊格</th><th>問題</th></tr>
+    ${rows.map(r => { const on = u.sel.includes(r.id), lv = r.issues.some(x => x.lv === 'bad') ? 'bad' : r.issues.length ? 'warn' : '';
+      return `<tr class="rp-row ${on ? 'on' : ''} ${lv ? 'lv-' + lv : ''}" data-rpsel="${esc(r.id)}"><td><input type="checkbox" tabindex="-1" ${on ? 'checked' : ''}></td>
+        <td>${r.id === RPREP.leader ? '👑 ' : ''}<b>${esc(r.name)}</b><br><span class="dim">Lv${r.lv != null ? r.lv : '?'} ${esc(r.jobName || '')}</span></td>
+        <td class="${cls(r, 'tab')}">${r.tab === 'tab' ? '分頁' : r.tab === 'bg' ? '背景／直連' : '沒有'}</td>
+        <td>${r.ic ? `第 ${r.slot} 套` : nd}</td>
+        <td class="${cls(r, 'mp')}">${pot(r, 'mp')}</td><td class="${cls(r, 'hp')}">${pot(r, 'hp')}</td>
+        <td class="${cls(r, 'cure')}">${r.ic ? `<b>${r.cure}</b> 個` : nd}</td>
+        <td class="${cls(r, 'autoCure')}">${r.ic ? onoff(r.autoCure) : nd}</td>
+        <td class="${cls(r, 'autoPotion')}">${onoff(r.autoPotion)}</td>
+        <td>${!r.ic ? nd : r.partyBuffs.length ? r.partyBuffs.map(esc).join('、') : '<span class="dim">沒有</span>'}</td>
+        <td class="${cls(r, 'heal')}">${heal(r)}</td>
+        <td class="${cls(r, 'attack')}">${!r.ic || !r.attack ? nd : esc(r.attack.txt)}</td>
+        <td class="rp-iss">${r.issues.map(x => `<div class="${x.lv}">${x.lv === 'bad' ? '✗' : '⚠'} ${esc(x.txt)}</div>`).join('') || '<span class="good">✓</span>'}${r.autoBuy ? '<div class="dim">自動買水開著（會花楓幣）</div>' : ''}</td></tr>`; }).join('')}</table></div>
+    <div class="rp-apply"><div class="bar"><b>一鍵套用</b><span class="dim sm">點整列選角色，勾要改的項目；只改勾選的、跟建議值不一樣的地方，送出前會再列一次</span></div>
+      <div class="bar">${RP_ITEMS.map(([k, n]) => `<label class="sm"><input type="checkbox" data-rpitem="${k}" ${u.items[k] ? 'checked' : ''}> ${n}${k === 'mpPct' ? `（${P.mpPct}%）` : k === 'hpPct' ? `（${P.hpPct}%）` : ''}</label>`).join('')}
+        <span class="dim sm">自動買水會花楓幣，不在這裡開；要的話到角色抽屜「掛機設定」自己設</span></div>
+      <div class="bar"><button class="btn sm" data-rpall="1">全選</button><button class="btn sm" data-rpbad="1">選有問題的</button><button class="btn sm" data-rpnone="1">全不選</button>
+        <span class="dim sm">已選 ${u.sel.length} 隻${u.sel.length ? `，要改 ${plans.filter(([, p]) => p.cmds && p.cmds.length).length} 隻` : ''}</span>
+        <button class="btn sm primary" data-rpgo="1" ${nCmd ? '' : 'disabled'}>套用到遊戲</button><span class="sm" id="rpMsg">${esc(u.msg || '')}</span></div></div>`;
+}
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('#rdPrep [data-rpsel],#rdPrep [data-rpall],#rdPrep [data-rpbad],#rdPrep [data-rpnone],#rdPrep [data-rpgo],#rdPrep [data-rpdef]'); if (!t || !RPREP) return;
+  const u = rpUi(), dd = t.dataset, rows = RPREP.rows || [], P = RPREP.prep || {};
+  if (dd.rpsel) { const k = dd.rpsel; u.sel = u.sel.includes(k) ? u.sel.filter(x => x !== k) : [...u.sel, k]; rpDraw(); return; }
+  if (dd.rpall) { u.sel = rows.map(r => r.id); rpDraw(); return; }
+  if (dd.rpbad) { u.sel = rows.filter(r => r.issues.length).map(r => r.id); rpDraw(); return; }
+  if (dd.rpnone) { u.sel = []; rpDraw(); return; }
+  if (dd.rpdef) { await rpSaveTh(RPREP.def || {}); return; }
+  if (dd.rpgo) {
+    const targets = [], lines = [], skips = [];
+    for (const r of rows.filter(r => u.sel.includes(r.id))) {
+      const p = rpPlanOf(r, u.items, P);
+      if (p.skip) { skips.push(`${r.name}（${p.skip}）`); continue; }
+      if (!p.cmds.length) continue;
+      lines.push(`・${r.name}（第 ${r.slot} 套）：${p.chg.join('、')}`);
+      for (const c of p.cmds) targets.push({ charId: r.id, action: 'cfg', cmd: c.cmd, label: c.label });
+    }
+    if (!targets.length) { alert('勾選的角色都已經符合，沒有要改的' + (skips.length ? `\n\n略過：${skips.join('、')}` : '')); return; }
+    if (!confirm(`戰前一鍵套用，會改 ${lines.length} 隻：\n${lines.join('\n')}${skips.length ? `\n\n略過：${skips.join('、')}` : ''}\n\n（不會開自動買水，不會花楓幣）確定套用到遊戲？`)) return;
+    try { await api('/api/idle', { targets }); u.msg = `已送出 ${lines.length} 隻（${targets.length} 項），幾秒內會更新`; u.sel = []; await poll(true); await rpLoad(true); rpDraw(); }
+    catch (err) { alert('失敗：' + err.message); }
+  }
+});
+async function rpSaveTh(patch) {
+  try { const j = await api('/api/raid/prep', { prep: patch }); S.raid = { ...(S.raid || {}), prep: j.prep }; await rpLoad(true); rpDraw(); }
+  catch (err) { alert('門檻存不起來：' + err.message); }
+}
+document.addEventListener('change', e => {
+  const t = e.target; if (!t.closest || !t.closest('#rdPrep')) return;
+  if (t.dataset.rpitem) { rpUi().items[t.dataset.rpitem] = t.checked; rpDraw(); return; }
+  if (t.dataset.rpthb) { rpSaveTh({ [t.dataset.rpthb]: t.checked }); return; }
+  if (t.dataset.rpth) { const n = Math.round(Number(t.value)); if (!Number.isFinite(n)) return; t.blur(); rpSaveTh({ [t.dataset.rpth]: n }); }
+});
+
+// ==== 副本 A 戰前檢查＋一鍵套用（面板）結束 ====
+
+// ==== 副本 B 副本前自動補給（面板）：程式放在這行下面；raidSupplyDraw() 每秒跟著 drawRaid 呼叫 ====
+// settings.raid.supply = {items:[{key,name,target}], auto}；資料從 /api/raid/supply（設定、試算、紀錄）每 2 秒讀一次
+let RSUP = null, rsupLoading = false, rsupAt = 0;
+const RSUP_COMMON = { i2000000: '紅色藥水', i2000001: '橘色藥水', i2000002: '白色藥水', i2000003: '藍色藥水', i2050004: '萬能療傷藥' }; // 公倉、背包都沒有也能先選
+const rsupName = key => { const n = keyName(key); return n && n !== key ? n : RSUP_COMMON[key] || key; };
+async function rsupLoad(force) {
+  if (rsupLoading || (!force && Date.now() - rsupAt < 2000)) return; rsupLoading = true;
+  try { RSUP = await (await fetch('/api/raid/supply')).json(); rsupAt = Date.now(); } finally { rsupLoading = false; }
+}
+const rsupSave = async patch => { RSUP = { ...RSUP, ...(await api('/api/raid/supply', { ...RSUP.cfg, ...patch })) }; rsupAt = Date.now(); rsupRender(true); };
+function rsupOptions(cur) {
+  const n = {}, g = {};
+  for (const x of (RSUP && RSUP.guildItems) || []) { g[x.key] = x.n; n[x.key] = 1; }
+  for (const id of raidAll(raidPlan())) for (const it of ((DATA.chars[id] || {}).items || [])) if (it.loc === '背包' && /^i\w+$/.test(it.key || '')) n[it.key] = 1;
+  for (const k of Object.keys(RSUP_COMMON)) n[k] = 1;
+  if (cur) n[cur] = 1;
+  const read = RSUP && RSUP.plan && RSUP.plan.guildRead;
+  return Object.keys(n).map(key => ({ key, name: rsupName(key), g: g[key] || 0 })).sort((a, b) => (b.g > 0) - (a.g > 0) || cmp(a.name, b.name))
+    .map(x => `<option value="${esc(x.key)}" ${x.key === cur ? 'selected' : ''}>${esc(x.name)}${read ? `（公倉 ${x.g ? fmt(x.g) : '沒有'}）` : ''}</option>`).join('');
+}
+function raidSupplyDraw() {
+  if (!$('#rdSupply')) return;
+  rsupLoad().then(() => rsupRender()).catch(e => { const m = $('#rsMsg'); if (m) m.textContent = '讀不到補給資料：' + e.message; });
+  if (RSUP) rsupRender();
+}
+const RS_ST = { queued: ['排隊中', ''], approved: ['排隊中', ''], pending: ['待確認', 'warn'], running: ['領取中', 'good'], done: ['✓ 完成', 'good'], failed: ['✗ 失敗', 'bad'], cancelled: ['已取消', 'dim'] };
+function rsupRender(full) {
+  const box = $('#rdSupply'); if (!box || !RSUP) return;
+  if (!$('#rsCfg')) { box.innerHTML = `<div class="dim sm">每隻要補到幾個，從公倉領（只領道具，不花楓幣、不從商店買）；對象是上面副本計畫的全隊。戰鬥中不補。</div>
+    <div id="rsCfg"></div><div class="bar" id="rsBar"></div><div id="rsMsg" class="sm"></div><div id="rsPrev"></div><div id="rsLog"></div>`; full = true; }
+  const c = RSUP.cfg || { items: [], auto: false }, P = RSUP.plan || {}, ae = document.activeElement;
+  // 正在改道具／數量時不重畫設定（輸入會被洗掉），只更新試算和紀錄
+  if (full || !($('#rsCfg').contains(ae) && /INPUT|SELECT/.test(ae.tagName))) {
+    $('#rsCfg').innerHTML = `<div class="bar"><label title="副本計畫的隊長建立好隊伍時（包含按「① 建立隊伍」），自動跑一次補給；戰鬥中不補"><input type="checkbox" id="rsAuto" ${c.auto ? 'checked' : ''}> 建立隊伍時自動補給</label></div>
+      ${c.items.map((it, i) => `<div class="bar rs-item"><span>${i + 1}.</span><select data-rsf="key" data-rsi="${i}"><option value="">（選道具）</option>${rsupOptions(it.key)}</select>
+        <span>每隻補到</span><input type="number" min="1" data-rsf="target" data-rsi="${i}" value="${esc(it.target)}" style="width:90px"><span>個</span><button class="btn sm" data-rsdel="${i}">刪除</button></div>`).join('') || '<div class="dim sm">還沒有道具。按「＋ 新增道具」，例如藍色藥水每隻補到 300 個、萬能療傷藥 20 個。</div>'}`;
+  }
+  const job = (DATA.jobs || []).find(j => j.kind === 'guildView' && ['approved', 'running'].includes(j.status));
+  $('#rsBar').innerHTML = `<button class="btn sm" id="rsAdd">＋ 新增道具</button><button class="btn primary" id="rsRun" ${P.fighting && P.fighting.length ? 'disabled title="戰鬥中不補給"' : ''}>立即補給</button>
+    <button class="btn sm" id="rsView">重新讀取公倉</button><span class="dim sm">${job || RSUP.want ? '公倉內容：讀取中…' : P.guildRead ? `公倉內容：${ago(Date.now() - P.guildAt)}讀的${P.guildOld ? '（補給前會先重新讀取）' : ''}` : '<span class="warn">還沒讀過公倉（補給前會先讀取）</span>'}</span>`;
+  // 試算：每隻現在有幾個 → 要領幾個
+  const items = P.items || [], rows = P.rows || [];
+  $('#rsPrev').innerHTML = !items.length || !(P.chars || []).length ? '' : `<table class="tbl sm rs-prev"><tr><th>角色</th>${items.map(it => `<th>${esc(it.name)}<span class="dim">（補到 ${fmt(it.target)}）</span></th>`).join('')}</tr>
+    ${P.chars.map(ch => `<tr><td>${esc(ch.name)}${ch.block ? ` <span class="warn sm">${esc(ch.block)}</span>` : ''}</td>${items.map(it => { const r = rows.find(x => x.charId === ch.id && x.key === it.key); if (!r) return '<td></td>';
+      return `<td>${fmt(r.have)}${r.want <= 0 ? ' <span class="good">夠了</span>' : r.skip ? ` <span class="warn">略過</span>` : r.qty > 0 ? ` → 領 <b>${fmt(r.qty)}</b>${r.short ? `<span class="warn">（要 ${fmt(r.want)}）</span>` : ''}` : ' <span class="bad">分不到</span>'}</td>`; }).join('')}</tr>`).join('')}
+    <tr><td class="dim">公倉</td>${items.map(it => `<td>${P.guildRead ? fmt(it.guild) : '?'}・要 ${fmt(it.need)}${it.short && P.guildRead ? ' <b class="bad">公倉不夠</b>' : ''}</td>`).join('')}</tr></table>
+    ${items.some(it => it.short) && P.guildRead ? '<div class="sm warn">公倉不夠的道具照背包最少的先分；不會從商店買。</div>' : ''}`;
+  // 紀錄：最近一次補給每隻領到多少、失敗原因
+  const log = RSUP.log || [], jobs = new Map((DATA.jobs || []).map(j => [j.id, j]));
+  const lastRun = (log.slice().reverse().find(x => x.run) || {}).run, takes = log.filter(x => x.run === lastRun && x.kind === 'take');
+  $('#rsLog').innerHTML = (takes.length ? `<div class="sm" style="margin-top:6px"><b>上次補給</b> <span class="dim">${clock(takes[0].at)}</span></div><table class="tbl sm rs-res"><tr><th>角色</th><th>道具</th><th>原有</th><th>要領</th><th>領到</th><th>狀態</th></tr>${takes.map(x => {
+      const j = jobs.get(x.jobId), k = x.status === 'queued' && j ? j.status : x.status, s = RS_ST[k] || [k, ''];
+      return `<tr><td>${esc(x.name)}</td><td>${esc(x.item)}</td><td class="num">${fmt(x.have)}</td><td class="num">${fmt(x.qty)}</td><td class="num">${x.got != null ? fmt(x.got) : '—'}</td><td><b class="${s[1]}">${s[0]}</b>${x.result ? ` <span class="dim">${esc(x.result)}</span>` : ''}</td></tr>`; }).join('')}</table>` : '')
+    + `<details class="sm" ${takes.length ? '' : 'open'} style="margin-top:4px"><summary class="dim">補給紀錄</summary>${log.filter(x => x.kind === 'note').slice(-12).reverse().map(x => `<div><span class="dim">${clock(x.at)}</span> ${esc(x.msg)}</div>`).join('') || '<div class="dim">還沒有紀錄</div>'}</details>`;
+}
+document.addEventListener('change', e => {
+  const t = e.target; if (!t.closest || !t.closest('#rdSupply') || !RSUP) return;
+  const items = (RSUP.cfg.items || []).map(x => ({ ...x }));
+  if (t.id === 'rsAuto') { rsupSave({ auto: t.checked }).catch(err => alert('失敗：' + err.message)); return; }
+  if (t.dataset.rsf) {
+    const it = items[Number(t.dataset.rsi)]; if (!it) return;
+    if (t.dataset.rsf === 'key') { it.key = t.value; it.name = t.value ? rsupName(t.value) : ''; } else it.target = Math.max(1, Math.floor(Number(t.value) || 1));
+    rsupSave({ items }).catch(err => alert('失敗：' + err.message));
+  }
+});
+document.addEventListener('click', async e => {
+  const t = e.target.closest && e.target.closest('#rsAdd,#rsRun,#rsView,[data-rsdel]'); if (!t || !t.closest('#rdSupply') || !RSUP) return;
+  const items = (RSUP.cfg.items || []).map(x => ({ ...x })), msg = m => { $('#rsMsg').textContent = m; };
+  try {
+    if (t.id === 'rsAdd') { items.push({ key: '', name: '', target: 100 }); return await rsupSave({ items }); }
+    if (t.dataset.rsdel) { const it = items[Number(t.dataset.rsdel)]; if (it && it.key && !confirm(`刪除「${it.name || it.key}」？`)) return; items.splice(Number(t.dataset.rsdel), 1); return await rsupSave({ items }); }
+    if (t.id === 'rsView') { t.disabled = true; await api('/api/guild/refresh', {}); msg('已請遊戲分頁讀取公倉，幾秒後更新'); return; }
+    if (t.id === 'rsRun') {
+      await rsupLoad(true); const P = RSUP.plan || {};
+      if (!(P.chars || []).length) { alert('先在上面選副本的隊長和隊員'); return; }
+      if (!(P.items || []).length) { alert('先新增要補給的道具和數量'); return; }
+      if ((P.fighting || []).length) { alert('隊伍在副本戰鬥中，不補給'); return; }
+      const lines = [];
+      for (const it of P.items) {
+        lines.push(`${it.name} 每隻補到 ${fmt(it.target)}：${P.guildRead ? `公倉 ${fmt(it.guild)}，全隊要 ${fmt(it.need)}${it.short ? ' → 公倉不夠，照背包最少先分' : ''}` : `全隊要 ${fmt(it.need)}（公倉還沒讀）`}`);
+        for (const r of P.rows.filter(x => x.key === it.key)) lines.push(`  ${r.name}：有 ${fmt(r.have)}${r.want <= 0 ? '，夠了' : r.skip ? `，略過（${r.skip}）` : P.guildRead ? (r.qty > 0 ? ` → 領 ${fmt(r.qty)}${r.short ? `（要 ${fmt(r.want)}）` : ''}` : ' → 公倉不夠，分不到') : ` → 要 ${fmt(r.want)}`}`);
+      }
+      if (P.guildOld) lines.push('', P.guildRead ? '公倉內容是舊的，會先重新讀取再照最新數量分配。' : '還沒讀過公倉，會先讀取再分配。');
+      if (P.guildRead && !P.guildOld && !P.rows.some(r => r.qty > 0)) { alert('這次沒有可以領的：\n\n' + lines.join('\n')); return; }
+      if (!confirm('副本前補給（從公倉領道具，不花楓幣、不從商店買）：\n\n' + lines.join('\n') + '\n\n確定建立領取工作？')) return;
+      t.disabled = true; const r = await api('/api/raid/supply/run', {}); RSUP = { ...RSUP, ...r }; rsupAt = Date.now(); msg(r.msg || ''); rsupRender(); await poll(true);
+    }
+  } catch (err) { t.disabled = false; msg('失敗：' + err.message); }
+});
+
+// ==== 副本 B 副本前自動補給（面板）結束 ====
+
+// ==== 副本 C 戰中自動應對（面板）：程式放在這行下面；raidAutoDraw() 每秒跟著 drawRaid 呼叫 ====
+// settings.raid.auto＝{orbs, orbChars[], back}；伺服器 /api/raid 的 auto＝{cfg, code, assign{charId:{slot,kind}}, wave{at,n0,no}, waveSec[], warn[{id,kind,text}], log[]}
+function raidAutoCfgOf() { const a = (S.raid || {}).auto || {}; return { orbs: !!a.orbs, back: !!a.back, orbChars: Array.isArray(a.orbChars) ? a.orbChars.filter(Boolean) : [] }; }
+async function raidAutoSave(patch) { await saveSettings({ raid: { ...(S.raid || {}), auto: { ...raidAutoCfgOf(), ...patch } } }); raidAutoDraw(); }
+const raidAutoSet = (el, h) => { if (el && el._h !== h) { el.innerHTML = h; el._h = h; } }; // 內容沒變就不重畫（不打斷點選）
+const raidTgtName = x => (x.kind === 'boss' ? '王' : `黑球 #${x.slot}`);
+function raidAutoDraw() {
+  if (!RAID) return;
+  const p = raidPlan(), all = raidAll(p), cfg = raidAutoCfgOf(), A = RAID.auto || {}, now = Date.now() + ((RAID.now || Date.now()) - Date.now());
+  const fight = Object.values(RAID.live || {}).find(v => v.battle && now - v.at < 6000 && (!A.code || v.battle.code === A.code));
+  const rep = RAID.report && RAID.report.report, inBattle = !!fight && !(rep && rep.code && rep.code === fight.battle.code && rep.at >= (fight.battle.prepUntil || 0));
+  const assign = Object.entries(A.assign || {}), orbAssign = assign.filter(([, x]) => x.kind === 'orb');
+  // 戰況上方的警告列
+  let w = '';
+  if (inBattle) {
+    const b = fight.battle, items = [];
+    if (A.wave || (b.invulnerable && b.orbs)) {
+      const el = A.wave ? (now - A.wave.at) / 1000 : 0, ds = (A.waveSec || []).slice().sort((x, y) => x - y), med = ds.length ? ds[Math.floor(ds.length / 2)] : 0;
+      items.push(`<div class="bad">⚫ 黑球 <b>${b.orbs || (A.wave && A.wave.n0) || '?'}</b> 顆${A.wave ? `・已出現 ${Math.floor(el)} 秒` : ''}${med ? `・<b>約 ${Math.max(0, Math.ceil(med - el))} 秒後消失</b>（前幾波平均 ${med} 秒）` : ''}・${cfg.orbs ? `已指派 <b>${orbAssign.length}</b> 隻去打${orbAssign.length ? `（${orbAssign.map(([id, x]) => `${esc(charNameOf(id))}→#${x.slot}`).join('、')}）` : ''}` : '<span class="warn">自動集火沒開</span>'}</div>`);
+    }
+    const byChar = {}; for (const x of A.warn || []) (byChar[x.id] = byChar[x.id] || []).push(x.text);
+    for (const [id, t] of Object.entries(byChar)) items.push(`<div class="warn">⚠ ${esc(charNameOf(id))}：${t.map(esc).join('、')}</div>`);
+    if (items.length) w = `<div class="sm" id="rdWarnBox" style="border:1px solid #b5651d;border-radius:6px;padding:4px 8px;margin:4px 0;background:rgba(181,101,29,.08)">${items.join('')}</div>`;
+  }
+  raidAutoSet($('#rdWarn'), w);
+  // 設定＋紀錄
+  const mage = id => { const sf = raidSelf(id), c = DATA.chars[id] && DATA.chars[id].char; return (sf && sf.mage) || /mage|wizard|cleric|priest|bishop|magician/i.test((c && c.job) || ''); };
+  const log = (A.log || []).slice().reverse().slice(0, 10).map(x => `<div><span class="dim">${new Date(x.at).toLocaleTimeString()}</span> ${x.kind === 'wave' ? esc(x.text || '')
+    : `${esc(x.name || charNameOf(x.charId))} → ${raidTgtName(x)} ${x.ok ? '<span class="good">✓</span>' : `<span class="bad">✗ ${esc(x.error || '失敗')}</span>`}`}</div>`).join('');
+  raidAutoSet($('#rdAuto'), `<div class="bar"><label><input type="checkbox" data-rdauto="orbs" ${cfg.orbs ? 'checked' : ''}> ⚫ 黑球出現時自動集火</label>
+      <label><input type="checkbox" data-rdauto="back" ${cfg.back ? 'checked' : ''}> 黑球清完切回王</label>
+      <span class="dim sm">各角色自己的分頁／直連送「選目標」；每隻最多 2 秒換一次，同一個目標不重送，失敗就停 30 秒</span></div>
+    <div class="sm">負責清黑球的角色 <span class="dim">（都不勾＝全隊；建議勾法師系）</span></div>
+    ${all.length ? `<div class="rd-mems" id="rdAutoChars">${all.map(id => `<label class="rd-arow"><input type="checkbox" data-rdorb="${esc(id)}" ${cfg.orbChars.includes(id) ? 'checked' : ''}> ${esc(charNameOf(id))}${mage(id) ? ' <span class="dim sm">🔮法師</span>' : ''}</label>`).join('')}</div>` : '<div class="dim sm">先在上面選隊長和隊員</div>'}
+    ${inBattle && assign.length ? `<div class="sm">目前分配：${assign.map(([id, x]) => `${esc(charNameOf(id))} → ${raidTgtName(x)}`).join('、')}</div>` : ''}
+    <div class="sm" id="rdAutoLog" style="margin-top:4px"><div class="dim">最近的自動動作</div>${log || '<div class="dim">還沒有</div>'}</div>`);
+}
+document.addEventListener('change', e => {
+  const t = e.target; if (!t.closest || !t.closest('#rdAuto')) return;
+  if (t.dataset.rdauto) { raidAutoSave({ [t.dataset.rdauto]: t.checked }); return; }
+  if (t.dataset.rdorb) { const cur = raidAutoCfgOf().orbChars.filter(x => x !== t.dataset.rdorb); raidAutoSave({ orbChars: t.checked ? [...cur, t.dataset.rdorb] : cur }); }
+});
+
+// ==== 副本 C 戰中自動應對（面板）結束 ====
+
+// ==== 副本 D 戰後紀錄與分析（面板）：程式放在這行下面；raidHistDraw() 每秒跟著 drawRaid 呼叫 ====
+// /api/raid/history：每場打完伺服器存一筆（最多 50 筆，重開還在）。列表點整列展開；勾兩場比較每隻的傷害
+const RH = { list: null, loadedAt: 0, repAt: null, busy: false, open: new Set(), cmp: [], sig: '' };
+(() => { const st = document.createElement('style'); st.textContent = `
+  #rdHist tr.rh-row { cursor: pointer; user-select: none; } #rdHist tr.rh-row:hover td { background: rgba(255,255,255,.04); } #rdHist tr.rh-row.open td { background: rgba(90,169,230,.12); }
+  #rdHist td.num { text-align: right; font-variant-numeric: tabular-nums; } #rdHist .rh-det td { background: var(--panel2); padding: 8px 10px; }
+  #rdHist .rh-why { margin: 4px 0 8px; padding-left: 18px; } #rdHist .rh-why li { margin: 2px 0; } #rdHist .rh-cmp { margin-top: 10px; border-top: 1px solid var(--line, #444); padding-top: 8px; }`; document.head.appendChild(st); })();
+async function raidHistLoad() {
+  if (RH.busy) return; RH.busy = true;
+  try { const j = await (await fetch('/api/raid/history')).json(); RH.list = Array.isArray(j.list) ? j.list : []; RH.loadedAt = Date.now(); RH.cmp = RH.cmp.filter(id => RH.list.some(h => h.id === id)); }
+  finally { RH.busy = false; }
+}
+function raidHistDraw() {
+  const box = $('#rdHist'); if (!box) return;
+  const repAt = (RAID && RAID.report && RAID.report.report && RAID.report.report.at) || 0;
+  // 有新結算、或 30 秒沒讀就重讀；其他時候只在資料或展開／勾選變了才重畫（不會洗掉展開狀態）
+  if (!RH.busy && (RH.list == null || repAt !== RH.repAt || Date.now() - RH.loadedAt > 30000)) { RH.repAt = repAt; raidHistLoad().then(raidHistDraw).catch(e => { box.textContent = '讀不到戰後紀錄：' + e.message; }); }
+  if (RH.list == null) return;
+  const sig = JSON.stringify([RH.list.map(h => h.id), [...RH.open], RH.cmp]);
+  if (sig === RH.sig && box.firstChild) return; RH.sig = sig;
+  if (!RH.list.length) { box.innerHTML = '<div class="dim sm">還沒有紀錄。每場打完（收到遊戲的結算）會自動存一筆，最多留 50 場。</div>'; return; }
+  const dur = s => (s == null ? '—' : mmss(s)), deathsOf = h => h.rows.reduce((t, r) => t + rhDeaths(r), 0);
+  box.innerHTML = `<div class="dim sm">點一列看詳細；勾兩場可以比較每隻的傷害。共 ${RH.list.length} 場（最多留 ${50} 場）</div>
+    <table class="tbl sm rh-list"><tr><th>比較</th><th>時間</th><th>副本</th><th>結果</th><th>總傷害</th><th>打了</th><th>死亡</th><th>人數</th><th></th></tr>
+    ${RH.list.map(h => { const [rn, rc] = RAID_RESULT[h.result] || [h.result || '?', ''], op = RH.open.has(h.id);
+      return `<tr class="rh-row ${op ? 'open' : ''}" data-rhrow="${esc(h.id)}"><td><input type="checkbox" data-rhcmp="${esc(h.id)}" ${RH.cmp.includes(h.id) ? 'checked' : ''}></td><td>${h.at ? new Date(h.at).toLocaleString() : '—'}</td><td>${esc(RAID_NAME[h.raid] || h.raid || '?')}</td>
+        <td><span class="tag ${rc}">${esc(rn)}</span></td><td class="num">${short(h.total)}</td><td class="num">${dur(h.durationSec)}</td><td class="num ${deathsOf(h) ? 'warn' : ''}">${deathsOf(h)}</td><td class="num">${h.rows.length}</td>
+        <td><button class="sm" data-rhdel="${esc(h.id)}" title="刪掉這筆紀錄">刪除</button></td></tr>${op ? `<tr class="rh-det"><td colspan="9">${raidHistDetail(h)}</td></tr>` : ''}`; }).join('')}</table>
+    ${raidHistCompare()}`;
+}
+const rhDeaths = r => Math.max(r.deaths || 0, (r.deathAt || []).length); // 遊戲結算的死亡數，或中控取樣看到的倒下次數（取大的）
+function raidHistDetail(h) {
+  const n = v => (v == null ? '—' : short(v)), pc = v => (v == null ? '—' : `${Math.round(v)}%`), mm = s => (s == null ? '?' : mmss(s));
+  const why = h.reasons || [], head = h.result === 'clear' ? '值得注意' : '失敗原因（推估）';
+  const waves = (h.orbWaves || []).map((w, i) => `<li>第 ${i + 1} 波：第 ${mm(w.at)} 出現${w.max ? ` ${w.max} 顆` : ''}${w.sec != null ? `、${w.sec} 秒後沒了` : ''}・${w.cleared ? '<span class="good">清完</span>' : w.sealed ? `<span class="bad">沒清完${w.left ? `（剩 ${w.left} 顆）` : ''} → 全隊封印${w.sealAt != null ? `（第 ${mm(w.sealAt)}）` : ''}</span>` : '<span class="dim">不確定（打完時還在）</span>'}</li>`).join('');
+  return `<div class="rd-stat"><div>總輸出<br><b>${n(h.grossDps)}</b>／秒</div><div>估計回血<br><b>${n(h.regenDps)}</b>／秒</div><div>平均淨輸出<br><b class="${h.result !== 'clear' && h.boss.maxHp && h.netDps != null && h.netDps < h.boss.maxHp / ((h.minutes || 20) * 60) ? 'bad' : ''}">${n(h.netDps)}</b>／秒</div>
+      <div>王最低血量<br><b>${h.boss.minHpPct == null ? '—' : h.boss.minHpPct + '%'}</b>${h.boss.maxHp ? `<span class="dim sm">（${short(h.boss.maxHp)}）</span>` : ''}</div><div>全隊封印<br><b class="${h.sealCount ? 'warn' : ''}">${h.sealCount || 0}</b> 次</div><div>隊伍代碼<br><b>${esc(h.code)}</b></div></div>
+    ${why.length ? `<b class="sm">${head}</b><ul class="rh-why sm">${why.map(x => `<li class="${h.result === 'clear' ? '' : 'bad'}">${esc(x)}</li>`).join('')}</ul>` : ''}
+    ${waves ? `<b class="sm">黑球</b><ul class="rh-why sm">${waves}</ul>` : ''}
+    <table class="tbl sm"><tr><th>#</th><th>角色</th><th>傷害</th><th>占比</th><th>死亡</th><th>倒下時間</th><th>MP 最低</th><th>HP 最低</th></tr>${h.rows.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${esc(r.name)}</td>
+      <td class="num ${r.damage ? '' : 'bad'}">${r.damage ? short(r.damage) : '0'}</td><td class="num ${r.damage ? '' : 'bad'}">${(r.pct || 0).toFixed(1)}%</td><td class="num ${rhDeaths(r) ? 'warn' : ''}">${rhDeaths(r)}</td>
+      <td class="sm">${(r.deathAt || []).length ? r.deathAt.map(mm).join('、') : '<span class="dim">—</span>'}</td><td class="num ${r.mpMinPct != null && r.mpMinPct <= 5 ? 'bad' : ''}">${pc(r.mpMinPct)}</td><td class="num">${pc(r.hpMinPct)}</td></tr>`).join('')}</table>
+    <div class="dim sm">占比照遊戲結算的傷害算；MP／HP 最低、倒下時間是中控戰鬥中每秒取樣的（中控中途重開會缺）。</div>`;
+}
+function raidHistCompare() {
+  if (RH.cmp.length < 2) return RH.cmp.length ? '<div class="dim sm rh-cmp">再勾一場就能比較</div>' : '';
+  const [a, b] = RH.cmp.map(id => RH.list.find(h => h.id === id)).sort((x, y) => (x.at || 0) - (y.at || 0)); if (!a || !b) return '';
+  const names = [...new Set([...a.rows, ...b.rows].map(r => r.name))], dm = (h, nm) => { const r = h.rows.find(x => x.name === nm); return r ? r.damage : null; };
+  const lbl = h => `${h.at ? new Date(h.at).toLocaleString() : '?'}（${(RAID_RESULT[h.result] || [h.result])[0]}）`;
+  const rows = names.map(nm => ({ nm, x: dm(a, nm), y: dm(b, nm) })).sort((p, q) => ((q.y || 0) - (q.x || 0)) - ((p.y || 0) - (p.x || 0)));
+  const diff = (x, y) => { if (x == null || y == null) return '<td class="num dim">—</td>'; const d = y - x; return `<td class="num ${d > 0 ? 'good' : d < 0 ? 'bad' : ''}">${d > 0 ? '+' : ''}${short(d)}${x ? `（${d > 0 ? '+' : ''}${(d / x * 100).toFixed(0)}%）` : ''}</td>`; };
+  return `<div class="rh-cmp" id="rdHistCmp"><b>比較</b> <span class="dim sm">舊：${esc(lbl(a))} → 新：${esc(lbl(b))}</span>
+    <table class="tbl sm"><tr><th>角色</th><th>舊的傷害</th><th>新的傷害</th><th>差</th></tr>${rows.map(r => `<tr><td>${esc(r.nm)}</td><td class="num">${r.x == null ? '—' : short(r.x)}</td><td class="num">${r.y == null ? '—' : short(r.y)}</td>${diff(r.x, r.y)}</tr>`).join('')}
+    <tr><td><b>合計</b></td><td class="num">${short(a.total)}</td><td class="num">${short(b.total)}</td>${diff(a.total, b.total)}</tr>
+    <tr class="dim"><td>打了</td><td class="num">${a.durationSec == null ? '—' : mmss(a.durationSec)}</td><td class="num">${b.durationSec == null ? '—' : mmss(b.durationSec)}</td><td></td></tr>
+    <tr class="dim"><td>淨輸出／秒</td><td class="num">${a.netDps == null ? '—' : short(a.netDps)}</td><td class="num">${b.netDps == null ? '—' : short(b.netDps)}</td>${diff(a.netDps, b.netDps)}</tr></table></div>`;
+}
+document.addEventListener('click', async e => {
+  const t = e.target; if (!t.closest || !t.closest('#rdHist')) return;
+  const del = t.closest('[data-rhdel]');
+  if (del) { if (!confirm('刪掉這場的紀錄？刪了就找不回來。')) return; try { const r = await fetch('/api/raid/history?id=' + encodeURIComponent(del.dataset.rhdel), { method: 'DELETE' }); if (!r.ok) throw new Error('HTTP ' + r.status); RH.open.delete(del.dataset.rhdel); await raidHistLoad(); raidHistDraw(); } catch (err) { alert('刪除失敗：' + err.message); } return; }
+  if (t.closest('input, button, a, label')) return; // 勾選框由 change 處理
+  const tr = t.closest('tr[data-rhrow]'); if (!tr) return;
+  const id = tr.dataset.rhrow; if (RH.open.has(id)) RH.open.delete(id); else RH.open.add(id); raidHistDraw();
+});
+document.addEventListener('change', e => {
+  const t = e.target; if (!t.dataset || !t.dataset.rhcmp) return;
+  const id = t.dataset.rhcmp; RH.cmp = RH.cmp.filter(x => x !== id); if (t.checked) { RH.cmp.push(id); if (RH.cmp.length > 2) RH.cmp.shift(); } raidHistDraw();
+});
+
+// ==== 副本 D 戰後紀錄與分析（面板）結束 ====
+
 document.addEventListener('change', e => {
   const t = e.target; if (!t.closest || !t.closest('#raid')) return;
   if (t.id === 'rdLeader') { const p = raidPlan(); raidSavePlan({ leader: t.value, members: p.members.filter(x => x !== t.value) }); return; }

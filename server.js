@@ -562,6 +562,23 @@ function restockBlock(snap) {
   if (lastDone && (snap.receivedAt || 0) < lastDone + 2000) return '剛做完公倉工作，等新的背包資料';
   return null;
 }
+// 公倉現在可以分的道具數量：公倉內容扣掉還沒做完的領取工作（那些還沒反映在公倉內容裡）；副本前補給也用
+function restockAvail(g) {
+  const avail = {};
+  for (const [k, n] of Object.entries((g && g.items) || {})) if (/^i\w+$/.test(k)) avail[k] = Number(n) || 0;
+  for (const j of db.jobs) if (j.kind === 'guildWithdraw' && ['pending', 'approved', 'running'].includes(j.status) && (j.createdAt || 0) > ((db.guild && db.guild.at) || 0))
+    for (const it of (j.batches[0] || {}).items || []) if (avail[it.key] != null) avail[it.key] = Math.max(0, avail[it.key] - (Number(it.qty) || 0));
+  return avail;
+}
+// 建立一個補給用的公倉領取工作（只有道具、直接排隊；agent 領之前先讀公倉、照當下背包重算）；副本前補給也用
+// items: [{ key, name, qty, target, limit? }]
+function restockWithdrawJob(snap, items, label) {
+  const job = createBagJob({ kind: 'guildWithdraw', fromCharId: snap.char.id, batches: [{ items, gear: [] }] });
+  job.batches[0].restock = true; job.restock = true; job.auto = true;
+  job.status = 'approved'; job.approvedAt = Date.now();
+  jobLog(job, label + '：' + items.map(x => `${x.name} ×${fmtN(x.qty)}`).join('、'));
+  return job;
+}
 function guildRestockTick(force) {
   const cfg = db.settings.guildRestock || {};
   if (!cfg.on) { if (force) { restockLog({ kind: 'note', msg: '自動補給是關閉的，沒有檢查' }); save(); } return; }
@@ -596,10 +613,7 @@ function guildRestockTick(force) {
   }
   // 3. 照順序分配：規則順序 → 同一條規則裡背包最少的先領（同數量照名稱）
   // 公倉數量要扣掉還沒做完的領取工作（那些還沒反映在公倉內容裡）
-  const avail = {};
-  for (const [k, n] of Object.entries(g.items || {})) if (/^i\w+$/.test(k)) avail[k] = Number(n) || 0;
-  for (const j of db.jobs) if (j.kind === 'guildWithdraw' && ['pending', 'approved', 'running'].includes(j.status) && (j.createdAt || 0) > ((db.guild && db.guild.at) || 0))
-    for (const it of (j.batches[0] || {}).items || []) if (avail[it.key] != null) avail[it.key] = Math.max(0, avail[it.key] - (Number(it.qty) || 0));
+  const avail = restockAvail(g);
   needs.sort((a, b) => rules.indexOf(a.r) - rules.indexOf(b.r) || a.have - b.have || cmpName(a.snap.char.name, b.snap.char.name));
   const plan = new Map(), taken = new Set(), blocked = new Map();
   const nameOf = r => r.name || r.key;
@@ -623,11 +637,8 @@ function guildRestockTick(force) {
   // 4. 每隻角色一個領取工作（直接排隊，領出來的可以再存回去）
   for (const p of plan.values()) {
     let job;
-    try { job = createBagJob({ kind: 'guildWithdraw', fromCharId: p.snap.char.id, batches: [{ items: p.items, gear: [] }] }); }
+    try { job = restockWithdrawJob(p.snap, p.items, '公倉自動補給'); }
     catch (e) { restockLog({ kind: 'note', msg: `${p.snap.char.name} 建立領取工作失敗：${e.message}` }); continue; }
-    job.batches[0].restock = true; job.restock = true; job.auto = true;
-    job.status = 'approved'; job.approvedAt = Date.now();
-    jobLog(job, '公倉自動補給：' + p.items.map(x => `${x.name} ×${fmtN(x.qty)}`).join('、'));
     for (const x of p.rows) {
       cd[p.snap.char.id + '|' + x.r.key] = Date.now();
       restockLog({ kind: 'take', status: 'queued', jobId: job.id, charId: p.snap.char.id, name: p.snap.char.name, key: x.r.key, item: nameOf(x.r), have: x.have, target: x.r.target, want: x.want, qty: x.qty, guildHad: x.guildHad,
@@ -810,6 +821,337 @@ function raidSealCheck(code) {
   S.sealOn = on;
 }
 const raidNumOr0 = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+// ==== 副本 A 戰前檢查＋一鍵套用（伺服器函式）：A 子任務的程式放在這行下面 ====
+// 戰前檢查：副本計畫（settings.raid 的 leader＋members）每隻的補給、萬能療傷藥、自動解除異常、自動喝水、隊友 Buff、補血、攻擊格，
+// 照 settings.raid.prep 的門檻標 bad（紅）／warn（黃）。資料來源是 agent 回報的 char.idleCfg、char.prog（看不到的寫「讀不到」，不判斷）
+// 第一場實機拉圖斯失敗的原因（HANDOFF「2026-11-28 第一場實機拉圖斯」）：藍藥＋mpPct 20% MP 不夠、沒人帶萬能療傷藥、autoCure 沒勾、4 隻傷害 0
+const RAID_PREP_DEF = { mpMin: 100, hpMin: 100, cureMin: 5, mpPct: 40, hpPct: 50, autoCure: true, autoPotion: true };
+const RAID_PREP_CURE = 'i2050004', RAID_PREP_HEALER = /cleric|priest|bishop/i;
+function cleanRaidPrep(p) {
+  const o = { ...RAID_PREP_DEF }, src = p && typeof p === 'object' ? p : {};
+  for (const [k, lo, hi] of [['mpMin', 0, 30000], ['hpMin', 0, 30000], ['cureMin', 0, 30000], ['mpPct', 1, 100], ['hpPct', 1, 100]]) if (k in src) { const v = int(src[k], lo, hi); if (v != null) o[k] = v; }
+  for (const k of ['autoCure', 'autoPotion']) if (k in src) o[k] = !!src[k];
+  return o;
+}
+const raidPrepOf = () => cleanRaidPrep((db.settings.raid || {}).prep);
+function raidPrepTab(id) {
+  const s = db.chars[id];
+  const code = (s && s.playerCode) || (Object.values(db.chars).find(x => x.playerCode && (x.accountChars || []).some(c => c.id === id)) || {}).playerCode;
+  const t = tabOf(code, id); return !t ? '' : t.bg ? 'bg' : 'tab';
+}
+function raidPrepRow(id, P, now) {
+  const s = db.chars[id], c = s && s.char, ic = c && c.idleCfg, pr = c && c.prog, issues = [];
+  const add = (lv, k, txt) => issues.push({ lv, k, txt });
+  const row = { id, name: charName(id), lv: c ? c.lv : null, job: c ? c.job : '', jobName: c ? c.jobName || c.job : '', at: s ? s.receivedAt || 0 : 0, tab: raidPrepTab(id), ic: !!ic, issues };
+  if (!row.tab) add('bad', 'tab', '沒有遊戲分頁或直連（指令送不到、資料不會更新）');
+  if (!c) { add('warn', 'data', '中控還沒有這隻的資料'); return row; }
+  if (row.at && now - row.at > 5 * 60e3) add('warn', 'stale', `資料是 ${Math.round((now - row.at) / 60e3)} 分鐘前的`);
+  row.autoPotion = pr && pr.auto ? !!pr.auto.autoPotion : null;
+  if (row.autoPotion === false && P.autoPotion) add('bad', 'autoPotion', '自動喝水沒開');
+  if (!ic) { add('warn', 'ic', '讀不到掛機設定（遊戲分頁要換上新版中控腳本）'); return row; }
+  const sp = ic.supply || {}, qty = k => { const x = (ic.items || []).find(i => i.id === k); return x ? Number(x.qty) || 0 : 0; };
+  const nm = k => { const x = (ic.items || []).find(i => i.id === k); return (x && x.name) || k; };
+  row.slot = ic.slot || 1;
+  // 一鍵套用要整份送的補給（agent 送之前還會再跟遊戲裡目前那份合併）
+  row.supply = { hpItem: sp.hpItem || null, mpItem: sp.mpItem || null, hpPct: Number(sp.hpPct) || null, mpPct: Number(sp.mpPct) || null, onEmpty: sp.onEmpty === 'continue' ? 'continue' : 'stop', autoCure: !!sp.autoCure,
+    ...Object.fromEntries(['buffPotion', 'buffPotion2', 'buffPotion3'].map(k => [k, { enabled: !!(sp[k] && sp[k].enabled), item: (sp[k] && sp[k].item) || null }])) };
+  for (const [k, item, pct, min, mPct, label] of [['mp', sp.mpItem, sp.mpPct, P.mpMin, P.mpPct, 'MP'], ['hp', sp.hpItem, sp.hpPct, P.hpMin, P.hpPct, 'HP']]) {
+    const q = item ? qty(item) : 0; row[k] = { item: item || null, name: item ? nm(item) : '', qty: q, pct: Number(pct) || 0 };
+    if (!item) add('bad', k + 'Item', `沒設 ${label} 藥水`);
+    else if (!q) add('bad', k + 'Qty', `${label} 藥水（${nm(item)}）背包沒有`);
+    else if (q < min) add('warn', k + 'Qty', `${label} 藥水 ${nm(item)} 只有 ${q} 個（建議 ≥ ${min}）`);
+    if (item && Number(pct) < mPct) add('warn', k + 'Pct', `${label} ${Number(pct) || 0}% 才喝（建議 ≥ ${mPct}%）`);
+  }
+  row.cure = qty(RAID_PREP_CURE); row.autoCure = !!sp.autoCure;
+  if (P.autoCure && !row.autoCure) add('bad', 'autoCure', '自動解除異常沒勾（中封印不會吃萬能療傷藥）');
+  if (!row.cure) add('bad', 'cure', '沒有萬能療傷藥');
+  else if (row.cure < P.cureMin) add('warn', 'cure', `萬能療傷藥只有 ${row.cure} 個（建議 ≥ ${P.cureMin}）`);
+  const skName = k => (((pr && pr.skills) || []).find(x => x.id === k) || {}).name || k;
+  row.partyBuffs = (ic.partyBuffs || []).filter(x => x && x.enabled && x.skill).map(x => skName(x.skill));
+  row.healer = RAID_PREP_HEALER.test(String(c.job || ''));
+  row.partyHeal = ic.partyHeal || null; row.selfHeal = ic.selfHeal || null;
+  if (row.healer && !(row.partyHeal && row.partyHeal.enabled)) add('warn', 'heal', '補師沒開隊友補血（群體治癒）');
+  row.autoBuy = !!(ic.autoBuy && ic.autoBuy.enabled);
+  // 攻擊格（attackSlots，每張地圖各自一組）：sync 裡只有目前地圖那組；在副本裡才知道副本地圖
+  const slots = (Array.isArray(ic.attackSlots) ? ic.attackSlots : []).filter(x => x && typeof x === 'object');
+  const L = raidLive[id], inMap = L && now - L.at < 15000 && L.battle && L.me && L.me.map ? String(L.me.map) : '';
+  const maps = [...new Set(slots.map(x => x.map).filter(x => x != null && x !== '').map(String))];
+  if (!slots.length) { row.attack = { state: 'none', txt: '攻擊格沒設定' + (pr && pr.active ? `（主動技能 ${skName(pr.active)}）` : '') }; add('warn', 'attack', '攻擊格沒設定（攻擊格跟地圖有關；實機有 4 隻傷害 0）'); }
+  else {
+    row.attack = { state: 'ok', txt: `${slots.length} 格：${slots.map(x => x.skill ? skName(String(x.skill)) : '？').join('、')}`, maps };
+    if (inMap && maps.length && !maps.includes(inMap)) { row.attack.state = 'map'; add('warn', 'attack', `攻擊格是別張地圖的（副本地圖 ${inMap} 沒設定）`); }
+  }
+  return row;
+}
+function raidPrepRows() {
+  const p = db.settings.raid || {}, P = raidPrepOf(), now = Date.now();
+  const ids = [p.leader, ...(p.members || []).filter(x => x && x !== p.leader)].filter(Boolean).slice(0, 12);
+  return { now, prep: P, def: RAID_PREP_DEF, leader: p.leader || '', rows: ids.map(id => raidPrepRow(id, P, now)) };
+}
+
+// ==== 副本 A 戰前檢查＋一鍵套用（伺服器函式）結束 ====
+
+// ==== 副本 B 副本前自動補給（伺服器函式）：B 子任務的程式放在這行下面 ====
+// 設定：settings.raid.supply = { items: [{ key:'i…', name, target }], auto }；對象＝副本計畫的全隊（leader＋members）
+// 「立即補給」或 auto（計畫的隊長建立好隊伍時）跑一次：每隻補到 target，從公倉領（重用公倉自動補給的 guildWithdraw restock 工作）
+// 只領道具，不碰楓幣、不從商店買；公倉不夠照背包最少先分；戰鬥中不補。紀錄寫進 db.restockLog（src:'raid'、run＝這次的編號）
+function raidSupplyClean(s) {
+  s = s && typeof s === 'object' ? s : {};
+  return { auto: !!s.auto, items: (Array.isArray(s.items) ? s.items : []).filter(x => x && (x.key === '' || /^i\w+$/.test(String(x.key || ''))))
+    .slice(0, 20).map(x => ({ key: String(x.key || ''), name: String(x.name || '').slice(0, 40), target: Math.max(0, Math.min(99999, Math.floor(Number(x.target) || 0))) })) };
+}
+const raidSupplyCfg = () => raidSupplyClean((db.settings.raid || {}).supply);
+const raidSupplyIds = () => { const p = db.settings.raid || {}; return [...new Set([p.leader, ...(p.members || [])].filter(Boolean))]; };
+const raidSupplyFighting = ids => ids.filter(id => { const rl = raidLive[id]; return rl && rl.battle && Date.now() - rl.at < 15000; });
+// 試算：每隻現在有幾個、要領幾個、公倉夠不夠（不夠照背包最少先分）
+function raidSupplyPlan() {
+  const cfg = raidSupplyCfg(), ids = raidSupplyIds(), g = db.guild && db.guild.data, gAt = (db.guild && db.guild.at) || 0;
+  const avail = g ? restockAvail(g) : {};
+  const chars = ids.map(id => { const snap = db.chars[id]; return { id, name: snap ? snap.char.name : id, snap, block: snap ? restockBlock(snap) : '找不到角色資料' }; });
+  const items = [], rows = [];
+  for (const it of cfg.items.filter(x => x.key && x.target > 0)) {
+    const name = it.name || it.key, left0 = avail[it.key] || 0;
+    let left = left0, need = 0, give = 0;
+    const list = chars.map(c => ({ c, have: c.snap ? restockBagQty(c.snap, it.key) : 0 })).sort((a, b) => a.have - b.have || cmpName(a.c.name, b.c.name));
+    for (const x of list) {
+      const want = Math.max(0, it.target - x.have), r = { charId: x.c.id, name: x.c.name, key: it.key, item: name, have: x.have, target: it.target, want, qty: 0 };
+      if (want > 0 && x.c.block) r.skip = x.c.block;
+      else if (want > 0) { need += want; r.qty = Math.min(want, left); left -= r.qty; give += r.qty; if (r.qty < want) r.short = true; }
+      rows.push(r);
+    }
+    items.push({ key: it.key, name, target: it.target, guild: left0, need, give, short: need > give });
+  }
+  return { at: Date.now(), guildAt: gAt, guildRead: !!g, guildOld: !g || Date.now() - gAt > RESTOCK_VIEW_MS, items, rows, chars: chars.map(c => ({ id: c.id, name: c.name, block: c.block })), fighting: raidSupplyFighting(ids) };
+}
+// 跑一次補給：why＝「立即補給」「建立隊伍後自動」…；回傳 { ok, made, waiting, msg }
+function raidSupplyRun(why) {
+  const head = `副本前補給（${why}）`, run = crypto.randomBytes(4).toString('hex');
+  const note = msg => { restockLog({ kind: 'note', src: 'raid', run, msg: `${head}：${msg}` }); return msg; };
+  const cfg = raidSupplyCfg(), ids = raidSupplyIds();
+  if (!ids.length) { const msg = note('副本計畫還沒有選隊長'); save(); return { ok: false, msg }; }
+  if (!cfg.items.some(x => x.key && x.target > 0)) { const msg = note('還沒設定要補給的道具'); save(); return { ok: false, msg }; }
+  const fight = raidSupplyFighting(ids);
+  if (fight.length) { const msg = note(`${fight.map(id => (db.chars[id] && db.chars[id].char.name) || id).join('、')} 在副本戰鬥中，不補給`); save(); return { ok: false, msg }; }
+  // 公倉內容太舊（或沒讀過）：先讀一次，讀到後（raidSupplyWaitTick）自動接著跑
+  const g = db.guild && db.guild.data, age = Date.now() - ((db.guild && db.guild.at) || 0);
+  if (!g || age > RESTOCK_VIEW_MS) {
+    try { createGuildView(); } catch (e) { const msg = note(`讀不到公倉：${e.message}`); save(); return { ok: false, msg }; }
+    db.raidSupplyWant = { at: Date.now(), why };
+    const msg = note(g ? `公倉內容是 ${Math.round(age / 60e3)} 分鐘前讀的，先重新讀取再分配` : '還沒讀過公倉，先讀取一次再分配');
+    save(); return { ok: true, waiting: true, made: 0, msg };
+  }
+  const P = raidSupplyPlan();
+  for (const it of P.items.filter(x => x.short)) {
+    const lines = P.rows.filter(r => r.key === it.key && r.want > 0 && !r.skip).map(r => `${r.name} 要 ${fmtN(r.want)}${r.qty > 0 ? (r.qty < r.want ? ` 只分到 ${fmtN(r.qty)}` : ` 領 ${fmtN(r.qty)}`) : ' 分不到'}`);
+    note(`公倉不夠：${it.name} 公倉剩 ${fmtN(it.guild)}，全隊要 ${fmtN(it.need)}，照背包最少先分：${lines.join('、')}`);
+  }
+  for (const r of P.rows.filter(x => x.skip)) note(`${r.name} 的 ${r.item} 有 ${fmtN(r.have)} 個（要補到 ${fmtN(r.target)}），但${r.skip}，這次沒補`);
+  const per = new Map();
+  for (const r of P.rows.filter(x => x.qty > 0)) (per.get(r.charId) || per.set(r.charId, []).get(r.charId)).push(r);
+  const cd = db.restockCd || (db.restockCd = {});
+  let made = 0;
+  for (const [id, rs] of per) {
+    const snap = db.chars[id];
+    let job;
+    try { job = restockWithdrawJob(snap, rs.map(r => ({ key: r.key, name: r.item, qty: r.qty, target: r.target, ...(r.short ? { limit: true } : {}) })), head); }
+    catch (e) { note(`${snap.char.name} 建立領取工作失敗：${e.message}`); continue; }
+    job.raidSupply = true; made++;
+    for (const r of rs) {
+      cd[id + '|' + r.key] = Date.now(); // 公倉自動補給同一隻同一道具先不要再領
+      restockLog({ kind: 'take', src: 'raid', run, status: 'queued', jobId: job.id, charId: id, name: r.name, key: r.key, item: r.item, have: r.have, target: r.target, want: r.want, qty: r.qty,
+        msg: `${head}：${r.name} 的 ${r.item} 有 ${fmtN(r.have)}，從公倉領 ${fmtN(r.qty)} 個${r.short ? `（要 ${fmtN(r.want)}，公倉不夠）` : `，補到 ${fmtN(r.target)}`}` });
+    }
+  }
+  const msg = made ? `建立 ${made} 個領取工作` : P.rows.some(r => r.want > 0) ? '有角色不夠，但這次沒有可以領的（看上面的紀錄）' : '全隊都夠了，不用領';
+  note(msg); save();
+  return { ok: true, made, msg };
+}
+// 每 2 秒：(1) 等公倉內容讀到後接著補給 (2) 計畫的隊長建立好隊伍（新的隊伍代碼）且開了 auto → 自動補一次
+function raidSupplyWaitTick() {
+  const w = db.raidSupplyWant;
+  if (w) {
+    // 讀公倉的工作也算「公倉工作在排隊」，等它結束再分配（不然讀公倉的那隻會被略過）
+    const viewing = db.jobs.some(j => j.kind === 'guildView' && ['pending', 'approved', 'running'].includes(j.status));
+    if (((db.guild && db.guild.at) || 0) > w.at && !viewing) { db.raidSupplyWant = null; raidSupplyRun(w.why); }
+    else if (Date.now() - w.at > 3 * 60e3) { db.raidSupplyWant = null; restockLog({ kind: 'note', src: 'raid', msg: `副本前補給（${w.why}）：3 分鐘內沒讀到公倉內容，這次沒補` }); save(); }
+  }
+  const p = db.settings.raid || {}, v = p.leader && raidViews[p.leader], t = v && v.view && v.view.team;
+  const code = t && t.isLeader && Date.now() - v.at < 60e3 ? t.code : null;
+  if (!code || db.raidSupplyCode === code) return;
+  db.raidSupplyCode = code; // 同一個隊伍只自動補一次（存檔，重開中控不會重補）
+  if (raidSupplyCfg().auto && !(v.view && v.view.battle)) raidSupplyRun('建立隊伍後自動'); else save();
+}
+setInterval(() => { try { raidSupplyWaitTick(); } catch (e) { console.warn('[副本前補給]', e); } }, 2000);
+
+// ==== 副本 B 副本前自動補給（伺服器函式）結束 ====
+
+// ==== 副本 C 戰中自動應對（伺服器函式）：C 子任務的程式放在這行下面 ====
+// settings.raid.auto＝{ orbs: 黑球自動集火, orbChars: [負責清黑球的角色]（空＝全隊）, back: 黑球清完切回王 }，預設全關。
+// 伺服器只算分配表：回報者（隊長）每秒送全部 enemies（含 slot＝遊戲 enemies 陣列的索引），這裡排好「誰打哪顆」，
+// 放在 /api/raid/live 的回應 assign:{charId:{slot, spawnId, kind:'orb'|'boss'}}；真正送 {type:'target'} 的是各角色自己的 agent。
+// 另外記每隻最後一次傷害有增加的時間（30 秒沒增加就警告）、黑球每一波的出現時間／持續多久、自動動作紀錄。只放記憶體。
+const RAID_ORB_MAXHP = 20000; // 實機拉圖斯的黑球
+let raidAuto = null, raidAutoLogs = [];
+function raidAutoCfg() {
+  const a = (db.settings.raid || {}).auto || {};
+  return { orbs: !!a.orbs, back: !!a.back, orbChars: (Array.isArray(a.orbChars) ? a.orbChars : []).filter(x => typeof x === 'string' && /^[\w-]{1,60}$/.test(x)).slice(0, 12) };
+}
+const raidAutoKey = x => String(x.spawnId || x.id + '#' + x.slot);
+function raidAutoOf(code) {
+  if (!raidAuto || raidAuto.code !== code) raidAuto = { code, at: 0, assign: {}, mine: {}, switched: [], dmg: {}, wave: null, waves: [], fightAt: 0 };
+  return raidAuto;
+}
+function raidAutoLog(x) { raidAutoLogs.push({ at: Date.now(), ...x }); if (raidAutoLogs.length > 30) raidAutoLogs.splice(0, raidAutoLogs.length - 30); }
+// 王＝maxHp 最大；黑球＝maxHp 20000（或不到王的 1/50）而且還活著
+function raidAutoSplit(en) {
+  const list = en.filter(x => x && Number(x.maxHp) > 0);
+  const boss = list.reduce((m, x) => (Number(x.maxHp) > Number((m || {}).maxHp || 0) ? x : m), null);
+  const orbs = boss ? list.filter(x => x !== boss && Number(x.hp) > 0 && (Number(x.maxHp) === RAID_ORB_MAXHP || Number(x.maxHp) < Number(boss.maxHp) / 50)) : [];
+  return { boss, orbs };
+}
+// 回報者每秒呼叫一次
+function raidAutoUpdate(e) {
+  const b = e.battle, en = Array.isArray(e.enemies) ? e.enemies : []; if (!b || !b.code) return;
+  const A = raidAutoOf(b.code), cfg = raidAutoCfg(), now = Date.now(), srv = Number(e.srvNow) || now;
+  A.at = now;
+  if (!A.fightAt && !(Number(b.prepUntil) > srv)) A.fightAt = now; // 準備時間過了才開始算「沒有傷害」
+  const mem = Object.entries(raidLive).filter(([, v]) => v.battle && v.battle.code === b.code && now - v.at < 5000 && !(v.me && Number(v.me.hp) <= 0)).map(([id]) => id);
+  // 傷害：任何一隻敵人（王或黑球）的 damageBy 有增加就算有在打
+  for (const x of en) for (const [id, v] of Object.entries((x && x.damageBy) || {})) {
+    const d = A.dmg[id] || (A.dmg[id] = { at: 0, per: {} }), k = raidAutoKey(x);
+    if (Number(v) > (d.per[k] || 0)) { d.per[k] = Number(v); d.at = now; }
+  }
+  const { boss, orbs: all } = raidAutoSplit(en), orbs = all.filter(o => Number.isInteger(o.slot) && o.slot >= 0);
+  if (all.length && !A.wave) { A.wave = { at: now, n0: all.length }; A.waves.push(A.wave); if (A.waves.length > 20) A.waves.shift(); }
+  if (!all.length && A.wave) { A.wave.end = now; raidAutoLog({ kind: 'wave', text: `第 ${A.waves.length} 波黑球結束（${Math.round((now - A.wave.at) / 1000)} 秒）` }); A.wave = null; }
+  if (!cfg.orbs) { A.assign = {}; A.mine = {}; return; }
+  const who = cfg.orbChars.length ? cfg.orbChars.filter(id => mem.includes(id)) : mem;
+  if (orbs.length) {
+    // 原本分到的那顆還活著就繼續打；其他人分到「目前最少人打、血最少」的那顆（人比黑球多時平均分配）
+    const cnt = new Map(orbs.map(o => [raidAutoKey(o), 0])), pick = {};
+    for (const id of who) { const k = A.mine[id]; if (k && cnt.has(k)) { pick[id] = k; cnt.set(k, cnt.get(k) + 1); } }
+    for (const id of who) if (!pick[id]) { const o = orbs.slice().sort((x, y) => cnt.get(raidAutoKey(x)) - cnt.get(raidAutoKey(y)) || Number(x.hp) - Number(y.hp))[0]; pick[id] = raidAutoKey(o); cnt.set(pick[id], cnt.get(pick[id]) + 1); }
+    A.mine = pick;
+    for (const id of who) if (!A.switched.includes(id)) A.switched.push(id);
+    A.assign = Object.fromEntries(who.map(id => { const o = orbs.find(x => raidAutoKey(x) === pick[id]); return [id, { slot: o.slot, spawnId: String(o.spawnId || ''), kind: 'orb' }]; }));
+  } else {
+    A.mine = {};
+    A.assign = cfg.back && boss && Number.isInteger(boss.slot) ? Object.fromEntries(A.switched.filter(id => mem.includes(id)).map(id => [id, { slot: boss.slot, spawnId: String(boss.spawnId || ''), kind: 'boss' }])) : {};
+  }
+}
+// /api/raid/live 的回應：這場的分配表（回報者 5 秒沒更新就不發，避免照舊資料亂打）
+function raidAutoResp(code) {
+  const A = raidAuto; if (!A || A.code !== code || Date.now() - A.at > 5000) return {};
+  return { assign: A.assign };
+}
+// 面板的警告列：30 秒以上傷害沒增加、MP 低於 10%、被封印／暈眩（有效的）
+function raidAutoWarn(now) {
+  const out = [], A = raidAuto;
+  for (const [id, v] of Object.entries(raidLive)) {
+    if (!v.battle || now - v.at > 6000) continue;
+    const me = v.me || {}, el = (now - v.at) / 1000; if (Number(me.hp) <= 0) continue;
+    for (const k of ['seal', 'stun']) { const d = (me.diseases || {})[k], l = d && typeof d === 'object' ? (Number(d.left) || 0) - el : 0; if (l > 0) out.push({ id, kind: k, text: `${k === 'seal' ? '被封印' : '暈眩'} ${Math.ceil(l)} 秒` }); }
+    if (Number(me.maxmp) > 0 && Number(me.mp) / Number(me.maxmp) < 0.1) out.push({ id, kind: 'mp', text: `MP 只剩 ${Math.round(Number(me.mp) / Number(me.maxmp) * 100)}%` });
+    if (A && A.code === v.battle.code && A.fightAt) { const d = A.dmg[id], last = Math.max(d ? d.at : 0, A.fightAt); if (now - last >= 30000) out.push({ id, kind: 'idle', text: `${Math.floor((now - last) / 1000)} 秒沒有傷害` }); }
+  }
+  return out;
+}
+function raidAutoView(now) {
+  const A = raidAuto, fresh = A && now - A.at < 6000;
+  return { cfg: raidAutoCfg(), code: A ? A.code : '', assign: fresh ? A.assign : {}, wave: fresh && A.wave ? { at: A.wave.at, n0: A.wave.n0, no: A.waves.length } : null,
+    waveSec: A ? A.waves.filter(w => w.end).map(w => Math.round((w.end - w.at) / 1000)) : [], warn: raidAutoWarn(now), log: raidAutoLogs.slice(-15) };
+}
+
+// ==== 副本 C 戰中自動應對（伺服器函式）結束 ====
+
+// ==== 副本 D 戰後紀錄與分析（伺服器函式）：D 子任務的程式放在這行下面 ====
+// 每場打完（收到 raidReport）存一筆到 db.raidHistory（最多 50 筆、同一場 code＋at 只存一次），附上戰況分析和規則式的失敗原因。
+// 戰鬥中每秒從 raidLive 累積每隻的 MP／HP 最低％、MP 不到 5% 的秒數、倒下的時間（raidLive 只在記憶體，打完就靠這份）
+const RAID_HIST_MAX = 50;
+const raidHistTrack = {}; // 隊伍代碼 → { startAt, at, mem: { charId: { mpMin, hpMin, mpLow, dead, deaths:[時間] } } }
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, L] of Object.entries(raidLive)) {
+    const b = L && L.battle; if (!b || !b.code || now - L.at > 5000) continue;
+    const T = raidHistTrack[b.code] || (raidHistTrack[b.code] = { startAt: now, at: now, mem: {} }); T.at = now;
+    const me = L.me || {}, M = T.mem[id] || (T.mem[id] = { mpMin: null, hpMin: null, mpLow: 0, dead: false, deaths: [] });
+    const pct = (v, m) => (Number(m) > 0 && Number.isFinite(Number(v)) ? Math.max(0, Math.min(100, Number(v) / Number(m) * 100)) : null);
+    const mp = pct(me.mp, me.maxmp), hp = pct(me.hp, me.maxhp);
+    if (mp != null) { M.mpMin = M.mpMin == null ? mp : Math.min(M.mpMin, mp); if (mp < 5 && !(Number(me.hp) <= 0)) M.mpLow++; }
+    if (hp != null) M.hpMin = M.hpMin == null ? hp : Math.min(M.hpMin, hp);
+    const dead = Number(me.maxhp) > 0 && Number(me.hp) <= 0;
+    if (dead && !M.dead && M.deaths.length < 20) M.deaths.push(now);
+    M.dead = dead;
+  }
+  for (const [code, T] of Object.entries(raidHistTrack)) if (now - T.at > 30 * 60e3) delete raidHistTrack[code]; // 半小時沒資料就丟掉
+}, 1000);
+// 一份結算 → 歷史紀錄（伺服器在收到 /api/raid/report 時呼叫）
+function raidHistRecord(charId, r) {
+  if (!r || !r.code) return null;
+  const id = `${r.code}-${r.at}`, H = db.raidHistory = Array.isArray(db.raidHistory) ? db.raidHistory : [];
+  if (H.some(h => h.id === id || (h.code === r.code && Math.abs((h.at || 0) - (r.at || 0)) < 5000))) return null; // 同一場每隻都會送一次
+  const S = raidSeries && raidSeries.code === r.code ? raidSeries : null, T = raidHistTrack[r.code] || null, pts = (S && S.points) || [];
+  const startAt = S ? S.startAt : T ? T.startAt : 0, endAt = pts.length ? pts[pts.length - 1][0] : T ? T.at : 0;
+  const durationSec = startAt && endAt > startAt ? Math.round((endAt - startAt) / 1000) : null, rel = t => (startAt ? Math.max(0, Math.round((t - startAt) / 1000)) : null);
+  const plan = db.settings.raid || {}, raid = (S && S.raid) || (RAID_KINDS.includes(plan.kind) ? plan.kind : '') || '';
+  // 規則（挑戰幾分鐘）：任一隻角色的 view 讀過就有，沒有就當 20 分鐘
+  let minutes = 20; for (const v of Object.values(raidViews)) { const x = v && v.view && (v.view.raids || []).find(q => q && q.id === raid); if (x && Number(x.minutes) > 0) { minutes = Number(x.minutes); break; } }
+  // 王：血量最低％、總輸出／淨輸出／回血（每秒）
+  const maxHp = (S && S.maxHp) || 0, boss = { maxHp, minHpPct: null, endHpPct: null };
+  let gross = null, net = null, regen = null;
+  if (pts.length >= 2 && maxHp) {
+    boss.minHpPct = Math.round(Math.min(...pts.map(p => p[1])) / maxHp * 1000) / 10; boss.endHpPct = Math.round(pts[pts.length - 1][1] / maxHp * 1000) / 10;
+    const a = pts[0], z = pts[pts.length - 1], dt = (z[0] - a[0]) / 1000;
+    if (dt >= 5) { gross = Math.max(0, (z[2] - a[2]) / dt); net = (a[1] - z[1]) / dt; regen = Math.max(0, gross - net); }
+  }
+  // 黑球：每波出現到數量歸 0；之後 20 秒內有全隊封印＝沒清完
+  const sealAt = (S && S.sealAt) || [], waves = ((S && S.orbWaves) || []).map((w, i, all) => {
+    const nextW = all[i + 1] || Infinity, seg = pts.filter(p => p[0] >= w - 1500 && p[0] < nextW);
+    const endP = seg.find(p => p[0] > w && !p[3]), on = seg.filter(p => p[3] > 0 && (!endP || p[0] < endP[0]));
+    const end = endP ? endP[0] : null, seal = end != null ? sealAt.find(s => s >= w && s <= end + 20000) : sealAt.find(s => s >= w && s < nextW);
+    return { at: rel(w), sec: end ? Math.round((end - w) / 1000) : null, max: on.length ? Math.max(...on.map(p => p[3])) : null, left: on.length ? on[on.length - 1][3] : null,
+      cleared: end != null && !seal, sealed: !!seal, ...(seal ? { sealAt: rel(seal) } : {}) };
+  });
+  // 每隻：報告的列對上角色 id（報告有 id 就用；沒有就用名字對計畫和這場有回報的角色）
+  const cand = [...new Set([plan.leader, ...(plan.members || []), ...Object.keys((T && T.mem) || {}), charId].filter(Boolean))];
+  const total = r.total || r.rows.reduce((t, x) => t + (x.damage || 0), 0);
+  const rows = r.rows.map(x => {
+    const cid = x.id || cand.find(c => charName(c) === x.name) || null, M = cid && T && T.mem[cid];
+    return { name: x.name, charId: cid, damage: x.damage, deaths: x.deaths, pct: total ? Math.round(x.damage / total * 1000) / 10 : 0,
+      mpMinPct: M && M.mpMin != null ? Math.round(M.mpMin * 10) / 10 : null, hpMinPct: M && M.hpMin != null ? Math.round(M.hpMin * 10) / 10 : null,
+      mpLowSec: M ? M.mpLow : null, deathAt: M ? M.deaths.map(rel).filter(v => v != null) : [] };
+  }).sort((p, q) => q.damage - p.damage);
+  const h = { id, code: r.code, raid, at: r.at || Date.now(), savedAt: Date.now(), result: r.result, total, durationSec, minutes, rows, boss,
+    orbWaves: waves, sealCount: sealAt.length, sealAt: sealAt.map(rel), grossDps: gross == null ? null : Math.round(gross), netDps: net == null ? null : Math.round(net), regenDps: regen == null ? null : Math.round(regen) };
+  h.reasons = raidHistReasons(h);
+  H.unshift(h); if (H.length > RAID_HIST_MAX) H.length = RAID_HIST_MAX;
+  delete raidHistTrack[r.code]; save();
+  return h;
+}
+// 規則式的失敗原因（文字，越前面越重要）；通關也會列出值得注意的地方
+function raidHistReasons(h) {
+  const out = [], n = v => (v == null ? '—' : v >= 1e4 ? (v / 1e4).toFixed(1).replace(/\.0$/, '') + ' 萬' : String(Math.round(v))), mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  h.orbWaves.forEach((w, i) => { if (w.sealed && !w.cleared) out.push(`黑球第 ${i + 1} 波沒清完${w.left ? `（剩 ${w.left} 顆自己消失）` : ''} → 全隊封印${w.sealAt != null ? `（第 ${mmss(w.sealAt)}）` : ''}：封印中不能放技能、祭司不能補`); });
+  const deaths = h.rows.flatMap(r => r.deathAt || []).sort((a, b) => a - b);
+  for (const s of h.sealAt || []) { const k = deaths.filter(d => d >= s && d <= s + 40).length; if (k >= 2) { out.push(`封印後 40 秒內倒了 ${k} 隻（第 ${mmss(s)} 封印）`); break; } }
+  const cnt = h.rows.length, dead = h.rows.filter(r => r.deaths > 0 || (r.deathAt || []).length).length;
+  if (h.result !== 'clear' && cnt >= 2 && dead === cnt) out.push(`全隊都倒下過${deaths.length ? `（最後一隻在第 ${mmss(deaths[deaths.length - 1])}）` : ''}`);
+  if (h.result !== 'clear' && h.boss.maxHp && h.netDps != null) {
+    const need = h.boss.maxHp / (h.minutes * 60);
+    if (h.netDps < need) out.push(`淨輸出 ${n(h.netDps)}／秒（總輸出 ${n(h.grossDps)}－回血約 ${n(h.regenDps)}），${h.minutes} 分鐘打完要淨輸出 ${n(need)}／秒${h.regenDps ? `（總輸出約 ${n(need + h.regenDps)}／秒）` : ''}`);
+  }
+  if (h.result === 'timeout' && h.boss.endHpPct != null) out.push(`時間到：王還剩 ${h.boss.endHpPct}% 血`);
+  const zero = h.rows.filter(r => !r.damage);
+  if (zero.length) out.push(`${zero.length} 隻傷害 0：${zero.map(r => r.name).join('、')}`);
+  const low = h.rows.filter(r => r.mpMinPct != null && r.mpMinPct <= 5);
+  if (low.length) out.push(`MP 見底：${low.map(r => `${r.name}（最低 ${Math.round(r.mpMinPct)}%${r.mpLowSec ? `，約 ${r.mpLowSec} 秒不到 5%` : ''}）`).join('、')}`);
+  if (h.result !== 'clear' && !out.length) out.push('沒有找到明顯原因（中控可能漏了這場的戰況，例如中途重開）');
+  return out;
+}
+
+// ==== 副本 D 戰後紀錄與分析（伺服器函式）結束 ====
+
 function cleanRaidReport(r) {
   if (!r || typeof r !== 'object') return null;
   return { result: ['clear', 'fail', 'timeout'].includes(r.result) ? r.result : String(r.result || '').slice(0, 20), at: raidNumOr0(r.at), total: raidNumOr0(r.total), code: String(r.code || '').slice(0, 40),
@@ -1845,7 +2187,7 @@ const server = http.createServer(async (req, res) => {
         // 時間序列：?since=時間 只回那之後的點（面板每秒讀，自己接起來）
         const since = Number(url.searchParams.get('since')) || 0, S = raidSeries;
         const series = S ? { code: S.code, raid: S.raid, boss: S.boss, maxHp: S.maxHp, startAt: S.startAt, n: S.points.length, since, points: since ? S.points.filter(p => p[0] > since) : S.points, orbWaves: S.orbWaves, sealAt: S.sealAt } : null;
-        return send(res, 200, { now, plan: db.settings.raid || {}, views: fresh(raidViews, 30 * 60e3), live: fresh(raidLive, 15000), series, report: raidLastReport });
+        return send(res, 200, { now, plan: db.settings.raid || {}, views: fresh(raidViews, 30 * 60e3), live: fresh(raidLive, 15000), series, report: raidLastReport, auto: raidAutoView(now) });
       }
       if (req.method === 'POST' && url.pathname === '/api/raid/view') {
         const e = JSON.parse((await readBody(req)) || '{}'); if (!e.charId) return send(res, 400, { error: 'charId' });
@@ -1858,16 +2200,66 @@ const server = http.createServer(async (req, res) => {
         // 回報者：計畫裡的隊長；隊長沒在回報就由第一個在副本裡的隊員負責（戰鬥中多同步一次拿王的血量）
         const plan = db.settings.raid || {}, inLive = id => raidLive[id] && Date.now() - raidLive[id].at < 5000;
         const rep = inLive(plan.leader) ? plan.leader : (plan.members || []).find(inLive) || e.charId;
-        if (e.inRaid && e.battle && rep === e.charId) raidSeriesAdd(e);
+        if (e.inRaid && e.battle && rep === e.charId) { raidSeriesAdd(e); raidAutoUpdate(e); }
         if (e.inRaid && e.battle) raidSealCheck(e.battle.code);
-        return send(res, 200, { ok: true, reporter: rep === e.charId });
+        return send(res, 200, { ok: true, reporter: rep === e.charId, ...(e.inRaid && e.battle ? raidAutoResp(e.battle.code) : {}) });
       }
       if (req.method === 'POST' && url.pathname === '/api/raid/report') {
         const e = JSON.parse((await readBody(req)) || '{}'); const r = cleanRaidReport(e.report); if (!e.charId || !r) return send(res, 400, { error: 'report' });
         // 同一場（代碼＋時間）每隻都會送一次，留最新的那份
         if (!raidLastReport || r.at >= raidLastReport.report.at) raidLastReport = { at: Date.now(), charId: e.charId, report: r };
+        try { raidHistRecord(e.charId, r); } catch (err) { console.warn('[副本紀錄]', err.message); } // 副本 D：存進歷史
         return send(res, 200, { ok: true });
       }
+      // ==== 副本 A 戰前檢查＋一鍵套用（API）：A 子任務的程式放在這行下面 ====
+      // GET：計畫裡每隻的戰前檢查；POST {prep}：改門檻（合併存在 settings.raid.prep）。一鍵套用走既有的 /api/idle（action cfg）
+      if (req.method === 'GET' && url.pathname === '/api/raid/prep') return send(res, 200, raidPrepRows());
+      if (req.method === 'POST' && url.pathname === '/api/raid/prep') {
+        const e = JSON.parse((await readBody(req)) || '{}'), cur = db.settings.raid || {};
+        db.settings.raid = { ...cur, prep: cleanRaidPrep({ ...raidPrepOf(), ...(e.prep && typeof e.prep === 'object' ? e.prep : {}) }) };
+        save();
+        return send(res, 200, { ok: true, prep: db.settings.raid.prep });
+      }
+      
+      // ==== 副本 A 戰前檢查＋一鍵套用（API）結束 ====
+      
+      // ==== 副本 B 副本前自動補給（API）：B 子任務的程式放在這行下面 ====
+      // GET：設定＋試算＋紀錄；POST /api/raid/supply 存設定 {items, auto}；POST /api/raid/supply/run 立即補給
+      if (url.pathname === '/api/raid/supply' || url.pathname === '/api/raid/supply/run') {
+        const out = () => { const g = db.guild && db.guild.data;
+          return { cfg: raidSupplyCfg(), plan: raidSupplyPlan(), want: db.raidSupplyWant || null, log: (db.restockLog || []).filter(x => x.src === 'raid').slice(-40),
+            guildItems: Object.entries((g && g.items) || {}).filter(([k, n]) => /^i\w+$/.test(k) && n > 0).map(([key, n]) => ({ key, n: Number(n) || 0 })) }; };
+        if (req.method === 'GET' && url.pathname === '/api/raid/supply') return send(res, 200, out());
+        if (req.method === 'POST' && url.pathname === '/api/raid/supply') {
+          const e = JSON.parse((await readBody(req)) || '{}');
+          db.settings.raid = { ...(db.settings.raid || {}), supply: raidSupplyClean({ ...raidSupplyCfg(), ...e }) }; save();
+          return send(res, 200, { ok: true, ...out() });
+        }
+        if (req.method === 'POST' && url.pathname === '/api/raid/supply/run') { const r = raidSupplyRun('立即補給'); return send(res, 200, { ...r, ...out() }); }
+      }
+
+      // ==== 副本 B 副本前自動補給（API）結束 ====
+      
+      // ==== 副本 C 戰中自動應對（API）：C 子任務的程式放在這行下面 ====
+      // agent 送完 {type:'target'} 回報結果（成功／失敗原因），面板顯示「冰雷 → 黑球 #5」
+      if (req.method === 'POST' && url.pathname === '/api/raid/auto') {
+        const e = JSON.parse((await readBody(req)) || '{}'); if (!e.charId || !Number.isInteger(e.slot)) return send(res, 400, { error: 'charId/slot' });
+        raidAutoLog({ kind: e.kind === 'boss' ? 'boss' : 'orb', charId: String(e.charId).slice(0, 60), name: charName(e.charId), slot: e.slot, ok: !!e.ok, ...(e.error ? { error: String(e.error).slice(0, 120) } : {}) });
+        return send(res, 200, { ok: true });
+      }
+      // ==== 副本 C 戰中自動應對（API）結束 ====
+      
+      // ==== 副本 D 戰後紀錄與分析（API）：D 子任務的程式放在這行下面 ====
+      if (url.pathname === '/api/raid/history') {
+        const H = Array.isArray(db.raidHistory) ? db.raidHistory : [];
+        if (req.method === 'GET') return send(res, 200, { list: H, max: RAID_HIST_MAX });
+        if (req.method === 'DELETE') {
+          const id = url.searchParams.get('id'), i = H.findIndex(h => h.id === id); if (i < 0) return send(res, 404, { error: '找不到這筆紀錄' });
+          H.splice(i, 1); save(); return send(res, 200, { ok: true });
+        }
+      }
+      // ==== 副本 D 戰後紀錄與分析（API）結束 ====
+      
       if (req.method === 'POST' && url.pathname === '/api/raid/act') {
         const e = JSON.parse((await readBody(req)) || '{}');
         const jobs = createIdleJobs({ targets: (e.targets || []).map(t => ({ charId: t.charId, action: 'raid', cmd: t.cmd, label: t.label })) });
@@ -1997,6 +2389,8 @@ const server = http.createServer(async (req, res) => {
       // 去處規則也合併（v0.71）：只改送來的欄位（例如只改共用規則，不會清掉每張圖的覆寫）
       if (patch && patch.dest && typeof patch.dest === 'object') patch.dest = { ...(db.settings.dest || {}), ...patch.dest };
       if (patch && 'dest' in patch && !patch.dest) delete patch.dest;
+      // 副本計畫也合併：面板存隊長／隊員時不會清掉 raid.supply 等其他欄位
+      if (patch && patch.raid && typeof patch.raid === 'object') patch.raid = { ...(db.settings.raid || {}), ...patch.raid };
       db.settings = { ...db.settings, ...patch };
       bossSettingsFix();
       save();
